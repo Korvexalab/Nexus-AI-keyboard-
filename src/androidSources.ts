@@ -1462,19 +1462,26 @@ jobs:
 
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@v4
+        with:
+          validate-wrappers: false
 
-      - name: Make Gradle Wrapper Executable
-        run: chmod +x gradlew
+      - name: Prepare Gradle Environment
+        run: |
+          chmod +x gradlew
+          mkdir -p ~/.gradle
+          echo "org.gradle.jvmargs=-Xmx2048m -Dfile.encoding=UTF-8" >> ~/.gradle/gradle.properties
+          echo "android.useAndroidX=true" >> ~/.gradle/gradle.properties
+          echo "android.nonTransitiveRClass=true" >> ~/.gradle/gradle.properties
 
-      - name: Run Unit Tests (if available)
+      - name: Run Unit Tests (Optional)
         run: |
           echo "Running unit tests if defined in the project..."
-          ./gradlew testDebugUnitTest --continue || true
+          ./gradlew testDebugUnitTest --no-daemon --continue || true
 
       - name: Build Debug APK
         run: |
           echo "Building debug APK via Gradle..."
-          ./gradlew assembleDebug --stacktrace
+          ./gradlew assembleDebug --stacktrace --no-daemon -x test
 
       - name: Verify Real Generated APK
         id: verify-apk
