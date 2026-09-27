@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">AI Keyboard</string>
+    <string name="ime_name">AI Keyboard</string>
+    <string name="subtype_en_us">English (US)</string>
+    <string name="step_1_enable">1. Enable AI Keyboard</string>
+    <string name="step_2_select">2. Select AI Keyboard</string>
+    <string name="step_3_test">3. Test AI Keyboard</string>
+    <string name="test_hint">Tap here to test typing...</string>
+</resources>

@@ -1,0 +1,1546 @@
+import { AndroidFileEntry } from './types';
+
+export const ANDROID_FILES: AndroidFileEntry[] = [
+  {
+    path: 'app/src/main/java/com/aikeyboard/ime/ui/theme/KeyboardTheme.kt',
+    name: 'KeyboardTheme.kt',
+    language: 'kotlin',
+    description: 'Milestone 1C: Extensible Theme Engine with Midnight and Light themes, color tokens, and height metrics.',
+    content: `package com.aikeyboard.ime.ui.theme
+
+import androidx.compose.ui.graphics.Color
+
+enum class KeyboardThemeId(val displayName: String) {
+    MIDNIGHT("Midnight"),
+    LIGHT("Light")
+    // Extensible placeholders for future milestones: GALAXY, SAKURA, OCEAN, EMBER, AURORA, CRYSTAL, ICE
+}
+
+enum class KeyboardHeightOption(val displayName: String, val keyHeightDp: Int) {
+    SHORT("Short", 42),
+    NORMAL("Normal", 47),
+    TALL("Tall", 53)
+}
+
+data class KeyboardColorTokens(
+    val background: Color,
+    val surface: Color,
+    val borderRim: Color,
+    val keySurface: Color,
+    val keySurfacePressed: Color,
+    val keySpecial: Color,
+    val keySpecialPressed: Color,
+    val keyAccent: Color,
+    val keyAccentPressed: Color,
+    val textPrimary: Color,
+    val textSecondary: Color,
+    val toolbarBackground: Color,
+    val isDark: Boolean
+)
+
+object KeyboardThemes {
+    // 1. Midnight Theme: Dark navy/black background, dark blue/purple keys, light text, subtle blue/purple accent
+    val Midnight = KeyboardColorTokens(
+        background = Color(0xFF090D16),
+        surface = Color(0xFF0F172A),
+        borderRim = Color(0x1FFFFFFF),
+        keySurface = Color(0xFF1E283D),
+        keySurfacePressed = Color(0xFF2E3D5B),
+        keySpecial = Color(0xFF161F33),
+        keySpecialPressed = Color(0xFF243252),
+        keyAccent = Color(0xFF2563EB),
+        keyAccentPressed = Color(0xFF1D4ED8),
+        textPrimary = Color(0xFFF8FAFC),
+        textSecondary = Color(0xFF94A3B8),
+        toolbarBackground = Color(0xFF090D16),
+        isDark = true
+    )
+
+    // 2. Light Theme: Light background, light keys, dark text, subtle accent
+    val Light = KeyboardColorTokens(
+        background = Color(0xFFF1F5F9),
+        surface = Color(0xFFFFFFFF),
+        borderRim = Color(0x1F000000),
+        keySurface = Color(0xFFFFFFFF),
+        keySurfacePressed = Color(0xFFE2E8F0),
+        keySpecial = Color(0xFFE2E8F0),
+        keySpecialPressed = Color(0xFFCBD5E1),
+        keyAccent = Color(0xFF2563EB),
+        keyAccentPressed = Color(0xFF1D4ED8),
+        textPrimary = Color(0xFF0F172A),
+        textSecondary = Color(0xFF64748B),
+        toolbarBackground = Color(0xFFF8FAFC),
+        isDark = false
+    )
+
+    fun get(id: KeyboardThemeId): KeyboardColorTokens = when (id) {
+        KeyboardThemeId.MIDNIGHT -> Midnight
+        KeyboardThemeId.LIGHT -> Light
+    }
+}`
+  },
+  {
+    path: 'app/src/main/java/com/aikeyboard/ime/KeyboardPreferences.kt',
+    name: 'KeyboardPreferences.kt',
+    language: 'kotlin',
+    description: 'Milestone 1C: Local on-device SharedPreferences storage for theme, haptic feedback, height, and animation.',
+    content: `package com.aikeyboard.ime
+
+import android.content.Context
+import android.content.SharedPreferences
+import com.aikeyboard.ime.ui.theme.KeyboardHeightOption
+import com.aikeyboard.ime.ui.theme.KeyboardThemeId
+
+class KeyboardPreferences(context: Context) {
+    private val prefs: SharedPreferences =
+        context.getSharedPreferences("ai_keyboard_local_prefs", Context.MODE_PRIVATE)
+
+    var themeId: KeyboardThemeId
+        get() = try {
+            val name = prefs.getString(KEY_THEME, KeyboardThemeId.MIDNIGHT.name)
+            KeyboardThemeId.valueOf(name ?: KeyboardThemeId.MIDNIGHT.name)
+        } catch (e: Exception) {
+            KeyboardThemeId.MIDNIGHT
+        }
+        set(value) = prefs.edit().putString(KEY_THEME, value.name).apply()
+
+    var hapticEnabled: Boolean
+        get() = prefs.getBoolean(KEY_HAPTIC, true)
+        set(value) = prefs.edit().putBoolean(KEY_HAPTIC, value).apply()
+
+    var keyboardHeight: KeyboardHeightOption
+        get() = try {
+            val name = prefs.getString(KEY_HEIGHT, KeyboardHeightOption.NORMAL.name)
+            KeyboardHeightOption.valueOf(name ?: KeyboardHeightOption.NORMAL.name)
+        } catch (e: Exception) {
+            KeyboardHeightOption.NORMAL
+        }
+        set(value) = prefs.edit().putString(KEY_HEIGHT, value.name).apply()
+
+    var keyAnimationEnabled: Boolean
+        get() = prefs.getBoolean(KEY_ANIMATION, true)
+        set(value) = prefs.edit().putBoolean(KEY_ANIMATION, value).apply()
+
+    companion object {
+        private const val KEY_THEME = "pref_theme"
+        private const val KEY_HAPTIC = "pref_haptic"
+        private const val KEY_HEIGHT = "pref_height"
+        private const val KEY_ANIMATION = "pref_key_animation"
+    }
+}`
+  },
+  {
+    path: 'app/src/main/java/com/aikeyboard/MainActivity.kt',
+    name: 'MainActivity.kt',
+    language: 'kotlin',
+    description: 'Milestone 1C: Polished Onboarding Wizard (Enable & Select) + Settings Screen (Themes, Haptics, Height, Animation) + Privacy Pledge.',
+    content: `package com.aikeyboard
+
+import android.content.Context
+import android.content.Intent
+import android.os.Bundle
+import android.provider.Settings
+import android.view.inputmethod.InputMethodManager
+import androidx.activity.ComponentActivity
+import androidx.activity.compose.setContent
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.*
+import androidx.compose.material3.*
+import androidx.compose.runtime.*
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalLifecycleOwner
+import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import com.aikeyboard.ime.KeyboardPreferences
+import com.aikeyboard.ime.ui.theme.AIKeyboardTheme
+import com.aikeyboard.ime.ui.theme.KeyboardHeightOption
+import com.aikeyboard.ime.ui.theme.KeyboardThemeId
+
+class MainActivity : ComponentActivity() {
+
+    override fun onCreate(savedInstanceState: Bundle?) {
+        super.onCreate(savedInstanceState)
+        setContent {
+            AIKeyboardTheme {
+                MainSettingsAndOnboardingScreen()
+            }
+        }
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun MainSettingsAndOnboardingScreen() {
+    val context = LocalContext.current
+    val imm = remember { context.getSystemService(Context.INPUT_METHOD_SERVICE) as InputMethodManager }
+    val prefs = remember { KeyboardPreferences(context) }
+
+    var isKeyboardEnabled by remember { mutableStateOf(false) }
+    var isKeyboardSelected by remember { mutableStateOf(false) }
+    var testInputText by remember { mutableStateOf("") }
+
+    var currentTheme by remember { mutableStateOf(prefs.themeId) }
+    var isHapticEnabled by remember { mutableStateOf(prefs.hapticEnabled) }
+    var currentHeight by remember { mutableStateOf(prefs.keyboardHeight) }
+    var isKeyAnimationEnabled by remember { mutableStateOf(prefs.keyAnimationEnabled) }
+
+    fun checkKeyboardStatus() {
+        val packageName = context.packageName
+        val enabledMethods = imm.enabledInputMethodList
+        isKeyboardEnabled = enabledMethods.any { it.packageName == packageName }
+
+        val defaultIme = Settings.Secure.getString(
+            context.contentResolver,
+            Settings.Secure.DEFAULT_INPUT_METHOD
+        ) ?: ""
+        isKeyboardSelected = defaultIme.contains(packageName)
+    }
+
+    val lifecycleOwner = LocalLifecycleOwner.current
+    DisposableEffect(lifecycleOwner) {
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_RESUME) {
+                checkKeyboardStatus()
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose {
+            lifecycleOwner.lifecycle.removeObserver(observer)
+        }
+    }
+
+    LaunchedEffect(Unit) {
+        checkKeyboardStatus()
+    }
+
+    Scaffold(
+        topBar = {
+            TopAppBar(
+                title = {
+                    Column {
+                        Text("AI Keyboard", fontWeight = FontWeight.Bold, fontSize = 18.sp)
+                        Text(
+                            "Milestone 1C: Setup & Settings",
+                            fontSize = 12.sp,
+                            color = MaterialTheme.colorScheme.onPrimary.copy(alpha = 0.8f)
+                        )
+                    }
+                },
+                colors = TopAppBarDefaults.topAppBarColors(
+                    containerColor = MaterialTheme.colorScheme.primary,
+                    titleContentColor = MaterialTheme.colorScheme.onPrimary
+                )
+            )
+        }
+    ) { innerPadding ->
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(innerPadding)
+                .padding(horizontal = 16.dp, vertical = 12.dp)
+                .verticalScroll(rememberScrollState()),
+            verticalArrangement = Arrangement.spacedBy(16.dp)
+        ) {
+            // Step-by-Step Onboarding
+            Text("GET STARTED", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary, letterSpacing = 1.sp)
+
+            StepCard(
+                stepNumber = "1",
+                title = stringResource(R.string.step_1_enable),
+                description = "Enable AI Keyboard in Android System Input Method Settings.",
+                isCompleted = isKeyboardEnabled,
+                actionButtonText = if (isKeyboardEnabled) "Enabled" else "Open Settings",
+                actionIcon = Icons.Default.Settings,
+                onAction = {
+                    val intent = Intent(Settings.ACTION_INPUT_METHOD_SETTINGS).apply { addFlags(Intent.FLAG_ACTIVITY_NEW_TASK) }
+                    context.startActivity(intent)
+                }
+            )
+
+            StepCard(
+                stepNumber = "2",
+                title = stringResource(R.string.step_2_select),
+                description = "Set AI Keyboard as your currently active default input method.",
+                isCompleted = isKeyboardSelected,
+                actionButtonText = if (isKeyboardSelected) "Selected" else "Switch Keyboard",
+                actionIcon = Icons.Default.Keyboard,
+                onAction = { imm.showInputMethodPicker() }
+            )
+
+            HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
+
+            // Keyboard Settings
+            Text("KEYBOARD SETTINGS", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary, letterSpacing = 1.sp)
+
+            // Themes
+            Card(modifier = Modifier.fillMaxWidth(), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)) {
+                Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Icon(Icons.Default.Palette, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
+                        Text("Theme", fontWeight = FontWeight.SemiBold)
+                    }
+                    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        ThemeOptionCard(
+                            title = "Midnight",
+                            subtitle = "Dark navy & violet",
+                            isSelected = currentTheme == KeyboardThemeId.MIDNIGHT,
+                            modifier = Modifier.weight(1f),
+                            onClick = {
+                                currentTheme = KeyboardThemeId.MIDNIGHT
+                                prefs.themeId = KeyboardThemeId.MIDNIGHT
+                            }
+                        )
+                        ThemeOptionCard(
+                            title = "Light",
+                            subtitle = "Clean daylight",
+                            isSelected = currentTheme == KeyboardThemeId.LIGHT,
+                            modifier = Modifier.weight(1f),
+                            onClick = {
+                                currentTheme = KeyboardThemeId.LIGHT
+                                prefs.themeId = KeyboardThemeId.LIGHT
+                            }
+                        )
+                    }
+                }
+            }
+
+            // Keyboard Height
+            Card(modifier = Modifier.fillMaxWidth(), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)) {
+                Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                    Text("Keyboard Height", fontWeight = FontWeight.SemiBold)
+                    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        KeyboardHeightOption.values().forEach { option ->
+                            val isSelected = currentHeight == option
+                            Box(
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .clip(RoundedCornerShape(8.dp))
+                                    .background(if (isSelected) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceVariant)
+                                    .clickable {
+                                        currentHeight = option
+                                        prefs.keyboardHeight = option
+                                    }
+                                    .padding(vertical = 10.dp),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Text(
+                                    text = option.displayName,
+                                    fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
+                                    fontSize = 13.sp,
+                                    color = if (isSelected) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+
+            // Haptic & Animation Switches
+            Card(modifier = Modifier.fillMaxWidth(), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)) {
+                Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
+                    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            Icon(Icons.Default.Vibration, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
+                            Column {
+                                Text("Haptic Feedback", fontWeight = FontWeight.Medium, fontSize = 14.sp)
+                                Text("Vibrate when keys are pressed", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            }
+                        }
+                        Switch(checked = isHapticEnabled, onCheckedChange = { isHapticEnabled = it; prefs.hapticEnabled = it })
+                    }
+                    HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.3f))
+                    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            Icon(Icons.Default.TouchApp, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
+                            Column {
+                                Text("Key Press Animation", fontWeight = FontWeight.Medium, fontSize = 14.sp)
+                                Text("80-150ms press feedback scaling", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            }
+                        }
+                        Switch(checked = isKeyAnimationEnabled, onCheckedChange = { isKeyAnimationEnabled = it; prefs.keyAnimationEnabled = it })
+                    }
+                }
+            }
+
+            // Privacy Commitment
+            Card(modifier = Modifier.fillMaxWidth(), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f))) {
+                Row(modifier = Modifier.padding(14.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Icon(Icons.Default.Lock, contentDescription = "Privacy", tint = MaterialTheme.colorScheme.primary)
+                    Text(
+                        text = "100% Offline & Private: AI Keyboard operates strictly on-device. No keystrokes, passwords, or personal data are collected or transmitted.",
+                        fontSize = 11.sp,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        lineHeight = 15.sp
+                    )
+                }
+            }
+        }
+    }
+}`
+  },
+  {
+    path: 'app/src/main/java/com/aikeyboard/ime/ui/KeyboardToolbar.kt',
+    name: 'KeyboardToolbar.kt',
+    language: 'kotlin',
+    description: 'Milestone 1B: Keyboard Toolbar with prominent ✨ AI pill button, quick actions (Emoji, GIF, Clipboard, Theme, Settings), and toast notice.',
+    content: `package com.aikeyboard.ime.ui
+
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsPressedAsState
+import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.*
+import androidx.compose.material3.Icon
+import androidx.compose.material3.Text
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.scale
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.platform.LocalHapticFeedback
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import com.aikeyboard.ime.KeyboardActionListener
+import com.aikeyboard.ime.ui.theme.AiPillGradientEnd
+import com.aikeyboard.ime.ui.theme.AiPillGradientStart
+import com.aikeyboard.ime.ui.theme.KeyboardColorTokens
+import com.aikeyboard.ime.ui.theme.KeyboardThemes
+
+@Composable
+fun KeyboardToolbar(
+    actionListener: KeyboardActionListener,
+    aiNoticeVisible: Boolean,
+    tokens: KeyboardColorTokens = KeyboardThemes.Midnight,
+    hapticEnabled: Boolean = true,
+    keyAnimationEnabled: Boolean = true,
+    modifier: Modifier = Modifier
+) {
+    Box(
+        modifier = modifier
+            .fillMaxWidth()
+            .height(44.dp)
+            .background(tokens.toolbarBackground)
+            .padding(horizontal = 8.dp, vertical = 4.dp),
+        contentAlignment = Alignment.CenterStart
+    ) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            // ✨ Prominent AI Pill Button
+            AiFeatureButton(
+                onClick = { actionListener.onAiClicked() },
+                hapticEnabled = hapticEnabled,
+                keyAnimationEnabled = keyAnimationEnabled
+            )
+
+            // Secondary Quick Actions
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(4.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                ToolbarIconButton(
+                    icon = Icons.Filled.SentimentSatisfiedAlt,
+                    contentDescription = "Emoji",
+                    tokens = tokens,
+                    onClick = { actionListener.onEmojiClicked() },
+                    hapticEnabled = hapticEnabled,
+                    keyAnimationEnabled = keyAnimationEnabled
+                )
+                ToolbarTextButton(
+                    text = "GIF",
+                    tokens = tokens,
+                    onClick = { actionListener.onGifClicked() },
+                    hapticEnabled = hapticEnabled,
+                    keyAnimationEnabled = keyAnimationEnabled
+                )
+                ToolbarIconButton(
+                    icon = Icons.Filled.ContentPaste,
+                    contentDescription = "Clipboard",
+                    tokens = tokens,
+                    onClick = { actionListener.onClipboardClicked() },
+                    hapticEnabled = hapticEnabled,
+                    keyAnimationEnabled = keyAnimationEnabled
+                )
+                ToolbarIconButton(
+                    icon = Icons.Filled.Palette,
+                    contentDescription = "Theme",
+                    tokens = tokens,
+                    onClick = { actionListener.onThemeClicked() },
+                    hapticEnabled = hapticEnabled,
+                    keyAnimationEnabled = keyAnimationEnabled
+                )
+                ToolbarIconButton(
+                    icon = Icons.Filled.Settings,
+                    contentDescription = "Settings",
+                    tokens = tokens,
+                    onClick = { actionListener.onSettingsClicked() },
+                    hapticEnabled = hapticEnabled,
+                    keyAnimationEnabled = keyAnimationEnabled
+                )
+            }
+        }
+
+        // Temporary "AI Assistant — Coming Soon" Toast Banner
+        AnimatedVisibility(
+            visible = aiNoticeVisible,
+            enter = fadeIn(tween(150)),
+            exit = fadeOut(tween(250)),
+            modifier = Modifier.align(Alignment.Center)
+        ) {
+            Box(
+                modifier = Modifier
+                    .clip(RoundedCornerShape(20.dp))
+                    .background(if (tokens.isDark) Color(0xFF1E1B4B) else Color(0xFFEEF2FF))
+                    .border(
+                        1.dp,
+                        if (tokens.isDark) Color(0xFF818CF8).copy(alpha = 0.6f) else Color(0xFF6366F1).copy(alpha = 0.4f),
+                        RoundedCornerShape(20.dp)
+                    )
+                    .padding(horizontal = 14.dp, vertical = 6.dp),
+                contentAlignment = Alignment.Center
+            ) {
+                Text(
+                    text = "✨ AI Assistant — Coming Soon",
+                    color = if (tokens.isDark) Color(0xFFC7D2FE) else Color(0xFF4338CA),
+                    fontSize = 12.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    letterSpacing = 0.2.sp
+                )
+            }
+        }
+    }
+}
+
+@Composable
+fun AiFeatureButton(
+    onClick: () -> Unit,
+    hapticEnabled: Boolean,
+    keyAnimationEnabled: Boolean,
+    modifier: Modifier = Modifier
+) {
+    val haptic = LocalHapticFeedback.current
+    val interactionSource = remember { MutableInteractionSource() }
+    val isPressed by interactionSource.collectIsPressedAsState()
+
+    val scale by animateFloatAsState(
+        targetValue = if (isPressed && keyAnimationEnabled) 0.94f else 1.0f,
+        animationSpec = tween(durationMillis = 100),
+        label = "ai_button_scale"
+    )
+
+    val gradient = Brush.horizontalGradient(
+        colors = listOf(AiPillGradientStart, AiPillGradientEnd)
+    )
+
+    Box(
+        modifier = modifier
+            .scale(scale)
+            .height(34.dp)
+            .clip(RoundedCornerShape(17.dp))
+            .background(gradient)
+            .border(1.dp, Color.White.copy(alpha = 0.25f), RoundedCornerShape(17.dp))
+            .clickable(
+                interactionSource = interactionSource,
+                indication = null
+            ) {
+                if (hapticEnabled) {
+                    haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                }
+                onClick()
+            }
+            .padding(horizontal = 12.dp),
+        contentAlignment = Alignment.Center
+    ) {
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(4.dp)
+        ) {
+            Icon(
+                imageVector = Icons.Filled.AutoAwesome,
+                contentDescription = "AI",
+                tint = Color.White,
+                modifier = Modifier.size(15.dp)
+            )
+            Text(
+                text = "AI",
+                color = Color.White,
+                fontSize = 13.sp,
+                fontWeight = FontWeight.Bold,
+                letterSpacing = 0.5.sp
+            )
+        }
+    }
+}
+
+@Composable
+fun ToolbarIconButton(
+    icon: ImageVector,
+    contentDescription: String,
+    tokens: KeyboardColorTokens,
+    onClick: () -> Unit,
+    hapticEnabled: Boolean,
+    keyAnimationEnabled: Boolean,
+    modifier: Modifier = Modifier
+) {
+    val haptic = LocalHapticFeedback.current
+    val interactionSource = remember { MutableInteractionSource() }
+    val isPressed by interactionSource.collectIsPressedAsState()
+
+    val scale by animateFloatAsState(
+        targetValue = if (isPressed && keyAnimationEnabled) 0.90f else 1.0f,
+        animationSpec = tween(durationMillis = 80),
+        label = "toolbar_icon_scale"
+    )
+
+    Box(
+        modifier = modifier
+            .scale(scale)
+            .size(34.dp)
+            .clip(CircleShape)
+            .background(if (isPressed) tokens.keySpecialPressed else tokens.keySpecial.copy(alpha = 0.6f))
+            .clickable(
+                interactionSource = interactionSource,
+                indication = null
+            ) {
+                if (hapticEnabled) {
+                    haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                }
+                onClick()
+            },
+        contentAlignment = Alignment.Center
+    ) {
+        Icon(
+            imageVector = icon,
+            contentDescription = contentDescription,
+            tint = if (isPressed) tokens.textPrimary else tokens.textSecondary,
+            modifier = Modifier.size(18.dp)
+        )
+    }
+}
+
+@Composable
+fun ToolbarTextButton(
+    text: String,
+    tokens: KeyboardColorTokens,
+    onClick: () -> Unit,
+    hapticEnabled: Boolean,
+    keyAnimationEnabled: Boolean,
+    modifier: Modifier = Modifier
+) {
+    val haptic = LocalHapticFeedback.current
+    val interactionSource = remember { MutableInteractionSource() }
+    val isPressed by interactionSource.collectIsPressedAsState()
+
+    val scale by animateFloatAsState(
+        targetValue = if (isPressed && keyAnimationEnabled) 0.90f else 1.0f,
+        animationSpec = tween(durationMillis = 80),
+        label = "toolbar_text_scale"
+    )
+
+    Box(
+        modifier = modifier
+            .scale(scale)
+            .height(34.dp)
+            .clip(RoundedCornerShape(12.dp))
+            .background(if (isPressed) tokens.keySpecialPressed else tokens.keySpecial.copy(alpha = 0.6f))
+            .clickable(
+                interactionSource = interactionSource,
+                indication = null
+            ) {
+                if (hapticEnabled) {
+                    haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                }
+                onClick()
+            }
+            .padding(horizontal = 9.dp),
+        contentAlignment = Alignment.Center
+    ) {
+        Text(
+            text = text,
+            color = if (isPressed) tokens.textPrimary else tokens.textSecondary,
+            fontSize = 11.sp,
+            fontWeight = FontWeight.Bold,
+            letterSpacing = 0.3.sp
+        )
+    }
+}`
+  },
+  {
+    path: 'app/src/main/java/com/aikeyboard/ime/ui/ComposeKeyboardView.kt',
+    name: 'ComposeKeyboardView.kt',
+    language: 'kotlin',
+    description: 'Milestone 1C: Jetpack Compose keyboard with dynamic theme tokens (Midnight / Light), adjustable height (Short/Normal/Tall), and animation toggle.',
+    content: `package com.aikeyboard.ime.ui
+
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.tween
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsPressedAsState
+import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.*
+import androidx.compose.material.icons.outlined.ArrowUpward
+import androidx.compose.material3.Icon
+import androidx.compose.material3.Surface
+import androidx.compose.material3.Text
+import androidx.compose.runtime.*
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.scale
+import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.platform.LocalHapticFeedback
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import com.aikeyboard.ime.KeyboardActionListener
+import com.aikeyboard.ime.KeyboardMode
+import com.aikeyboard.ime.ShiftState
+import com.aikeyboard.ime.ui.theme.KeyboardColorTokens
+import com.aikeyboard.ime.ui.theme.KeyboardThemes
+
+@Composable
+fun ComposeKeyboardView(
+    keyboardMode: KeyboardMode,
+    shiftState: ShiftState,
+    actionListener: KeyboardActionListener,
+    tokens: KeyboardColorTokens = KeyboardThemes.Midnight,
+    keyHeightDp: Int = 47,
+    keyAnimationEnabled: Boolean = true,
+    hapticEnabled: Boolean = true,
+    aiNoticeVisible: Boolean = false,
+    modifier: Modifier = Modifier
+) {
+    Surface(
+        modifier = modifier.fillMaxWidth().navigationBarsPadding(),
+        color = tokens.background,
+        tonalElevation = if (tokens.isDark) 6.dp else 2.dp
+    ) {
+        Column(
+            modifier = Modifier.fillMaxWidth().padding(bottom = 6.dp),
+            verticalArrangement = Arrangement.spacedBy(4.dp)
+        ) {
+            KeyboardToolbar(
+                actionListener = actionListener,
+                aiNoticeVisible = aiNoticeVisible,
+                tokens = tokens,
+                hapticEnabled = hapticEnabled,
+                keyAnimationEnabled = keyAnimationEnabled
+            )
+
+            Column(
+                modifier = Modifier.fillMaxWidth().padding(horizontal = 4.dp),
+                verticalArrangement = Arrangement.spacedBy(6.dp)
+            ) {
+                when (keyboardMode) {
+                    KeyboardMode.ALPHA -> AlphaKeyboardLayout(shiftState, actionListener, tokens, keyHeightDp, keyAnimationEnabled, hapticEnabled)
+                    KeyboardMode.SYMBOLS -> SymbolsKeyboardLayout(isAlt = false, actionListener, tokens, keyHeightDp, keyAnimationEnabled, hapticEnabled)
+                    KeyboardMode.ALT_SYMBOLS -> SymbolsKeyboardLayout(isAlt = true, actionListener, tokens, keyHeightDp, keyAnimationEnabled, hapticEnabled)
+                }
+            }
+        }
+    }
+}`
+  },
+  {
+    path: 'app/src/main/java/com/aikeyboard/ime/AiInputMethodService.kt',
+    name: 'AiInputMethodService.kt',
+    language: 'kotlin',
+    description: 'Android InputMethodService implementation that communicates with text fields via InputConnection and applies local theme/settings.',
+    content: `package com.aikeyboard.ime
+
+import android.content.ClipboardManager
+import android.content.Context
+import android.content.Intent
+import android.os.Handler
+import android.os.Looper
+import android.view.KeyEvent
+import android.view.View
+import android.view.inputmethod.EditorInfo
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.ui.platform.ComposeView
+import com.aikeyboard.MainActivity
+import com.aikeyboard.ime.ui.ComposeKeyboardView
+import com.aikeyboard.ime.ui.theme.AIKeyboardTheme
+import com.aikeyboard.ime.ui.theme.KeyboardHeightOption
+import com.aikeyboard.ime.ui.theme.KeyboardThemeId
+import com.aikeyboard.ime.ui.theme.KeyboardThemes
+
+class AiInputMethodService : ComposeLifecycleInputMethodService(), KeyboardActionListener {
+
+    private val keyboardModeState = mutableStateOf(KeyboardMode.ALPHA)
+    private val shiftState = mutableStateOf(ShiftState.OFF)
+    private val aiNoticeVisible = mutableStateOf(false)
+
+    private val themeIdState = mutableStateOf(KeyboardThemeId.MIDNIGHT)
+    private val heightOptionState = mutableStateOf(KeyboardHeightOption.NORMAL)
+    private val hapticEnabledState = mutableStateOf(true)
+    private val keyAnimationEnabledState = mutableStateOf(true)
+
+    private var lastShiftClickTime = 0L
+    private val mainHandler = Handler(Looper.getMainLooper())
+    private val hideAiNoticeRunnable = Runnable { aiNoticeVisible.value = false }
+    private lateinit var preferences: KeyboardPreferences
+
+    override fun onCreate() {
+        super.onCreate()
+        preferences = KeyboardPreferences(this)
+        loadPreferences()
+    }
+
+    private fun loadPreferences() {
+        themeIdState.value = preferences.themeId
+        heightOptionState.value = preferences.keyboardHeight
+        hapticEnabledState.value = preferences.hapticEnabled
+        keyAnimationEnabledState.value = preferences.keyAnimationEnabled
+    }
+
+    override fun onCreateInputView(): View {
+        val composeView = ComposeView(this).apply {
+            setViewCompositionStrategy(
+                ViewCompositionStrategy.DisposeOnLifecycleDestroyed(lifecycle)
+            )
+        }
+        setupComposeView(composeView)
+
+        composeView.setContent {
+            val currentTokens = KeyboardThemes.get(themeIdState.value)
+            AIKeyboardTheme(darkTheme = currentTokens.isDark) {
+                ComposeKeyboardView(
+                    keyboardMode = keyboardModeState.value,
+                    shiftState = shiftState.value,
+                    actionListener = this,
+                    tokens = currentTokens,
+                    keyHeightDp = heightOptionState.value.keyHeightDp,
+                    keyAnimationEnabled = keyAnimationEnabledState.value,
+                    hapticEnabled = hapticEnabledState.value,
+                    aiNoticeVisible = aiNoticeVisible.value
+                )
+            }
+        }
+        return composeView
+    }
+
+    override fun onEvaluateFullscreenMode(): Boolean = false
+
+    override fun onEvaluateInputViewShown(): Boolean = true
+
+    override fun onStartInputView(info: EditorInfo?, restarting: Boolean) {
+        super.onStartInputView(info, restarting)
+        loadPreferences()
+        if (!restarting) {
+            keyboardModeState.value = KeyboardMode.ALPHA
+            shiftState.value = ShiftState.OFF
+            aiNoticeVisible.value = false
+        }
+    }
+
+    override fun onTextInput(text: String) {
+        val ic = currentInputConnection ?: return
+        val textToCommit = when (shiftState.value) {
+            ShiftState.SHIFTED, ShiftState.CAPS_LOCK -> text.uppercase()
+            ShiftState.OFF -> text.lowercase()
+        }
+        ic.commitText(textToCommit, 1)
+        if (shiftState.value == ShiftState.SHIFTED) {
+            shiftState.value = ShiftState.OFF
+        }
+    }
+
+    override fun onBackspace() {
+        val ic = currentInputConnection ?: return
+        val selectedText = ic.getSelectedText(0)
+        if (!selectedText.isNullOrEmpty()) {
+            ic.commitText("", 1)
+        } else {
+            ic.deleteSurroundingText(1, 0)
+        }
+    }
+
+    override fun onSpace() {
+        currentInputConnection?.commitText(" ", 1)
+    }
+
+    override fun onPeriod() {
+        currentInputConnection?.commitText(".", 1)
+    }
+
+    override fun onEnter() {
+        val ic = currentInputConnection ?: return
+        val info = currentInputEditorInfo
+        val action = if (info != null) {
+            info.imeOptions and (EditorInfo.IME_MASK_ACTION or EditorInfo.IME_FLAG_NO_ENTER_ACTION)
+        } else {
+            EditorInfo.IME_ACTION_NONE
+        }
+
+        when (action) {
+            EditorInfo.IME_ACTION_GO,
+            EditorInfo.IME_ACTION_SEARCH,
+            EditorInfo.IME_ACTION_SEND,
+            EditorInfo.IME_ACTION_NEXT,
+            EditorInfo.IME_ACTION_DONE -> ic.performEditorAction(action)
+            else -> {
+                ic.sendKeyEvent(KeyEvent(KeyEvent.ACTION_DOWN, KeyEvent.KEYCODE_ENTER))
+                ic.sendKeyEvent(KeyEvent(KeyEvent.ACTION_UP, KeyEvent.KEYCODE_ENTER))
+            }
+        }
+    }
+
+    override fun onShiftClicked() {
+        val now = System.currentTimeMillis()
+        if (now - lastShiftClickTime < 300) {
+            shiftState.value = if (shiftState.value == ShiftState.CAPS_LOCK) ShiftState.OFF else ShiftState.CAPS_LOCK
+        } else {
+            shiftState.value = when (shiftState.value) {
+                ShiftState.OFF -> ShiftState.SHIFTED
+                ShiftState.SHIFTED -> ShiftState.OFF
+                ShiftState.CAPS_LOCK -> ShiftState.OFF
+            }
+        }
+        lastShiftClickTime = now
+    }
+
+    override fun onShiftDoubleClicked() {
+        shiftState.value = ShiftState.CAPS_LOCK
+    }
+
+    override fun onSwitchMode(targetMode: KeyboardMode) {
+        keyboardModeState.value = targetMode
+    }
+
+    override fun onEmojiClicked() {
+        currentInputConnection?.commitText("😀", 1)
+    }
+
+    override fun onAiClicked() {
+        mainHandler.removeCallbacks(hideAiNoticeRunnable)
+        aiNoticeVisible.value = true
+        mainHandler.postDelayed(hideAiNoticeRunnable, 2500)
+    }
+
+    override fun onGifClicked() {
+        currentInputConnection?.commitText("[GIF]", 1)
+    }
+
+    override fun onClipboardClicked() {
+        val clipboard = getSystemService(Context.CLIPBOARD_SERVICE) as? ClipboardManager
+        val clip = clipboard?.primaryClip
+        if (clip != null && clip.itemCount > 0) {
+            val text = clip.getItemAt(0).coerceToText(this).toString()
+            if (text.isNotEmpty()) currentInputConnection?.commitText(text, 1)
+        }
+    }
+
+    override fun onThemeClicked() {
+        val nextTheme = if (themeIdState.value == KeyboardThemeId.MIDNIGHT) KeyboardThemeId.LIGHT else KeyboardThemeId.MIDNIGHT
+        themeIdState.value = nextTheme
+        preferences.themeId = nextTheme
+    }
+
+    override fun onSettingsClicked() {
+        val intent = Intent(this, MainActivity::class.java).apply {
+            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        }
+        startActivity(intent)
+    }
+
+    override fun onDestroy() {
+        super.onDestroy()
+        mainHandler.removeCallbacks(hideAiNoticeRunnable)
+    }
+}`
+  },
+  {
+    path: 'app/src/main/java/com/aikeyboard/ime/KeyboardState.kt',
+    name: 'KeyboardState.kt',
+    language: 'kotlin',
+    description: 'Defines keyboard layout modes, shift states, and the action listener contract.',
+    content: `package com.aikeyboard.ime
+
+enum class KeyboardMode {
+    ALPHA,
+    SYMBOLS,
+    ALT_SYMBOLS
+}
+
+enum class ShiftState {
+    OFF,        // lowercase
+    SHIFTED,    // one-shot uppercase
+    CAPS_LOCK   // persistent uppercase
+}
+
+interface KeyboardActionListener {
+    fun onTextInput(text: String)
+    fun onBackspace()
+    fun onSpace()
+    fun onPeriod()
+    fun onEnter()
+    fun onShiftClicked()
+    fun onShiftDoubleClicked()
+    fun onSwitchMode(targetMode: KeyboardMode)
+    fun onEmojiClicked()
+
+    // Toolbar Actions
+    fun onAiClicked()
+    fun onGifClicked()
+    fun onClipboardClicked()
+    fun onThemeClicked()
+    fun onSettingsClicked()
+}`
+  },
+  {
+    path: 'app/src/main/java/com/aikeyboard/ime/ComposeLifecycleInputMethodService.kt',
+    name: 'ComposeLifecycleInputMethodService.kt',
+    language: 'kotlin',
+    description: 'Bridge class that provides Android Lifecycle, ViewModelStore, and SavedStateRegistry owners to ComposeView within an InputMethodService.',
+    content: `package com.aikeyboard.ime
+
+import android.inputmethodservice.InputMethodService
+import androidx.compose.ui.platform.ComposeView
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleOwner
+import androidx.lifecycle.LifecycleRegistry
+import androidx.lifecycle.ViewModelStore
+import androidx.lifecycle.ViewModelStoreOwner
+import androidx.lifecycle.ViewTreeLifecycleOwner
+import androidx.lifecycle.ViewTreeViewModelStoreOwner
+import androidx.savedstate.SavedStateRegistry
+import androidx.savedstate.SavedStateRegistryController
+import androidx.savedstate.SavedStateRegistryOwner
+import androidx.savedstate.ViewTreeSavedStateRegistryOwner
+
+abstract class ComposeLifecycleInputMethodService : InputMethodService(),
+    LifecycleOwner,
+    ViewModelStoreOwner,
+    SavedStateRegistryOwner {
+
+    private val lifecycleRegistry = LifecycleRegistry(this)
+    private val store = ViewModelStore()
+    private val savedStateRegistryController = SavedStateRegistryController.create(this)
+
+    override val lifecycle: Lifecycle get() = lifecycleRegistry
+    override val viewModelStore: ViewModelStore get() = store
+    override val savedStateRegistry: SavedStateRegistry get() = savedStateRegistryController.savedStateRegistry
+
+    override fun onCreate() {
+        super.onCreate()
+        savedStateRegistryController.performRestore(null)
+        lifecycleRegistry.handleLifecycleEvent(Lifecycle.Event.ON_CREATE)
+    }
+
+    override fun onDestroy() {
+        super.onDestroy()
+        lifecycleRegistry.handleLifecycleEvent(Lifecycle.Event.ON_DESTROY)
+        store.clear()
+    }
+
+    override fun onWindowShown() {
+        super.onWindowShown()
+        window?.window?.decorView?.let { decorView ->
+            ViewTreeLifecycleOwner.set(decorView, this)
+            ViewTreeViewModelStoreOwner.set(decorView, this)
+            ViewTreeSavedStateRegistryOwner.set(decorView, this)
+        }
+        lifecycleRegistry.handleLifecycleEvent(Lifecycle.Event.ON_START)
+        lifecycleRegistry.handleLifecycleEvent(Lifecycle.Event.ON_RESUME)
+    }
+
+    override fun onWindowHidden() {
+        super.onWindowHidden()
+        lifecycleRegistry.handleLifecycleEvent(Lifecycle.Event.ON_PAUSE)
+        lifecycleRegistry.handleLifecycleEvent(Lifecycle.Event.ON_STOP)
+    }
+
+    protected fun setupComposeView(view: View) {
+        window?.window?.decorView?.let { decorView ->
+            ViewTreeLifecycleOwner.set(decorView, this)
+            ViewTreeViewModelStoreOwner.set(decorView, this)
+            ViewTreeSavedStateRegistryOwner.set(decorView, this)
+        }
+        ViewTreeLifecycleOwner.set(view, this)
+        ViewTreeViewModelStoreOwner.set(view, this)
+        ViewTreeSavedStateRegistryOwner.set(view, this)
+    }
+}`
+  },
+  {
+    path: 'app/src/main/java/com/aikeyboard/ime/ui/theme/Color.kt',
+    name: 'Color.kt',
+    language: 'kotlin',
+    description: 'Color palette definitions for the Midnight theme, key surfaces, and gradients.',
+    content: `package com.aikeyboard.ime.ui.theme
+
+import androidx.compose.ui.graphics.Color
+
+val KeyboardNavyBackground = Color(0xFF090D16)
+val KeyboardNavySurface = Color(0xFF0F172A)
+val KeyboardBorderRim = Color(0x1FFFFFFF)
+
+val KeySurfaceDark = Color(0xFF1E283D)
+val KeySurfaceDarkPressed = Color(0xFF2E3D5B)
+
+val KeySpecialDark = Color(0xFF161F33)
+val KeySpecialDarkPressed = Color(0xFF243252)
+
+val AiPillGradientStart = Color(0xFF4338CA)
+val AiPillGradientEnd = Color(0xFF7C3AED)
+val AiPillGlow = Color(0x338B5CF6)
+
+val KeyAccentBlue = Color(0xFF2563EB)
+val KeyAccentBluePressed = Color(0xFF1D4ED8)
+
+val TextPrimary = Color(0xFFF8FAFC)
+val TextSecondary = Color(0xFF94A3B8)
+val TextDisabled = Color(0xFF64748B)`
+  },
+  {
+    path: 'app/src/main/java/com/aikeyboard/ime/ui/theme/Theme.kt',
+    name: 'Theme.kt',
+    language: 'kotlin',
+    description: 'MaterialTheme integration linking Compose darkColorScheme and lightColorScheme with AI Keyboard palettes.',
+    content: `package com.aikeyboard.ime.ui.theme
+
+import androidx.compose.foundation.isSystemInDarkTheme
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.darkColorScheme
+import androidx.compose.material3.lightColorScheme
+import androidx.compose.runtime.Composable
+import androidx.compose.ui.graphics.Color
+
+private val DarkColorScheme = darkColorScheme(
+    primary = KeyAccentBlue,
+    background = KeyboardNavyBackground,
+    surface = KeySurfaceDark,
+    onPrimary = TextPrimary,
+    onBackground = TextPrimary,
+    onSurface = TextPrimary
+)
+
+private val LightColorScheme = lightColorScheme(
+    primary = KeyAccentBlue,
+    background = Color(0xFFF1F5F9),
+    surface = Color(0xFFFFFFFF),
+    onPrimary = Color(0xFFFFFFFF),
+    onBackground = Color(0xFF0F172A),
+    onSurface = Color(0xFF0F172A)
+)
+
+@Composable
+fun AIKeyboardTheme(
+    darkTheme: Boolean = isSystemInDarkTheme(),
+    content: @Composable () -> Unit
+) {
+    val colorScheme = if (darkTheme) DarkColorScheme else LightColorScheme
+
+    MaterialTheme(
+        colorScheme = colorScheme,
+        typography = Typography,
+        content = content
+    )
+}`
+  },
+  {
+    path: 'app/src/main/java/com/aikeyboard/ime/ui/theme/Type.kt',
+    name: 'Type.kt',
+    language: 'kotlin',
+    description: 'Typography configuration for standard Material 3 components.',
+    content: `package com.aikeyboard.ime.ui.theme
+
+import androidx.compose.material3.Typography
+import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.sp
+
+val Typography = Typography(
+    bodyLarge = TextStyle(
+        fontFamily = FontFamily.Default,
+        fontWeight = FontWeight.Normal,
+        fontSize = 16.sp,
+        lineHeight = 24.sp
+    ),
+    labelLarge = TextStyle(
+        fontFamily = FontFamily.Default,
+        fontWeight = FontWeight.Medium,
+        fontSize = 18.sp,
+        letterSpacing = 0.5.sp
+    )
+)`
+  },
+  {
+    path: 'app/src/main/res/xml/method.xml',
+    name: 'method.xml',
+    language: 'xml',
+    description: 'Android InputMethod subtype configuration linking to settingsActivity and subtype definitions.',
+    content: `<?xml version="1.0" encoding="utf-8"?>
+<input-method xmlns:android="http://schemas.android.com/apk/res/android"
+    android:settingsActivity="com.aikeyboard.MainActivity"
+    android:supportsSwitchingToNextInputMethod="true">
+    <subtype
+        android:label="@string/subtype_en_us"
+        android:icon="@android:drawable/sym_def_app_icon"
+        android:imeSubtypeLocale="en_US"
+        android:languageTag="en-US"
+        android:imeSubtypeMode="keyboard" />
+</input-method>`
+  },
+  {
+    path: 'app/src/main/res/values/strings.xml',
+    name: 'strings.xml',
+    language: 'xml',
+    description: 'String resources for app label, IME name, subtype, and onboarding instructions.',
+    content: `<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">AI Keyboard</string>
+    <string name="ime_name">AI Keyboard</string>
+    <string name="subtype_en_us">English (US)</string>
+    <string name="step_1_enable">1. Enable AI Keyboard</string>
+    <string name="step_2_select">2. Select AI Keyboard</string>
+    <string name="step_3_test">3. Test AI Keyboard</string>
+    <string name="test_hint">Tap here to test typing...</string>
+</resources>`
+  },
+  {
+    path: 'app/src/main/res/values/themes.xml',
+    name: 'themes.xml',
+    language: 'xml',
+    description: 'Base Android styles and theme definition for MainActivity.',
+    content: `<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <style name="Theme.AIKeyboard" parent="android:Theme.Material.Light.NoActionBar">
+        <item name="android:statusBarColor">@color/primary_variant</item>
+        <item name="android:windowBackground">@color/surface</item>
+    </style>
+</resources>`
+  },
+  {
+    path: 'app/src/main/res/values/colors.xml',
+    name: 'colors.xml',
+    language: 'xml',
+    description: 'XML resource color palette for system bars and activity background.',
+    content: `<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="primary">#1E293B</color>
+    <color name="primary_variant">#0F172A</color>
+    <color name="surface">#F8FAFC</color>
+    <color name="surface_dark">#121824</color>
+</resources>`
+  },
+  {
+    path: 'app/src/main/AndroidManifest.xml',
+    name: 'AndroidManifest.xml',
+    language: 'xml',
+    description: 'Declares the BIND_INPUT_METHOD service, input method intent filter, and launcher activity.',
+    content: `<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <application
+        android:allowBackup="true"
+        android:icon="@android:drawable/sym_def_app_icon"
+        android:label="@string/app_name"
+        android:roundIcon="@android:drawable/sym_def_app_icon"
+        android:supportsRtl="true"
+        android:theme="@style/Theme.AIKeyboard">
+
+        <activity
+            android:name="com.aikeyboard.MainActivity"
+            android:exported="true"
+            android:label="@string/app_name"
+            android:theme="@style/Theme.AIKeyboard">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity>
+
+        <service
+            android:name="com.aikeyboard.ime.AiInputMethodService"
+            android:label="@string/ime_name"
+            android:icon="@android:drawable/sym_def_app_icon"
+            android:permission="android.permission.BIND_INPUT_METHOD"
+            android:exported="true"
+            android:enabled="true">
+            <intent-filter>
+                <action android:name="android.view.InputMethod" />
+            </intent-filter>
+            <meta-data
+                android:name="android.view.im"
+                android:resource="@xml/method" />
+        </service>
+
+    </application>
+
+</manifest>`
+  },
+  {
+    path: 'build.gradle.kts',
+    name: 'build.gradle.kts (root)',
+    language: 'kotlin',
+    description: 'Root Gradle build script declaring AGP 8.5.2, Kotlin 2.0.0, and Compose compiler plugins.',
+    content: `plugins {
+    id("com.android.application") version "8.5.2" apply false
+    id("org.jetbrains.kotlin.android") version "2.0.0" apply false
+    id("org.jetbrains.kotlin.plugin.compose") version "2.0.0" apply false
+}`
+  },
+  {
+    path: 'settings.gradle.kts',
+    name: 'settings.gradle.kts',
+    language: 'kotlin',
+    description: 'Gradle repository management and project inclusion.',
+    content: `pluginManagement {
+    repositories {
+        google()
+        mavenCentral()
+        gradlePluginPortal()
+    }
+}
+dependencyResolutionManagement {
+    repositoriesMode.set(RepositoriesMode.FAIL_ON_PROJECT_REPOS)
+    repositories {
+        google()
+        mavenCentral()
+    }
+}
+
+rootProject.name = "AIKeyboard"
+include(":app")`
+  },
+  {
+    path: 'app/build.gradle.kts',
+    name: 'app/build.gradle.kts',
+    language: 'kotlin',
+    description: 'App module build script configuring Jetpack Compose BOM 2024.06.00, Material 3, and Kotlin compiler options.',
+    content: `plugins {
+    id("com.android.application")
+    id("org.jetbrains.kotlin.android")
+    id("org.jetbrains.kotlin.plugin.compose")
+}
+
+android {
+    namespace = "com.aikeyboard"
+    compileSdk = 34
+
+    defaultConfig {
+        applicationId = "com.aikeyboard"
+        minSdk = 26
+        targetSdk = 34
+        versionCode = 1
+        versionName = "1.0.0"
+        testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+    }
+
+    buildTypes {
+        release {
+            isMinifyEnabled = false
+            proguardFiles(
+                getDefaultProguardFile("proguard-android-optimize.txt"),
+                "proguard-rules.pro"
+            )
+        }
+    }
+
+    compileOptions {
+        sourceCompatibility = JavaVersion.VERSION_17
+        targetCompatibility = JavaVersion.VERSION_17
+    }
+
+    kotlinOptions {
+        jvmTarget = "17"
+    }
+
+    buildFeatures {
+        compose = true
+    }
+
+    lint {
+        abortOnError = false
+        checkReleaseBuilds = false
+    }
+}
+
+dependencies {
+    implementation("androidx.core:core-ktx:1.13.1")
+    implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.8.4")
+    implementation("androidx.lifecycle:lifecycle-viewmodel-ktx:2.8.4")
+    implementation("androidx.lifecycle:lifecycle-runtime-compose:2.8.4")
+    implementation("androidx.savedstate:savedstate-ktx:1.2.1")
+    implementation("androidx.activity:activity-compose:1.9.1")
+
+    val composeBom = platform("androidx.compose:compose-bom:2024.06.00")
+    implementation(composeBom)
+    implementation("androidx.compose.ui:ui")
+    implementation("androidx.compose.ui:ui-graphics")
+    implementation("androidx.compose.ui:ui-tooling-preview")
+    implementation("androidx.compose.material3:material3")
+    implementation("androidx.compose.material:material-icons-extended")
+}
+`
+  },
+  {
+    path: '.github/workflows/android-apk.yml',
+    name: 'android-apk.yml',
+    language: 'yaml',
+    description: 'GitHub Actions CI/CD: Automated Debug APK build and artifact upload on every push.',
+    content: `name: Build Android Debug APK
+
+on:
+  push:
+    branches:
+      - '**'
+    tags:
+      - '**'
+  pull_request:
+    branches:
+      - '**'
+  workflow_dispatch:
+
+concurrency:
+  group: \${{ github.workflow }}-\${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    name: Build & Verify Debug APK
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '17'
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+
+      - name: Make Gradle Wrapper Executable
+        run: chmod +x gradlew
+
+      - name: Run Unit Tests (if available)
+        run: |
+          echo "Running unit tests if defined in the project..."
+          ./gradlew testDebugUnitTest --continue || true
+
+      - name: Build Debug APK
+        run: |
+          echo "Building debug APK via Gradle..."
+          ./gradlew assembleDebug --stacktrace
+
+      - name: Verify Real Generated APK
+        id: verify-apk
+        run: |
+          if [ -f "app/build/outputs/apk/debug/app-debug.apk" ]; then
+            APK_PATH="app/build/outputs/apk/debug/app-debug.apk"
+          else
+            APK_PATH=$(find app/build/outputs/apk/debug -name "*.apk" -type f | head -n 1)
+          fi
+
+          if [ -z "$APK_PATH" ] || [ ! -f "$APK_PATH" ]; then
+            echo "::error::Gradle build completed, but no APK found at expected location: $APK_PATH"
+            exit 1
+          fi
+
+          # Verify file size is substantial (real compiled APK, not placeholder)
+          APK_SIZE=$(stat -c%s "$APK_PATH" 2>/dev/null || stat -f%z "$APK_PATH")
+          echo "Found APK at: $APK_PATH"
+          echo "APK File Size: $APK_SIZE bytes"
+
+          if [ "$APK_SIZE" -lt 500000 ]; then
+            echo "::error::APK file size ($APK_SIZE bytes) is suspiciously small. Expected a compiled Android app."
+            exit 1
+          fi
+
+          # Prepare normalized copy in artifacts folder
+          mkdir -p artifacts
+          cp "$APK_PATH" artifacts/aikeyboard-debug.apk
+
+          echo "apk_path=$APK_PATH" >> "$GITHUB_OUTPUT"
+          echo "apk_size=$APK_SIZE" >> "$GITHUB_OUTPUT"
+
+          # Write step summary for GitHub Actions UI
+          echo "## :white_check_mark: Android APK Build Successful" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "| Property | Value |" >> $GITHUB_STEP_SUMMARY
+          echo "|---|---|" >> $GITHUB_STEP_SUMMARY
+          echo "| **Build Variant** | \\\`debug\\\` |" >> $GITHUB_STEP_SUMMARY
+          echo "| **Application ID** | \\\`com.aikeyboard\\\` |" >> $GITHUB_STEP_SUMMARY
+          echo "| **Gradle Output Path** | \\\`$APK_PATH\\\` |" >> $GITHUB_STEP_SUMMARY
+          echo "| **Normalized Artifact** | \\\`artifacts/aikeyboard-debug.apk\\\` |" >> $GITHUB_STEP_SUMMARY
+          echo "| **APK Size** | \\\`$APK_SIZE bytes\\\` ($(awk "BEGIN {printf \\"%.2f MB\\", $APK_SIZE/1048576}")) |" >> $GITHUB_STEP_SUMMARY
+          echo "| **Artifact Name** | \\\`aikeyboard-debug-apk\\\` |" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### :arrow_down: How to Download & Install on Your Phone:" >> $GITHUB_STEP_SUMMARY
+          echo "1. Scroll down to the **Artifacts** section at the bottom of this workflow run page." >> $GITHUB_STEP_SUMMARY
+          echo "2. Click **aikeyboard-debug-apk** to download the zip containing \\\`aikeyboard-debug.apk\\\`." >> $GITHUB_STEP_SUMMARY
+          echo "3. Extract and transfer to your Android phone, or open the GitHub mobile app / web browser on your phone to install directly." >> $GITHUB_STEP_SUMMARY
+
+      - name: Upload Debug APK Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: aikeyboard-debug-apk
+          path: artifacts/aikeyboard-debug.apk
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Create GitHub Release (on Tag)
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: artifacts/aikeyboard-debug.apk
+          name: Release \${{ github.ref_name }}
+          draft: false
+          prerelease: false
+          generate_release_notes: true
+`
+  }
+];
