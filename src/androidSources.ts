@@ -1533,21 +1533,42 @@ jobs:
           ./gradlew testDebugUnitTest --no-daemon --continue || true
 
       - name: Build Debug APK
+        id: gradle-build
         run: |
+          set -o pipefail
           echo "Building debug APK via Gradle..."
-          ./gradlew assembleDebug --stacktrace --no-daemon -x test
+          ./gradlew assembleDebug --stacktrace --no-daemon -x test 2>&1 | tee build.log
+
+      - name: Report Build Diagnostics on Failure
+        if: failure()
+        run: |
+          echo "## :x: Build Failed - Diagnostic Log" >> $GITHUB_STEP_SUMMARY
+          echo "### Compiler / Build Output:" >> $GITHUB_STEP_SUMMARY
+          echo "\\\`\\\`\\\`text" >> $GITHUB_STEP_SUMMARY
+          if [ -f "build.log" ]; then
+            grep -C 3 -E "e: |FAILURE:|ERROR:|Exception|Unresolved|Could not|AAPT2" build.log | head -n 50 >> $GITHUB_STEP_SUMMARY || tail -n 40 build.log >> $GITHUB_STEP_SUMMARY
+          else
+            echo "No build.log generated." >> $GITHUB_STEP_SUMMARY
+          fi
+          echo "\\\`\\\`\\\`" >> $GITHUB_STEP_SUMMARY
 
       - name: Verify Real Generated APK
         id: verify-apk
         run: |
+          echo "Searching for generated APK files..."
+          find app/build -name "*.apk" 2>/dev/null || true
+
           if [ -f "app/build/outputs/apk/debug/app-debug.apk" ]; then
             APK_PATH="app/build/outputs/apk/debug/app-debug.apk"
           else
-            APK_PATH=$(find app/build/outputs/apk/debug -name "*.apk" -type f | head -n 1)
+            APK_PATH=$(find app/build/outputs -name "*.apk" -type f 2>/dev/null | head -n 1)
           fi
 
           if [ -z "$APK_PATH" ] || [ ! -f "$APK_PATH" ]; then
-            echo "::error::Gradle build completed, but no APK found at expected location: $APK_PATH"
+            echo "::error::APK file not found. Printing recent build log:"
+            if [ -f "build.log" ]; then
+              tail -n 60 build.log
+            fi
             exit 1
           fi
 
