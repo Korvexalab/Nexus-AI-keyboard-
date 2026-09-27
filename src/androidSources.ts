@@ -1220,7 +1220,7 @@ val Typography = Typography(
     android:supportsSwitchingToNextInputMethod="true">
     <subtype
         android:label="@string/subtype_en_us"
-        android:icon="@android:drawable/sym_def_app_icon"
+        android:icon="@drawable/ic_launcher"
         android:imeSubtypeLocale="en_US"
         android:languageTag="en-US"
         android:imeSubtypeMode="keyboard" />
@@ -1256,6 +1256,60 @@ val Typography = Typography(
 </resources>`
   },
   {
+    path: 'app/src/main/res/drawable/ic_launcher.xml',
+    name: 'ic_launcher.xml',
+    language: 'xml',
+    description: 'Vector drawable application icon for AI Keyboard.',
+    content: `<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <path
+        android:fillColor="#0F172A"
+        android:pathData="M0,0h108v108h-108z" />
+    <path
+        android:fillColor="#2563EB"
+        android:pathData="M24,30h60c4.4,0 8,3.6 8,8v32c0,4.4 -3.6,8 -8,8H24c-4.4,0 -8,-3.6 -8,-8V38c0,-4.4 3.6,-8 8,-8z" />
+    <path
+        android:fillColor="#F8FAFC"
+        android:pathData="M30,42h8v6h-8z M44,42h8v6h-8z M58,42h8v6h-8z M72,42h8v6h-8z" />
+    <path
+        android:fillColor="#F8FAFC"
+        android:pathData="M34,52h8v6h-8z M48,52h8v6h-8z M62,52h8v6h-8z" />
+    <path
+        android:fillColor="#38BDF8"
+        android:pathData="M36,62h36v5h-36z" />
+</vector>`
+  },
+  {
+    path: 'app/src/main/res/drawable/ic_launcher_round.xml',
+    name: 'ic_launcher_round.xml',
+    language: 'xml',
+    description: 'Round vector drawable application icon for circular launcher devices.',
+    content: `<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <path
+        android:fillColor="#0F172A"
+        android:pathData="M54,54m-50,0a50,50 0,1 1,100 0a50,50 0,1 1,-100 0" />
+    <path
+        android:fillColor="#2563EB"
+        android:pathData="M24,30h60c4.4,0 8,3.6 8,8v32c0,4.4 -3.6,8 -8,8H24c-4.4,0 -8,-3.6 -8,-8V38c0,-4.4 3.6,-8 8,-8z" />
+    <path
+        android:fillColor="#F8FAFC"
+        android:pathData="M30,42h8v6h-8z M44,42h8v6h-8z M58,42h8v6h-8z M72,42h8v6h-8z" />
+    <path
+        android:fillColor="#F8FAFC"
+        android:pathData="M34,52h8v6h-8z M48,52h8v6h-8z M62,52h8v6h-8z" />
+    <path
+        android:fillColor="#38BDF8"
+        android:pathData="M36,62h36v5h-36z" />
+</vector>`
+  },
+  {
     path: 'app/src/main/res/values/colors.xml',
     name: 'colors.xml',
     language: 'xml',
@@ -1278,9 +1332,9 @@ val Typography = Typography(
 
     <application
         android:allowBackup="true"
-        android:icon="@android:drawable/sym_def_app_icon"
+        android:icon="@drawable/ic_launcher"
         android:label="@string/app_name"
-        android:roundIcon="@android:drawable/sym_def_app_icon"
+        android:roundIcon="@drawable/ic_launcher_round"
         android:supportsRtl="true"
         android:theme="@style/Theme.AIKeyboard">
 
@@ -1298,7 +1352,7 @@ val Typography = Typography(
         <service
             android:name="com.aikeyboard.ime.AiInputMethodService"
             android:label="@string/ime_name"
-            android:icon="@android:drawable/sym_def_app_icon"
+            android:icon="@drawable/ic_launcher"
             android:permission="android.permission.BIND_INPUT_METHOD"
             android:exported="true"
             android:enabled="true">
@@ -1455,7 +1509,7 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Set up JDK 17
-        uses: actions/setup-java@v4
+        uses: actions/setup-java@v5
         with:
           distribution: 'temurin'
           java-version: '17'
