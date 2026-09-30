@@ -116,4 +116,29 @@ class KeyboardStateTest {
         assertEquals(10, history.size)
         assertEquals("Clip 5", history[0])
     }
+
+    @Test
+    fun testAiReplyStylesAndGeneration() {
+        val styles = com.aikeyboard.ime.ai.AiReplyStyle.values()
+        assertEquals(5, styles.size)
+        assertTrue(styles.contains(com.aikeyboard.ime.ai.AiReplyStyle.REPLY))
+        assertTrue(styles.contains(com.aikeyboard.ime.ai.AiReplyStyle.FRIENDLY))
+        assertTrue(styles.contains(com.aikeyboard.ime.ai.AiReplyStyle.SHORT))
+        assertTrue(styles.contains(com.aikeyboard.ime.ai.AiReplyStyle.PROFESSIONAL))
+        assertTrue(styles.contains(com.aikeyboard.ime.ai.AiReplyStyle.FUNNY))
+
+        // Test mock replies generation for each tone
+        for (style in styles) {
+            val reply = com.aikeyboard.ime.ai.AiReplyGenerator.generateMockReply(style)
+            assertTrue(reply.isNotEmpty())
+        }
+
+        // Test mock replies with custom prompt
+        val customPrompt = "urgent response"
+        val customReply = com.aikeyboard.ime.ai.AiReplyGenerator.generateMockReply(
+            com.aikeyboard.ime.ai.AiReplyStyle.SHORT,
+            customPrompt
+        )
+        assertTrue(customReply.contains(customPrompt))
+    }
 }

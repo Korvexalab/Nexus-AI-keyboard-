@@ -33,7 +33,7 @@ export const KeyboardToolbar: React.FC<KeyboardToolbarProps> = ({
         id="toolbar-btn-ai"
         onClick={listener.onAiClicked}
         className={`relative group flex items-center gap-1.5 px-3 py-1 rounded-full bg-gradient-to-r from-indigo-600 via-indigo-500 to-purple-600 text-white font-semibold text-xs shadow-md shadow-indigo-900/30 border border-white/20 ${keyAnimationEnabled ? 'active:scale-95' : ''} transition-all duration-100 hover:brightness-110`}
-        title="AI Assistant (Coming Soon)"
+        title="Fast AI Reply"
       >
         <Sparkles className="w-3.5 h-3.5 text-amber-200 animate-pulse" />
         <span className="tracking-wide text-[11px]">AI</span>

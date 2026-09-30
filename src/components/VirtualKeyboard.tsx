@@ -2,12 +2,15 @@ import React, { useState, useRef } from 'react';
 import { KeyboardMode, ShiftState, KeyboardActionListener, KeyboardThemeId, KeyboardHeight } from '../types';
 import { ArrowUp, Clipboard, CornerDownLeft, Delete, Smile, Trash2 } from 'lucide-react';
 import { KeyboardToolbar } from './KeyboardToolbar';
+import { AiReplyPanel } from './AiReplyPanel';
+import { AiReplyStyle } from '../services/aiReplyGenerator';
 
 interface VirtualKeyboardProps {
   mode: KeyboardMode;
   shiftState: ShiftState;
   listener: KeyboardActionListener;
   aiNoticeVisible?: boolean;
+  aiPanelVisible?: boolean;
   enterLabel?: string;
   theme?: KeyboardThemeId;
   height?: KeyboardHeight;
@@ -90,6 +93,7 @@ export const VirtualKeyboard: React.FC<VirtualKeyboardProps> = ({
   shiftState,
   listener,
   aiNoticeVisible = false,
+  aiPanelVisible = false,
   enterLabel = 'Enter',
   theme = 'midnight',
   height = 'normal',
@@ -97,6 +101,62 @@ export const VirtualKeyboard: React.FC<VirtualKeyboardProps> = ({
   hapticEnabled = true
 }) => {
   const keyboardRef = useRef<HTMLDivElement>(null);
+
+  // Milestone 2: AI Reply Panel State
+  const [selectedAiStyle, setSelectedAiStyle] = useState<AiReplyStyle>('reply');
+  const [customPrompt, setCustomPrompt] = useState<string>('');
+  const [isPromptFocused, setIsPromptFocused] = useState<boolean>(false);
+
+  const handleAiGenerate = () => {
+    if (listener.onAiGenerate) {
+      listener.onAiGenerate(selectedAiStyle, customPrompt);
+    }
+    setIsPromptFocused(false);
+    setCustomPrompt('');
+  };
+
+  // Intercept keyboard typing into custom prompt when focused
+  const effectiveListener: KeyboardActionListener = {
+    ...listener,
+    onTextInput: (text: string) => {
+      if (isPromptFocused) {
+        setCustomPrompt((prev) => prev + text);
+        if (shiftState === 'SHIFTED') {
+          listener.onShiftClicked();
+        }
+      } else {
+        listener.onTextInput(text);
+      }
+    },
+    onBackspace: () => {
+      if (isPromptFocused) {
+        setCustomPrompt((prev) => prev.slice(0, -1));
+      } else {
+        listener.onBackspace();
+      }
+    },
+    onSpace: () => {
+      if (isPromptFocused) {
+        setCustomPrompt((prev) => prev + ' ');
+      } else {
+        effectiveListener.onSpace();
+      }
+    },
+    onPeriod: () => {
+      if (isPromptFocused) {
+        setCustomPrompt((prev) => prev + '.');
+      } else {
+        effectiveListener.onPeriod();
+      }
+    },
+    onEnter: () => {
+      if (isPromptFocused) {
+        handleAiGenerate();
+      } else {
+        effectiveListener.onEnter();
+      }
+    }
+  };
 
   // Currently held-down key for visual feedback
   const [activeKey, setActiveKey] = useState<string | null>(null);
@@ -125,14 +185,14 @@ export const VirtualKeyboard: React.FC<VirtualKeyboardProps> = ({
     setActiveKey('backspace');
     triggerHaptic();
     // 1. Initial single deletion
-    listener.onBackspace();
+    effectiveListener.onBackspace();
 
     // 2. Wait 400ms (350-500ms range)
     backspaceTimerRef.current = window.setTimeout(() => {
       // 3. Continuous deletion every 65ms (50-100ms range)
       backspaceIntervalRef.current = window.setInterval(() => {
         triggerHaptic();
-        listener.onBackspace();
+        effectiveListener.onBackspace();
       }, 65);
     }, 400);
   };
@@ -321,6 +381,29 @@ export const VirtualKeyboard: React.FC<VirtualKeyboardProps> = ({
         isLight ? 'bg-[#F1F5F9] border-slate-300 text-slate-900' : 'bg-[#090D16] border-slate-800/80 text-white'
       } border-t shadow-2xl flex flex-col font-sans transition-colors duration-200 relative`}
     >
+      {/* Milestone 2: Compact AI Reply Panel situated directly above the keyboard */}
+      {aiPanelVisible && (
+        <AiReplyPanel
+          selectedStyle={selectedAiStyle}
+          onSelectStyle={setSelectedAiStyle}
+          customPrompt={customPrompt}
+          onClearPrompt={() => setCustomPrompt('')}
+          isPromptFocused={isPromptFocused}
+          onTogglePromptFocus={setIsPromptFocused}
+          onGenerate={handleAiGenerate}
+          onClose={() => {
+            setIsPromptFocused(false);
+            if (listener.onCloseAiPanel) {
+              listener.onCloseAiPanel();
+            } else {
+              listener.onAiClicked();
+            }
+          }}
+          theme={theme}
+          keyAnimationEnabled={keyAnimationEnabled}
+        />
+      )}
+
       {/* Milestone 1B & 1C Toolbar with Theme & Settings Hooks */}
       <KeyboardToolbar
         listener={listener}
@@ -366,7 +449,7 @@ export const VirtualKeyboard: React.FC<VirtualKeyboardProps> = ({
                     <button
                       id={`key-${char}`}
                       onPointerDown={(e) => handleKeyPointerDown(e, displayChar)}
-                      onClick={(e) => handleKeyPress(displayChar, () => listener.onTextInput(displayChar), e)}
+                      onClick={(e) => handleKeyPress(displayChar, () => effectiveListener.onTextInput(displayChar), e)}
                       className={`w-full ${heightClass} rounded-[9px] flex items-center justify-center font-medium transition-all duration-100 border ${getStandardKeyStyle(
                         isPressed
                       )}`}
@@ -388,7 +471,7 @@ export const VirtualKeyboard: React.FC<VirtualKeyboardProps> = ({
                     <button
                       id={`key-${char}`}
                       onPointerDown={(e) => handleKeyPointerDown(e, displayChar)}
-                      onClick={(e) => handleKeyPress(displayChar, () => listener.onTextInput(displayChar), e)}
+                      onClick={(e) => handleKeyPress(displayChar, () => effectiveListener.onTextInput(displayChar), e)}
                       className={`w-full ${heightClass} rounded-[9px] flex items-center justify-center font-medium transition-all duration-100 border ${getStandardKeyStyle(
                         isPressed
                       )}`}
@@ -433,7 +516,7 @@ export const VirtualKeyboard: React.FC<VirtualKeyboardProps> = ({
                     <button
                       id={`key-${char}`}
                       onPointerDown={(e) => handleKeyPointerDown(e, displayChar)}
-                      onClick={(e) => handleKeyPress(displayChar, () => listener.onTextInput(displayChar), e)}
+                      onClick={(e) => handleKeyPress(displayChar, () => effectiveListener.onTextInput(displayChar), e)}
                       className={`w-full ${heightClass} rounded-[9px] flex items-center justify-center font-medium transition-all duration-100 border ${getStandardKeyStyle(
                         isPressed
                       )}`}
@@ -475,7 +558,7 @@ export const VirtualKeyboard: React.FC<VirtualKeyboardProps> = ({
                     key={char}
                     id={`key-sym-${char}`}
                     onPointerDown={(e) => handleKeyPointerDown(e, char)}
-                    onClick={(e) => handleKeyPress(char, () => listener.onTextInput(char), e)}
+                    onClick={(e) => handleKeyPress(char, () => effectiveListener.onTextInput(char), e)}
                     className={`flex-1 ${heightClass} rounded-[9px] flex items-center justify-center font-medium transition-all duration-100 border ${getStandardKeyStyle(
                       isPressed
                     )}`}
@@ -495,7 +578,7 @@ export const VirtualKeyboard: React.FC<VirtualKeyboardProps> = ({
                     key={char}
                     id={`key-sym-${char}`}
                     onPointerDown={(e) => handleKeyPointerDown(e, char)}
-                    onClick={(e) => handleKeyPress(char, () => listener.onTextInput(char), e)}
+                    onClick={(e) => handleKeyPress(char, () => effectiveListener.onTextInput(char), e)}
                     className={`flex-1 ${heightClass} rounded-[9px] flex items-center justify-center font-medium transition-all duration-100 border ${getStandardKeyStyle(
                       isPressed
                     )}`}
@@ -529,7 +612,7 @@ export const VirtualKeyboard: React.FC<VirtualKeyboardProps> = ({
                     key={char}
                     id={`key-sym-${char}`}
                     onPointerDown={(e) => handleKeyPointerDown(e, char)}
-                    onClick={(e) => handleKeyPress(char, () => listener.onTextInput(char), e)}
+                    onClick={(e) => handleKeyPress(char, () => effectiveListener.onTextInput(char), e)}
                     className={`flex-1 ${heightClass} rounded-[9px] flex items-center justify-center font-medium transition-all duration-100 border ${getStandardKeyStyle(
                       isPressed
                     )}`}
@@ -569,7 +652,7 @@ export const VirtualKeyboard: React.FC<VirtualKeyboardProps> = ({
                     key={char}
                     id={`key-altsym-${char}`}
                     onPointerDown={(e) => handleKeyPointerDown(e, char)}
-                    onClick={(e) => handleKeyPress(char, () => listener.onTextInput(char), e)}
+                    onClick={(e) => handleKeyPress(char, () => effectiveListener.onTextInput(char), e)}
                     className={`flex-1 ${heightClass} rounded-[9px] flex items-center justify-center font-medium transition-all duration-100 border ${getStandardKeyStyle(
                       isPressed
                     )}`}
@@ -589,7 +672,7 @@ export const VirtualKeyboard: React.FC<VirtualKeyboardProps> = ({
                     key={char}
                     id={`key-altsym-${char}`}
                     onPointerDown={(e) => handleKeyPointerDown(e, char)}
-                    onClick={(e) => handleKeyPress(char, () => listener.onTextInput(char), e)}
+                    onClick={(e) => handleKeyPress(char, () => effectiveListener.onTextInput(char), e)}
                     className={`flex-1 ${heightClass} rounded-[9px] flex items-center justify-center font-medium transition-all duration-100 border ${getStandardKeyStyle(
                       isPressed
                     )}`}
@@ -623,7 +706,7 @@ export const VirtualKeyboard: React.FC<VirtualKeyboardProps> = ({
                     key={char}
                     id={`key-altsym-${char}`}
                     onPointerDown={(e) => handleKeyPointerDown(e, char)}
-                    onClick={(e) => handleKeyPress(char, () => listener.onTextInput(char), e)}
+                    onClick={(e) => handleKeyPress(char, () => effectiveListener.onTextInput(char), e)}
                     className={`flex-1 ${heightClass} rounded-[9px] flex items-center justify-center font-medium transition-all duration-100 border ${getStandardKeyStyle(
                       isPressed
                     )}`}
@@ -691,7 +774,7 @@ export const VirtualKeyboard: React.FC<VirtualKeyboardProps> = ({
               {EMOJI_CATEGORIES.find((c) => c.id === activeCategory)?.emojis.map((emoji, index) => (
                 <button
                   key={`${emoji}-${index}`}
-                  onClick={() => handleKeyPress(emoji, () => listener.onTextInput(emoji))}
+                  onClick={() => handleKeyPress(emoji, () => effectiveListener.onTextInput(emoji))}
                   className={`h-10 rounded-lg text-2xl flex items-center justify-center transition-transform hover:scale-115 active:scale-95 ${
                     isLight ? 'hover:bg-slate-100' : 'hover:bg-white/10'
                   }`}
@@ -722,7 +805,7 @@ export const VirtualKeyboard: React.FC<VirtualKeyboardProps> = ({
                   setActiveKey('space');
                   triggerHaptic();
                 }}
-                onClick={() => handleKeyPress('space', listener.onSpace)}
+                onClick={() => handleKeyPress('space', effectiveListener.onSpace)}
                 className={`flex-1 ${specialHeightClass} rounded-[9px] flex items-center justify-center text-xs tracking-wider uppercase font-medium transition-all duration-100 border ${
                   isLight
                     ? activeKey === 'space'
@@ -755,7 +838,7 @@ export const VirtualKeyboard: React.FC<VirtualKeyboardProps> = ({
                   setActiveKey('enter');
                   triggerHaptic();
                 }}
-                onClick={() => handleKeyPress('enter', listener.onEnter)}
+                onClick={() => handleKeyPress('enter', effectiveListener.onEnter)}
                 className={`w-16 ${specialHeightClass} rounded-[9px] flex items-center justify-center font-semibold text-xs transition-all duration-100 border gap-1 shadow-md ${
                   activeKey === 'enter'
                     ? `bg-blue-700 text-white border-blue-300 ${keyAnimationEnabled ? 'scale-95' : ''}`
@@ -896,7 +979,7 @@ export const VirtualKeyboard: React.FC<VirtualKeyboardProps> = ({
             <button
               id="key-comma"
               onPointerDown={(e) => handleKeyPointerDown(e, ',')}
-              onClick={(e) => handleKeyPress(',', () => listener.onTextInput(','), e)}
+              onClick={(e) => handleKeyPress(',', () => effectiveListener.onTextInput(','), e)}
               className={`w-11 ${specialHeightClass} rounded-[9px] flex items-center justify-center font-bold text-xl transition-all duration-100 border ${getStandardKeyStyle(
                 activeKey === ','
               )}`}
@@ -911,7 +994,7 @@ export const VirtualKeyboard: React.FC<VirtualKeyboardProps> = ({
                 setActiveKey('space');
                 triggerHaptic();
               }}
-              onClick={() => handleKeyPress('space', listener.onSpace)}
+              onClick={() => handleKeyPress('space', effectiveListener.onSpace)}
               className={`flex-1 ${specialHeightClass} rounded-[9px] flex items-center justify-center text-xs tracking-wider uppercase font-medium transition-all duration-100 border ${
                 isLight
                   ? activeKey === 'space'
@@ -929,7 +1012,7 @@ export const VirtualKeyboard: React.FC<VirtualKeyboardProps> = ({
             <button
               id="key-period"
               onPointerDown={(e) => handleKeyPointerDown(e, '.')}
-              onClick={(e) => handleKeyPress('.', listener.onPeriod, e)}
+              onClick={(e) => handleKeyPress('.', effectiveListener.onPeriod, e)}
               className={`w-11 ${specialHeightClass} rounded-[9px] flex items-center justify-center font-bold text-xl transition-all duration-100 border ${getStandardKeyStyle(
                 activeKey === '.'
               )}`}
@@ -944,7 +1027,7 @@ export const VirtualKeyboard: React.FC<VirtualKeyboardProps> = ({
                 setActiveKey('enter');
                 triggerHaptic();
               }}
-              onClick={() => handleKeyPress('enter', listener.onEnter)}
+              onClick={() => handleKeyPress('enter', effectiveListener.onEnter)}
               className={`w-16 ${specialHeightClass} rounded-[9px] flex items-center justify-center font-semibold text-xs transition-all duration-100 border gap-1 shadow-md ${
                 activeKey === 'enter'
                   ? `bg-blue-700 text-white border-blue-300 ${keyAnimationEnabled ? 'scale-95' : ''}`

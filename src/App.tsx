@@ -27,6 +27,7 @@ import {
 } from 'lucide-react';
 import JSZip from 'jszip';
 import { ANDROID_FILES } from './androidSources';
+import { AiReplyGenerator, AiReplyStyle } from './services/aiReplyGenerator';
 
 export default function App() {
   // Navigation tabs for desktop view
@@ -74,7 +75,8 @@ export default function App() {
     keyAnimationEnabled: true
   });
 
-  // AI Notice Banner
+  // Milestone 2: AI Reply Panel State
+  const [aiPanelVisible, setAiPanelVisible] = useState<boolean>(false);
   const [aiNoticeVisible, setAiNoticeVisible] = useState<boolean>(false);
   const aiNoticeTimeoutRef = useRef<number | null>(null);
 
@@ -318,17 +320,38 @@ export default function App() {
       addLog('KeyboardMode', 'Toggled EMOJI picker interface', 'state');
     },
 
-    // Milestone 1B & 1C: Toolbar Actions
+    // Milestone 2: AI Reply Actions
     onAiClicked: () => {
       playClickSound();
-      if (aiNoticeTimeoutRef.current) {
-        window.clearTimeout(aiNoticeTimeoutRef.current);
+      setAiPanelVisible((prev) => !prev);
+      addLog('Toolbar: AI', `✨ AI button clicked -> ${!aiPanelVisible ? 'Opened' : 'Closed'} Fast AI Reply panel`, 'action');
+    },
+
+    onCloseAiPanel: () => {
+      setAiPanelVisible(false);
+      addLog('AI Reply', 'Closed AI Reply panel', 'state');
+    },
+
+    onAiGenerate: (style: string, customPrompt: string) => {
+      playClickSound();
+      const mockReply = AiReplyGenerator.generateMockReply(style as AiReplyStyle, customPrompt);
+
+      if (appTarget === 'gmail' && activeField === 'subject') {
+        setEmailSubject((prev) => prev + (prev.length > 0 && !prev.endsWith(' ') ? ' ' : '') + mockReply);
+        addLog('ic.commitText()', `commitText("${mockReply}", 1) [AI Reply inserted to Subject]`, 'commit');
+      } else {
+        setText((prev) => {
+          const before = prev.slice(0, cursorPos);
+          const after = prev.slice(cursorPos);
+          const insertion = (before.length > 0 && !before.endsWith(' ') ? ' ' : '') + mockReply;
+          setCursorPos(before.length + insertion.length);
+          return before + insertion + after;
+        });
+        addLog('ic.commitText()', `commitText("${mockReply}", 1) [AI Reply inserted directly into chat bar]`, 'commit');
       }
-      setAiNoticeVisible(true);
-      addLog('Toolbar: AI', '✨ AI button clicked -> Showing "AI Assistant — Coming Soon"', 'action');
-      aiNoticeTimeoutRef.current = window.setTimeout(() => {
-        setAiNoticeVisible(false);
-      }, 2500);
+
+      // Close the AI panel so the normal keyboard is immediately available
+      setAiPanelVisible(false);
     },
 
     onGifClicked: () => {
@@ -495,28 +518,28 @@ export default function App() {
               <Sparkles className="w-4 h-4" />
             </div>
             <div>
-              <h2 className="text-sm font-semibold text-slate-100">Milestone 1C Deliverables</h2>
+              <h2 className="text-sm font-semibold text-slate-100">Milestone 2 Deliverables — Fast AI Reply</h2>
               <p className="text-xs text-slate-400">
-                Midnight &amp; Light themes, local SharedPreferences, interactive Onboarding wizard, and zero telemetry.
+                Compact AI reply panel, 5 tone styles, custom prompt typing with IME, and direct InputConnection insertion.
               </p>
             </div>
           </div>
 
           <div className="flex flex-wrap items-center gap-2 text-xs">
+            <span className="px-2.5 py-1 rounded-lg bg-slate-800/80 text-amber-300 border border-amber-500/20 flex items-center gap-1 font-medium">
+              <Sparkles className="w-3 h-3 text-amber-400" /> ✨ AI Reply Panel
+            </span>
             <span className="px-2.5 py-1 rounded-lg bg-slate-800/80 text-indigo-400 border border-indigo-500/20 flex items-center gap-1">
-              <CheckCircle2 className="w-3 h-3 text-emerald-400" /> Themes: Midnight &amp; Light
+              <CheckCircle2 className="w-3 h-3 text-emerald-400" /> 5 Reply Tones
             </span>
             <span className="px-2.5 py-1 rounded-lg bg-slate-800/80 text-slate-300 border border-slate-700/60 flex items-center gap-1">
-              <CheckCircle2 className="w-3 h-3 text-emerald-400" /> Height: Short / Normal / Tall
+              <CheckCircle2 className="w-3 h-3 text-emerald-400" /> Custom Prompt Input
             </span>
             <span className="px-2.5 py-1 rounded-lg bg-slate-800/80 text-slate-300 border border-slate-700/60 flex items-center gap-1">
-              <CheckCircle2 className="w-3 h-3 text-emerald-400" /> Haptic &amp; Animation Toggles
-            </span>
-            <span className="px-2.5 py-1 rounded-lg bg-slate-800/80 text-slate-300 border border-slate-700/60 flex items-center gap-1">
-              <CheckCircle2 className="w-3 h-3 text-emerald-400" /> Onboarding Setup Wizard
+              <CheckCircle2 className="w-3 h-3 text-emerald-400" /> Direct ic.commitText()
             </span>
             <span className="px-2.5 py-1 rounded-lg bg-slate-800/80 text-emerald-400 border border-emerald-500/20 flex items-center gap-1">
-              <ShieldCheck className="w-3.5 h-3.5 text-emerald-400" /> 100% Local &amp; Private
+              <ShieldCheck className="w-3.5 h-3.5 text-emerald-400" /> Zero Network / Offline Mock
             </span>
             <button
               onClick={() => setActiveTab('cicd')}
@@ -562,6 +585,7 @@ export default function App() {
                 shiftState={shiftState}
                 keyboardListener={keyboardListener}
                 aiNoticeVisible={aiNoticeVisible}
+                aiPanelVisible={aiPanelVisible}
                 isImeEnabledInSettings={isImeEnabledInSettings}
                 onToggleImeInSettings={() => {
                   const next = !isImeEnabledInSettings;

@@ -12,6 +12,8 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.ui.platform.ComposeView
 import androidx.compose.ui.platform.ViewCompositionStrategy
 import com.aikeyboard.MainActivity
+import com.aikeyboard.ime.ai.AiReplyGenerator
+import com.aikeyboard.ime.ai.AiReplyStyle
 import com.aikeyboard.ime.ui.ComposeKeyboardView
 import com.aikeyboard.ime.ui.theme.AIKeyboardTheme
 import com.aikeyboard.ime.ui.theme.KeyboardHeightOption
@@ -28,6 +30,7 @@ class AiInputMethodService : ComposeLifecycleInputMethodService(), KeyboardActio
     private val keyboardModeState = mutableStateOf(KeyboardMode.ALPHA)
     private val shiftState = mutableStateOf(ShiftState.OFF)
     private val aiNoticeVisible = mutableStateOf(false)
+    private val aiPanelVisible = mutableStateOf(false)
 
     // Milestone 1C: Dynamic Local Settings
     private val themeIdState = mutableStateOf(KeyboardThemeId.MIDNIGHT)
@@ -77,6 +80,7 @@ class AiInputMethodService : ComposeLifecycleInputMethodService(), KeyboardActio
                     keyAnimationEnabled = keyAnimationEnabledState.value,
                     hapticEnabled = hapticEnabledState.value,
                     aiNoticeVisible = aiNoticeVisible.value,
+                    aiPanelVisible = aiPanelVisible.value,
                     preferences = preferences
                 )
             }
@@ -97,6 +101,7 @@ class AiInputMethodService : ComposeLifecycleInputMethodService(), KeyboardActio
             keyboardModeState.value = KeyboardMode.ALPHA
             shiftState.value = ShiftState.OFF
             aiNoticeVisible.value = false
+            aiPanelVisible.value = false
         }
     }
 
@@ -195,9 +200,28 @@ class AiInputMethodService : ComposeLifecycleInputMethodService(), KeyboardActio
     // --- Toolbar Actions ---
 
     override fun onAiClicked() {
-        mainHandler.removeCallbacks(hideAiNoticeRunnable)
-        aiNoticeVisible.value = true
-        mainHandler.postDelayed(hideAiNoticeRunnable, 2500)
+        // Milestone 2: Toggle the compact AI reply panel
+        aiPanelVisible.value = !aiPanelVisible.value
+    }
+
+    override fun onCloseAiPanel() {
+        aiPanelVisible.value = false
+    }
+
+    override fun onAiGenerate(style: String, customPrompt: String) {
+        val replyStyle = AiReplyStyle.fromString(style)
+        val mockReply = AiReplyGenerator.generateMockReply(replyStyle, customPrompt)
+
+        val ic = currentInputConnection ?: return
+        val selectedText = ic.getSelectedText(0)
+        if (!selectedText.isNullOrEmpty()) {
+            ic.commitText(mockReply, 1)
+        } else {
+            ic.commitText(mockReply, 1)
+        }
+
+        // Close AI panel after insertion, leaving user on normal keyboard ready to edit or send
+        aiPanelVisible.value = false
     }
 
     override fun onGifClicked() {

@@ -2,6 +2,480 @@ import { AndroidFileEntry } from './types';
 
 export const ANDROID_FILES: AndroidFileEntry[] = [
   {
+    path: 'app/src/main/java/com/aikeyboard/ime/ai/AiReplyGenerator.kt',
+    name: 'AiReplyGenerator.kt',
+    language: 'kotlin',
+    description: 'Milestone 2: Modular AI reply generator supporting 5 styles (Reply, Friendly, Short, Professional, Funny) and custom user prompts.',
+    content: `package com.aikeyboard.ime.ai
+
+/**
+ * Milestone 2: Fast AI Reply Styles.
+ * Supported reply tones for one-tap smart generation.
+ */
+enum class AiReplyStyle(val displayName: String) {
+    REPLY("Reply"),
+    FRIENDLY("Friendly"),
+    SHORT("Short"),
+    PROFESSIONAL("Professional"),
+    FUNNY("Funny");
+
+    companion object {
+        fun fromString(name: String): AiReplyStyle {
+            return values().firstOrNull { it.name.equals(name, ignoreCase = true) } ?: REPLY
+        }
+    }
+}
+
+/**
+ * Milestone 2 — Fast AI Reply Generator.
+ *
+ * Provides structured mock generation logic for testing the compact UI interaction
+ * and direct InputConnection insertion.
+ * Designed with a clean modular interface so it can be seamlessly replaced with
+ * the real Gemini generation function in subsequent milestone prompts.
+ *
+ * No network calls, no background threads, no external dependencies.
+ */
+object AiReplyGenerator {
+
+    /**
+     * Generates a realistic mock reply based on the selected tone and optional user instruction.
+     */
+    fun generateMockReply(style: AiReplyStyle, customPrompt: String = ""): String {
+        val prompt = customPrompt.trim()
+
+        return if (prompt.isNotEmpty()) {
+            when (style) {
+                AiReplyStyle.REPLY -> "Thanks for reaching out! Regarding '$prompt', I'll get back to you shortly."
+                AiReplyStyle.FRIENDLY -> "Hey there! That sounds awesome ($prompt), can't wait! 😊✨"
+                AiReplyStyle.SHORT -> "Got it ($prompt) — on it!"
+                AiReplyStyle.PROFESSIONAL -> "Thank you for the update. With regard to '$prompt', I have reviewed the details and will follow up accordingly."
+                AiReplyStyle.FUNNY -> "Say no more! Working my magic on '$prompt' as we speak! 😂🚀"
+            }
+        } else {
+            when (style) {
+                AiReplyStyle.REPLY -> "Sounds good! I'll get back to you shortly."
+                AiReplyStyle.FRIENDLY -> "Hey there! That sounds awesome, can't wait to catch up! 😊"
+                AiReplyStyle.SHORT -> "Sounds good, thanks!"
+                AiReplyStyle.PROFESSIONAL -> "Thank you for the update. I have reviewed the details and will proceed accordingly."
+                AiReplyStyle.FUNNY -> "Plot twist: I actually agree with you on this one! 😂"
+            }
+        }
+    }
+}
+`
+  },
+  {
+    path: 'app/src/main/java/com/aikeyboard/ime/ui/AiReplyPanelView.kt',
+    name: 'AiReplyPanelView.kt',
+    language: 'kotlin',
+    description: 'Milestone 2: Compact AI reply panel composable docked above the keyboard with style selectors, custom prompt typing, and Generate button.',
+    content: `package com.aikeyboard.ime.ui
+
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.tween
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsPressedAsState
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.AutoAwesome
+import androidx.compose.material.icons.filled.Clear
+import androidx.compose.material.icons.filled.Close
+import androidx.compose.material3.Icon
+import androidx.compose.material3.Text
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.scale
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.platform.LocalHapticFeedback
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import com.aikeyboard.ime.ai.AiReplyStyle
+import com.aikeyboard.ime.ui.theme.AiPillGradientEnd
+import com.aikeyboard.ime.ui.theme.AiPillGradientStart
+import com.aikeyboard.ime.ui.theme.KeyboardColorTokens
+
+/**
+ * Milestone 2: Compact AI Reply Panel
+ *
+ * Docked directly above the keyboard:
+ * ┌─────────────────────────────────────┐
+ * │ ✨ AI Reply                    ×    │
+ * ├─────────────────────────────────────┤
+ * │ [ Reply ] [ Friendly ] [ Short ]   │
+ * │ [ Professional ] [ Funny ]         │
+ * │                                     │
+ * │ Custom prompt                       │
+ * │ ┌─────────────────────────────────┐ │
+ * │ │ e.g. make this sound warmer... │ │
+ * │ └─────────────────────────────────┘ │
+ * │                                     │
+ * │             Generate ✨             │
+ * └─────────────────────────────────────┘
+ *
+ * Fast, compact, phone-friendly, completely offline mock generator for Milestone 2.
+ */
+@Composable
+fun AiReplyPanelView(
+    selectedStyle: AiReplyStyle,
+    onSelectStyle: (AiReplyStyle) -> Unit,
+    customPrompt: String,
+    onClearPrompt: () -> Unit,
+    isPromptFocused: Boolean,
+    onTogglePromptFocus: (Boolean) -> Unit,
+    onGenerate: (AiReplyStyle, String) -> Unit,
+    onClose: () -> Unit,
+    tokens: KeyboardColorTokens,
+    hapticEnabled: Boolean = true,
+    keyAnimationEnabled: Boolean = true,
+    modifier: Modifier = Modifier
+) {
+    val haptic = LocalHapticFeedback.current
+
+    val panelShape = RoundedCornerShape(topStart = 16.dp, topEnd = 16.dp, bottomStart = 8.dp, bottomEnd = 8.dp)
+    val panelBg = if (tokens.isDark) Color(0xFF0F172A) else Color(0xFFF8FAFC)
+    val panelBorder = if (tokens.isDark) Color(0x33818CF8) else Color(0x40CBD5E1)
+
+    Column(
+        modifier = modifier
+            .fillMaxWidth()
+            .clip(panelShape)
+            .background(panelBg)
+            .border(1.dp, panelBorder, panelShape)
+            .padding(horizontal = 12.dp, vertical = 8.dp),
+        verticalArrangement = Arrangement.spacedBy(8.dp)
+    ) {
+        // 1. Header: ✨ AI Reply + Close (×) button
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(6.dp)
+            ) {
+                Icon(
+                    imageVector = Icons.Filled.AutoAwesome,
+                    contentDescription = null,
+                    tint = if (tokens.isDark) Color(0xFFFDE047) else Color(0xFFD97706),
+                    modifier = Modifier.size(16.dp)
+                )
+                Text(
+                    text = "AI Reply",
+                    fontSize = 14.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = tokens.textPrimary
+                )
+            }
+
+            // Close button (×)
+            Box(
+                modifier = Modifier
+                    .size(26.dp)
+                    .clip(CircleShape)
+                    .background(if (tokens.isDark) Color(0xFF1E283D) else Color(0xFFE2E8F0))
+                    .clickable {
+                        if (hapticEnabled) haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                        onClose()
+                    },
+                contentAlignment = Alignment.Center
+            ) {
+                Icon(
+                    imageVector = Icons.Filled.Close,
+                    contentDescription = "Close AI Panel",
+                    tint = tokens.textSecondary,
+                    modifier = Modifier.size(14.dp)
+                )
+            }
+        }
+
+        // 2. Reply Style Buttons (Single Selection with subtle highlighted state)
+        // Row A: [ Reply ] [ Friendly ] [ Short ]
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(6.dp)
+        ) {
+            listOf(AiReplyStyle.REPLY, AiReplyStyle.FRIENDLY, AiReplyStyle.SHORT).forEach { style ->
+                StyleChip(
+                    style = style,
+                    isSelected = selectedStyle == style,
+                    onClick = {
+                        if (hapticEnabled) haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                        onSelectStyle(style)
+                    },
+                    tokens = tokens,
+                    keyAnimationEnabled = keyAnimationEnabled,
+                    modifier = Modifier.weight(1f)
+                )
+            }
+        }
+
+        // Row B: [ Professional ] [ Funny ]
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(6.dp)
+        ) {
+            listOf(AiReplyStyle.PROFESSIONAL, AiReplyStyle.FUNNY).forEach { style ->
+                StyleChip(
+                    style = style,
+                    isSelected = selectedStyle == style,
+                    onClick = {
+                        if (hapticEnabled) haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                        onSelectStyle(style)
+                    },
+                    tokens = tokens,
+                    keyAnimationEnabled = keyAnimationEnabled,
+                    modifier = Modifier.weight(1f)
+                )
+            }
+        }
+
+        // 3. Custom Prompt Field (Works seamlessly with IME keyboard typing)
+        Column(verticalArrangement = Arrangement.spacedBy(3.dp)) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    text = "Custom prompt",
+                    fontSize = 11.sp,
+                    fontWeight = FontWeight.Medium,
+                    color = tokens.textSecondary
+                )
+                if (isPromptFocused) {
+                    Text(
+                        text = "Keyboard typing active",
+                        fontSize = 10.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        color = if (tokens.isDark) Color(0xFF818CF8) else Color(0xFF4F46E5)
+                    )
+                }
+            }
+
+            val promptFieldShape = RoundedCornerShape(8.dp)
+            val promptBorderColor = if (isPromptFocused) {
+                if (tokens.isDark) Color(0xFF818CF8) else Color(0xFF4F46E5)
+            } else {
+                tokens.borderRim
+            }
+            val promptBg = if (tokens.isDark) Color(0xFF1E283D) else Color(0xFFFFFFFF)
+
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(36.dp)
+                    .clip(promptFieldShape)
+                    .background(promptBg)
+                    .border(if (isPromptFocused) 1.5.dp else 1.dp, promptBorderColor, promptFieldShape)
+                    .clickable {
+                        if (hapticEnabled) haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                        onTogglePromptFocus(!isPromptFocused)
+                    }
+                    .padding(horizontal = 10.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
+                Box(
+                    modifier = Modifier.weight(1f),
+                    contentAlignment = Alignment.CenterStart
+                ) {
+                    if (customPrompt.isEmpty()) {
+                        Text(
+                            text = "e.g. make this sound warmer...",
+                            fontSize = 12.sp,
+                            color = tokens.textSecondary.copy(alpha = 0.7f),
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                    } else {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text(
+                                text = customPrompt,
+                                fontSize = 12.sp,
+                                fontWeight = FontWeight.Normal,
+                                color = tokens.textPrimary,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                            if (isPromptFocused) {
+                                Text(
+                                    text = "|",
+                                    fontSize = 12.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = if (tokens.isDark) Color(0xFF818CF8) else Color(0xFF4F46E5)
+                                )
+                            }
+                        }
+                    }
+                }
+
+                if (customPrompt.isNotEmpty()) {
+                    Box(
+                        modifier = Modifier
+                            .size(20.dp)
+                            .clip(CircleShape)
+                            .background(if (tokens.isDark) Color(0xFF2E3D5B) else Color(0xFFE2E8F0))
+                            .clickable {
+                                if (hapticEnabled) haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                onClearPrompt()
+                            },
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Icon(
+                            imageVector = Icons.Filled.Clear,
+                            contentDescription = "Clear Prompt",
+                            tint = tokens.textSecondary,
+                            modifier = Modifier.size(12.dp)
+                        )
+                    }
+                }
+            }
+        }
+
+        // 4. Generate Button: Generate ✨
+        val interactionSource = remember { MutableInteractionSource() }
+        val isPressed by interactionSource.collectIsPressedAsState()
+        val scale by animateFloatAsState(
+            targetValue = if (isPressed && keyAnimationEnabled) 0.96f else 1.0f,
+            animationSpec = tween(100),
+            label = "generate_btn_scale"
+        )
+
+        val btnShape = RoundedCornerShape(10.dp)
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(38.dp)
+                .scale(scale)
+                .clip(btnShape)
+                .background(
+                    Brush.horizontalGradient(
+                        listOf(AiPillGradientStart, AiPillGradientEnd)
+                    )
+                )
+                .clickable(
+                    interactionSource = interactionSource,
+                    indication = null
+                ) {
+                    if (hapticEnabled) {
+                        haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                    }
+                    onGenerate(selectedStyle, customPrompt)
+                },
+            contentAlignment = Alignment.Center
+        ) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(6.dp)
+            ) {
+                Text(
+                    text = "Generate",
+                    fontSize = 13.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = Color.White
+                )
+                Icon(
+                    imageVector = Icons.Filled.AutoAwesome,
+                    contentDescription = null,
+                    tint = Color(0xFFFDE047),
+                    modifier = Modifier.size(14.dp)
+                )
+            }
+        }
+    }
+}
+
+/**
+ * Individual Reply Tone Style Chip with subtle selected highlight.
+ */
+@Composable
+private fun StyleChip(
+    style: AiReplyStyle,
+    isSelected: Boolean,
+    onClick: () -> Unit,
+    tokens: KeyboardColorTokens,
+    keyAnimationEnabled: Boolean,
+    modifier: Modifier = Modifier
+) {
+    val interactionSource = remember { MutableInteractionSource() }
+    val isPressed by interactionSource.collectIsPressedAsState()
+    val scale by animateFloatAsState(
+        targetValue = if (isPressed && keyAnimationEnabled) 0.95f else 1.0f,
+        animationSpec = tween(80),
+        label = "chip_scale"
+    )
+
+    val chipShape = RoundedCornerShape(8.dp)
+
+    val bgColor = if (isSelected) {
+        if (tokens.isDark) Color(0xFF312E81) else Color(0xFFDBEAFE)
+    } else {
+        tokens.keySurface
+    }
+
+    val borderColor = if (isSelected) {
+        if (tokens.isDark) Color(0xFF818CF8) else Color(0xFF3B82F6)
+    } else {
+        tokens.borderRim
+    }
+
+    val textColor = if (isSelected) {
+        if (tokens.isDark) Color(0xFFEEF2FF) else Color(0xFF1E40AF)
+    } else {
+        tokens.textSecondary
+    }
+
+    Box(
+        modifier = modifier
+            .height(30.dp)
+            .scale(scale)
+            .clip(chipShape)
+            .background(bgColor)
+            .border(if (isSelected) 1.5.dp else 1.dp, borderColor, chipShape)
+            .clickable(
+                interactionSource = interactionSource,
+                indication = null,
+                onClick = onClick
+            ),
+        contentAlignment = Alignment.Center
+    ) {
+        Text(
+            text = style.displayName,
+            fontSize = 11.sp,
+            fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
+            color = textColor,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis
+        )
+    }
+}
+`
+  },
+
+  {
     path: 'app/src/main/java/com/aikeyboard/ime/ui/theme/KeyboardTheme.kt',
     name: 'KeyboardTheme.kt',
     language: 'kotlin',
@@ -742,7 +1216,7 @@ fun ToolbarTextButton(
     path: 'app/src/main/java/com/aikeyboard/ime/ui/ComposeKeyboardView.kt',
     name: 'ComposeKeyboardView.kt',
     language: 'kotlin',
-    description: 'Milestone 1D: Jetpack Compose keyboard with exact measured layout-anchored character popup preview, dedicated comma key, usable emoji picker, and bottom row proportions.',
+    description: 'Milestone 2: Jetpack Compose keyboard with compact AI reply panel, exact measured character popups, and long-press repeat backspace.',
     content: `package com.aikeyboard.ime.ui
 
 import androidx.compose.animation.core.animateFloatAsState
@@ -814,6 +1288,7 @@ import com.aikeyboard.ime.KeyboardActionListener
 import com.aikeyboard.ime.KeyboardMode
 import com.aikeyboard.ime.KeyboardPreferences
 import com.aikeyboard.ime.ShiftState
+import com.aikeyboard.ime.ai.AiReplyStyle
 import com.aikeyboard.ime.ui.theme.KeyboardColorTokens
 import com.aikeyboard.ime.ui.theme.KeyboardThemes
 import kotlinx.coroutines.Job
@@ -839,11 +1314,63 @@ fun ComposeKeyboardView(
     keyAnimationEnabled: Boolean = true,
     hapticEnabled: Boolean = true,
     aiNoticeVisible: Boolean = false,
+    aiPanelVisible: Boolean = false,
     preferences: KeyboardPreferences? = null,
     modifier: Modifier = Modifier
 ) {
     var rootCoordinates by remember { mutableStateOf<LayoutCoordinates?>(null) }
     var activePopupInfo by remember { mutableStateOf<ActiveKeyPopupInfo?>(null) }
+
+    // Milestone 2: AI Reply Panel State
+    var selectedAiStyle by remember { mutableStateOf(AiReplyStyle.REPLY) }
+    var customPromptText by remember { mutableStateOf("") }
+    var isCustomPromptFocused by remember { mutableStateOf(false) }
+
+    // Intercept keyboard typing when user is editing custom prompt in AI Reply Panel
+    val effectiveListener: KeyboardActionListener = remember(
+        actionListener,
+        isCustomPromptFocused,
+        customPromptText,
+        shiftState,
+        selectedAiStyle
+    ) {
+        if (!isCustomPromptFocused) {
+            actionListener
+        } else {
+            object : KeyboardActionListener by actionListener {
+                override fun onTextInput(text: String) {
+                    val toAdd = when (shiftState) {
+                        ShiftState.SHIFTED, ShiftState.CAPS_LOCK -> text.uppercase()
+                        ShiftState.OFF -> text.lowercase()
+                    }
+                    customPromptText += toAdd
+                    if (shiftState == ShiftState.SHIFTED) {
+                        actionListener.onShiftClicked()
+                    }
+                }
+
+                override fun onBackspace() {
+                    if (customPromptText.isNotEmpty()) {
+                        customPromptText = customPromptText.dropLast(1)
+                    }
+                }
+
+                override fun onSpace() {
+                    customPromptText += " "
+                }
+
+                override fun onPeriod() {
+                    customPromptText += "."
+                }
+
+                override fun onEnter() {
+                    actionListener.onAiGenerate(selectedAiStyle.name, customPromptText)
+                    isCustomPromptFocused = false
+                    customPromptText = ""
+                }
+            }
+        }
+    }
 
     val onKeyBoundsChanged: (Boolean, String, LayoutCoordinates?) -> Unit = remember(rootCoordinates) {
         { isPressed, char, keyCoords ->
@@ -886,6 +1413,30 @@ fun ComposeKeyboardView(
                     .padding(bottom = 6.dp),
                 verticalArrangement = Arrangement.spacedBy(4.dp)
             ) {
+                // Milestone 2: Compact AI Reply Panel situated above toolbar & keyboard
+                if (aiPanelVisible) {
+                    AiReplyPanelView(
+                        selectedStyle = selectedAiStyle,
+                        onSelectStyle = { selectedAiStyle = it },
+                        customPrompt = customPromptText,
+                        onClearPrompt = { customPromptText = "" },
+                        isPromptFocused = isCustomPromptFocused,
+                        onTogglePromptFocus = { isCustomPromptFocused = it },
+                        onGenerate = { style, prompt ->
+                            actionListener.onAiGenerate(style.name, prompt)
+                            isCustomPromptFocused = false
+                            customPromptText = ""
+                        },
+                        onClose = {
+                            actionListener.onCloseAiPanel()
+                            isCustomPromptFocused = false
+                        },
+                        tokens = tokens,
+                        hapticEnabled = hapticEnabled,
+                        keyAnimationEnabled = keyAnimationEnabled
+                    )
+                }
+
                 // Keyboard Toolbar with AI button and shortcuts
                 KeyboardToolbar(
                     actionListener = actionListener,
@@ -904,19 +1455,19 @@ fun ComposeKeyboardView(
                 ) {
                     when (keyboardMode) {
                         KeyboardMode.ALPHA -> {
-                            AlphaKeyboardLayout(shiftState, actionListener, tokens, keyHeightDp, keyAnimationEnabled, hapticEnabled, onKeyBoundsChanged)
+                            AlphaKeyboardLayout(shiftState, effectiveListener, tokens, keyHeightDp, keyAnimationEnabled, hapticEnabled, onKeyBoundsChanged)
                         }
                         KeyboardMode.SYMBOLS -> {
-                            SymbolsKeyboardLayout(isAlt = false, actionListener, tokens, keyHeightDp, keyAnimationEnabled, hapticEnabled, onKeyBoundsChanged)
+                            SymbolsKeyboardLayout(isAlt = false, effectiveListener, tokens, keyHeightDp, keyAnimationEnabled, hapticEnabled, onKeyBoundsChanged)
                         }
                         KeyboardMode.ALT_SYMBOLS -> {
-                            SymbolsKeyboardLayout(isAlt = true, actionListener, tokens, keyHeightDp, keyAnimationEnabled, hapticEnabled, onKeyBoundsChanged)
+                            SymbolsKeyboardLayout(isAlt = true, effectiveListener, tokens, keyHeightDp, keyAnimationEnabled, hapticEnabled, onKeyBoundsChanged)
                         }
                         KeyboardMode.EMOJI -> {
-                            EmojiKeyboardLayout(actionListener, tokens, keyHeightDp, keyAnimationEnabled, hapticEnabled)
+                            EmojiKeyboardLayout(effectiveListener, tokens, keyHeightDp, keyAnimationEnabled, hapticEnabled)
                         }
                         KeyboardMode.CLIPBOARD -> {
-                            ClipboardPanelView(preferences, actionListener, tokens, keyHeightDp, hapticEnabled)
+                            ClipboardPanelView(preferences, effectiveListener, tokens, keyHeightDp, hapticEnabled)
                         }
                     }
                 }
@@ -1120,17 +1671,17 @@ private fun SymbolsKeyboardLayout(
     val row1 = if (!isAlt) {
         listOf("1", "2", "3", "4", "5", "6", "7", "8", "9", "0")
     } else {
-        listOf("~", "\`", "|", "\\", "^", "=", "<", ">", "{", "}")
+        listOf("~", "\`", "|", "\\\\", "^", "=", "<", ">", "{", "}")
     }
 
     val row2 = if (!isAlt) {
         listOf("@", "#", "$", "%", "&", "-", "+", "(", ")")
     } else {
-        listOf("[", "]", "*", "/", "\"", "'", ":", ";", "!", "?")
+        listOf("[", "]", "*", "/", "\\"", "'", ":", ";", "!", "?")
     }
 
     val row3 = if (!isAlt) {
-        listOf("*", "\"", "'", ":", ";", "!", "?")
+        listOf("*", "\\"", "'", ":", ";", "!", "?")
     } else {
         listOf("_", "€", "£", "¥", "§", "©", "®")
     }
@@ -1179,7 +1730,7 @@ private fun SymbolsKeyboardLayout(
         verticalAlignment = Alignment.CenterVertically
     ) {
         SpecialKey(
-            text = if (!isAlt) "=\\<" else "?123",
+            text = if (!isAlt) "=\\\\<" else "?123",
             modifier = Modifier.weight(1.5f),
             tokens = tokens,
             keyHeightDp = keyHeightDp,
@@ -1978,6 +2529,8 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.ui.platform.ComposeView
 import androidx.compose.ui.platform.ViewCompositionStrategy
 import com.aikeyboard.MainActivity
+import com.aikeyboard.ime.ai.AiReplyGenerator
+import com.aikeyboard.ime.ai.AiReplyStyle
 import com.aikeyboard.ime.ui.ComposeKeyboardView
 import com.aikeyboard.ime.ui.theme.AIKeyboardTheme
 import com.aikeyboard.ime.ui.theme.KeyboardHeightOption
@@ -1994,6 +2547,7 @@ class AiInputMethodService : ComposeLifecycleInputMethodService(), KeyboardActio
     private val keyboardModeState = mutableStateOf(KeyboardMode.ALPHA)
     private val shiftState = mutableStateOf(ShiftState.OFF)
     private val aiNoticeVisible = mutableStateOf(false)
+    private val aiPanelVisible = mutableStateOf(false)
 
     // Milestone 1C: Dynamic Local Settings
     private val themeIdState = mutableStateOf(KeyboardThemeId.MIDNIGHT)
@@ -2043,6 +2597,7 @@ class AiInputMethodService : ComposeLifecycleInputMethodService(), KeyboardActio
                     keyAnimationEnabled = keyAnimationEnabledState.value,
                     hapticEnabled = hapticEnabledState.value,
                     aiNoticeVisible = aiNoticeVisible.value,
+                    aiPanelVisible = aiPanelVisible.value,
                     preferences = preferences
                 )
             }
@@ -2063,6 +2618,7 @@ class AiInputMethodService : ComposeLifecycleInputMethodService(), KeyboardActio
             keyboardModeState.value = KeyboardMode.ALPHA
             shiftState.value = ShiftState.OFF
             aiNoticeVisible.value = false
+            aiPanelVisible.value = false
         }
     }
 
@@ -2161,9 +2717,28 @@ class AiInputMethodService : ComposeLifecycleInputMethodService(), KeyboardActio
     // --- Toolbar Actions ---
 
     override fun onAiClicked() {
-        mainHandler.removeCallbacks(hideAiNoticeRunnable)
-        aiNoticeVisible.value = true
-        mainHandler.postDelayed(hideAiNoticeRunnable, 2500)
+        // Milestone 2: Toggle the compact AI reply panel
+        aiPanelVisible.value = !aiPanelVisible.value
+    }
+
+    override fun onCloseAiPanel() {
+        aiPanelVisible.value = false
+    }
+
+    override fun onAiGenerate(style: String, customPrompt: String) {
+        val replyStyle = AiReplyStyle.fromString(style)
+        val mockReply = AiReplyGenerator.generateMockReply(replyStyle, customPrompt)
+
+        val ic = currentInputConnection ?: return
+        val selectedText = ic.getSelectedText(0)
+        if (!selectedText.isNullOrEmpty()) {
+            ic.commitText(mockReply, 1)
+        } else {
+            ic.commitText(mockReply, 1)
+        }
+
+        // Close AI panel after insertion, leaving user on normal keyboard ready to edit or send
+        aiPanelVisible.value = false
     }
 
     override fun onGifClicked() {
@@ -2263,6 +2838,10 @@ interface KeyboardActionListener {
     fun onClipboardClicked()
     fun onThemeClicked()
     fun onSettingsClicked()
+
+    // Milestone 2: AI Reply Panel Actions
+    fun onAiGenerate(style: String, customPrompt: String) {}
+    fun onCloseAiPanel() {}
 }
 `
   },
@@ -2984,6 +3563,32 @@ class KeyboardStateTest {
         assertEquals(10, history.size)
         assertEquals("Clip 5", history[0])
     }
-}`
+
+    @Test
+    fun testAiReplyStylesAndGeneration() {
+        val styles = com.aikeyboard.ime.ai.AiReplyStyle.values()
+        assertEquals(5, styles.size)
+        assertTrue(styles.contains(com.aikeyboard.ime.ai.AiReplyStyle.REPLY))
+        assertTrue(styles.contains(com.aikeyboard.ime.ai.AiReplyStyle.FRIENDLY))
+        assertTrue(styles.contains(com.aikeyboard.ime.ai.AiReplyStyle.SHORT))
+        assertTrue(styles.contains(com.aikeyboard.ime.ai.AiReplyStyle.PROFESSIONAL))
+        assertTrue(styles.contains(com.aikeyboard.ime.ai.AiReplyStyle.FUNNY))
+
+        // Test mock replies generation for each tone
+        for (style in styles) {
+            val reply = com.aikeyboard.ime.ai.AiReplyGenerator.generateMockReply(style)
+            assertTrue(reply.isNotEmpty())
+        }
+
+        // Test mock replies with custom prompt
+        val customPrompt = "urgent response"
+        val customReply = com.aikeyboard.ime.ai.AiReplyGenerator.generateMockReply(
+            com.aikeyboard.ime.ai.AiReplyStyle.SHORT,
+            customPrompt
+        )
+        assertTrue(customReply.contains(customPrompt))
+    }
+}
+`
   }
 ];

@@ -15,6 +15,7 @@ interface AndroidDeviceFrameProps {
   shiftState: ShiftState;
   keyboardListener: KeyboardActionListener;
   aiNoticeVisible?: boolean;
+  aiPanelVisible?: boolean;
   isImeEnabledInSettings: boolean;
   onToggleImeInSettings: () => void;
   isImeSelected: boolean;
@@ -40,6 +41,7 @@ export const AndroidDeviceFrame: React.FC<AndroidDeviceFrameProps> = ({
   shiftState,
   keyboardListener,
   aiNoticeVisible = false,
+  aiPanelVisible = false,
   isImeEnabledInSettings,
   onToggleImeInSettings,
   isImeSelected,
@@ -169,6 +171,7 @@ export const AndroidDeviceFrame: React.FC<AndroidDeviceFrameProps> = ({
             shiftState={shiftState}
             listener={keyboardListener}
             aiNoticeVisible={aiNoticeVisible}
+            aiPanelVisible={aiPanelVisible}
             enterLabel={enterLabel}
             theme={settings.theme}
             height={settings.height}

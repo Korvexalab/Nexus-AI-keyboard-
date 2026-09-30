@@ -69,6 +69,7 @@ import com.aikeyboard.ime.KeyboardActionListener
 import com.aikeyboard.ime.KeyboardMode
 import com.aikeyboard.ime.KeyboardPreferences
 import com.aikeyboard.ime.ShiftState
+import com.aikeyboard.ime.ai.AiReplyStyle
 import com.aikeyboard.ime.ui.theme.KeyboardColorTokens
 import com.aikeyboard.ime.ui.theme.KeyboardThemes
 import kotlinx.coroutines.Job
@@ -94,11 +95,63 @@ fun ComposeKeyboardView(
     keyAnimationEnabled: Boolean = true,
     hapticEnabled: Boolean = true,
     aiNoticeVisible: Boolean = false,
+    aiPanelVisible: Boolean = false,
     preferences: KeyboardPreferences? = null,
     modifier: Modifier = Modifier
 ) {
     var rootCoordinates by remember { mutableStateOf<LayoutCoordinates?>(null) }
     var activePopupInfo by remember { mutableStateOf<ActiveKeyPopupInfo?>(null) }
+
+    // Milestone 2: AI Reply Panel State
+    var selectedAiStyle by remember { mutableStateOf(AiReplyStyle.REPLY) }
+    var customPromptText by remember { mutableStateOf("") }
+    var isCustomPromptFocused by remember { mutableStateOf(false) }
+
+    // Intercept keyboard typing when user is editing custom prompt in AI Reply Panel
+    val effectiveListener: KeyboardActionListener = remember(
+        actionListener,
+        isCustomPromptFocused,
+        customPromptText,
+        shiftState,
+        selectedAiStyle
+    ) {
+        if (!isCustomPromptFocused) {
+            actionListener
+        } else {
+            object : KeyboardActionListener by actionListener {
+                override fun onTextInput(text: String) {
+                    val toAdd = when (shiftState) {
+                        ShiftState.SHIFTED, ShiftState.CAPS_LOCK -> text.uppercase()
+                        ShiftState.OFF -> text.lowercase()
+                    }
+                    customPromptText += toAdd
+                    if (shiftState == ShiftState.SHIFTED) {
+                        actionListener.onShiftClicked()
+                    }
+                }
+
+                override fun onBackspace() {
+                    if (customPromptText.isNotEmpty()) {
+                        customPromptText = customPromptText.dropLast(1)
+                    }
+                }
+
+                override fun onSpace() {
+                    customPromptText += " "
+                }
+
+                override fun onPeriod() {
+                    customPromptText += "."
+                }
+
+                override fun onEnter() {
+                    actionListener.onAiGenerate(selectedAiStyle.name, customPromptText)
+                    isCustomPromptFocused = false
+                    customPromptText = ""
+                }
+            }
+        }
+    }
 
     val onKeyBoundsChanged: (Boolean, String, LayoutCoordinates?) -> Unit = remember(rootCoordinates) {
         { isPressed, char, keyCoords ->
@@ -141,6 +194,30 @@ fun ComposeKeyboardView(
                     .padding(bottom = 6.dp),
                 verticalArrangement = Arrangement.spacedBy(4.dp)
             ) {
+                // Milestone 2: Compact AI Reply Panel situated above toolbar & keyboard
+                if (aiPanelVisible) {
+                    AiReplyPanelView(
+                        selectedStyle = selectedAiStyle,
+                        onSelectStyle = { selectedAiStyle = it },
+                        customPrompt = customPromptText,
+                        onClearPrompt = { customPromptText = "" },
+                        isPromptFocused = isCustomPromptFocused,
+                        onTogglePromptFocus = { isCustomPromptFocused = it },
+                        onGenerate = { style, prompt ->
+                            actionListener.onAiGenerate(style.name, prompt)
+                            isCustomPromptFocused = false
+                            customPromptText = ""
+                        },
+                        onClose = {
+                            actionListener.onCloseAiPanel()
+                            isCustomPromptFocused = false
+                        },
+                        tokens = tokens,
+                        hapticEnabled = hapticEnabled,
+                        keyAnimationEnabled = keyAnimationEnabled
+                    )
+                }
+
                 // Keyboard Toolbar with AI button and shortcuts
                 KeyboardToolbar(
                     actionListener = actionListener,
@@ -159,19 +236,19 @@ fun ComposeKeyboardView(
                 ) {
                     when (keyboardMode) {
                         KeyboardMode.ALPHA -> {
-                            AlphaKeyboardLayout(shiftState, actionListener, tokens, keyHeightDp, keyAnimationEnabled, hapticEnabled, onKeyBoundsChanged)
+                            AlphaKeyboardLayout(shiftState, effectiveListener, tokens, keyHeightDp, keyAnimationEnabled, hapticEnabled, onKeyBoundsChanged)
                         }
                         KeyboardMode.SYMBOLS -> {
-                            SymbolsKeyboardLayout(isAlt = false, actionListener, tokens, keyHeightDp, keyAnimationEnabled, hapticEnabled, onKeyBoundsChanged)
+                            SymbolsKeyboardLayout(isAlt = false, effectiveListener, tokens, keyHeightDp, keyAnimationEnabled, hapticEnabled, onKeyBoundsChanged)
                         }
                         KeyboardMode.ALT_SYMBOLS -> {
-                            SymbolsKeyboardLayout(isAlt = true, actionListener, tokens, keyHeightDp, keyAnimationEnabled, hapticEnabled, onKeyBoundsChanged)
+                            SymbolsKeyboardLayout(isAlt = true, effectiveListener, tokens, keyHeightDp, keyAnimationEnabled, hapticEnabled, onKeyBoundsChanged)
                         }
                         KeyboardMode.EMOJI -> {
-                            EmojiKeyboardLayout(actionListener, tokens, keyHeightDp, keyAnimationEnabled, hapticEnabled)
+                            EmojiKeyboardLayout(effectiveListener, tokens, keyHeightDp, keyAnimationEnabled, hapticEnabled)
                         }
                         KeyboardMode.CLIPBOARD -> {
-                            ClipboardPanelView(preferences, actionListener, tokens, keyHeightDp, hapticEnabled)
+                            ClipboardPanelView(preferences, effectiveListener, tokens, keyHeightDp, hapticEnabled)
                         }
                     }
                 }

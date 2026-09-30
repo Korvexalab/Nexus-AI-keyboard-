@@ -48,4 +48,8 @@ export interface KeyboardActionListener {
   onClipboardClicked: () => void;
   onThemeClicked: () => void;
   onSettingsClicked: () => void;
+
+  // Milestone 2: AI Reply Panel Actions
+  onAiGenerate?: (style: string, customPrompt: string) => void;
+  onCloseAiPanel?: () => void;
 }

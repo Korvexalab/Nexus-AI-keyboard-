@@ -42,4 +42,8 @@ interface KeyboardActionListener {
     fun onClipboardClicked()
     fun onThemeClicked()
     fun onSettingsClicked()
+
+    // Milestone 2: AI Reply Panel Actions
+    fun onAiGenerate(style: String, customPrompt: String) {}
+    fun onCloseAiPanel() {}
 }
