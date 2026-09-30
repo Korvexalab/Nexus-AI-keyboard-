@@ -314,10 +314,8 @@ export default function App() {
 
     onEmojiClicked: () => {
       playClickSound();
-      const emoji = '😀';
-      setText((prev) => prev + emoji);
-      setCursorPos((prev) => prev + emoji.length);
-      addLog('ic.commitText()', `commitText("${emoji}", 1)`, 'commit');
+      setKeyboardMode((prev) => (prev === 'EMOJI' ? 'ALPHA' : 'EMOJI'));
+      addLog('KeyboardMode', 'Toggled EMOJI picker interface', 'state');
     },
 
     // Milestone 1B & 1C: Toolbar Actions

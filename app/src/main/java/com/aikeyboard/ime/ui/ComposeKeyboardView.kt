@@ -5,16 +5,24 @@ import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.lazy.grid.GridCells
+import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
+import androidx.compose.foundation.lazy.grid.items
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowForward
@@ -26,8 +34,11 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -36,15 +47,27 @@ import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.layout.LayoutCoordinates
+import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.zIndex
 import com.aikeyboard.ime.KeyboardActionListener
 import com.aikeyboard.ime.KeyboardMode
 import com.aikeyboard.ime.ShiftState
 import com.aikeyboard.ime.ui.theme.KeyboardColorTokens
 import com.aikeyboard.ime.ui.theme.KeyboardThemes
+
+data class ActiveKeyPopupInfo(
+    val char: String,
+    val x: Float,
+    val y: Float,
+    val keyWidth: Float,
+    val keyHeight: Float
+)
 
 @Composable
 fun ComposeKeyboardView(
@@ -58,46 +81,143 @@ fun ComposeKeyboardView(
     aiNoticeVisible: Boolean = false,
     modifier: Modifier = Modifier
 ) {
-    Surface(
+    var rootCoordinates by remember { mutableStateOf<LayoutCoordinates?>(null) }
+    var activePopupInfo by remember { mutableStateOf<ActiveKeyPopupInfo?>(null) }
+
+    val onKeyBoundsChanged: (Boolean, String, LayoutCoordinates?) -> Unit = remember(rootCoordinates) {
+        { isPressed, char, keyCoords ->
+            if (isPressed && keyCoords != null && rootCoordinates != null) {
+                val root = rootCoordinates!!
+                if (keyCoords.isAttached && root.isAttached) {
+                    val offset = root.localPositionOf(keyCoords, androidx.compose.ui.geometry.Offset.Zero)
+                    activePopupInfo = ActiveKeyPopupInfo(
+                        char = char,
+                        x = offset.x,
+                        y = offset.y,
+                        keyWidth = keyCoords.size.width.toFloat(),
+                        keyHeight = keyCoords.size.height.toFloat()
+                    )
+                }
+            } else {
+                if (!isPressed && activePopupInfo?.char.equals(char, ignoreCase = true)) {
+                    activePopupInfo = null
+                }
+            }
+        }
+    }
+
+    Box(
         modifier = modifier
             .fillMaxWidth()
-            .navigationBarsPadding(),
-        color = tokens.background,
-        tonalElevation = if (tokens.isDark) 6.dp else 2.dp
+            .navigationBarsPadding()
+            .onGloballyPositioned { coords ->
+                rootCoordinates = coords
+            }
     ) {
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(bottom = 6.dp),
-            verticalArrangement = Arrangement.spacedBy(4.dp)
+        Surface(
+            modifier = Modifier.fillMaxWidth(),
+            color = tokens.background,
+            tonalElevation = if (tokens.isDark) 6.dp else 2.dp
         ) {
-            // Keyboard Toolbar with prominent AI button
-            KeyboardToolbar(
-                actionListener = actionListener,
-                aiNoticeVisible = aiNoticeVisible,
-                tokens = tokens,
-                hapticEnabled = hapticEnabled,
-                keyAnimationEnabled = keyAnimationEnabled
-            )
-
-            // Keys Container
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(horizontal = 4.dp),
-                verticalArrangement = Arrangement.spacedBy(6.dp)
+                    .padding(bottom = 6.dp),
+                verticalArrangement = Arrangement.spacedBy(4.dp)
             ) {
-                when (keyboardMode) {
-                    KeyboardMode.ALPHA -> {
-                        AlphaKeyboardLayout(shiftState, actionListener, tokens, keyHeightDp, keyAnimationEnabled, hapticEnabled)
-                    }
-                    KeyboardMode.SYMBOLS -> {
-                        SymbolsKeyboardLayout(isAlt = false, actionListener, tokens, keyHeightDp, keyAnimationEnabled, hapticEnabled)
-                    }
-                    KeyboardMode.ALT_SYMBOLS -> {
-                        SymbolsKeyboardLayout(isAlt = true, actionListener, tokens, keyHeightDp, keyAnimationEnabled, hapticEnabled)
+                // Keyboard Toolbar with AI button and shortcuts
+                KeyboardToolbar(
+                    actionListener = actionListener,
+                    aiNoticeVisible = aiNoticeVisible,
+                    tokens = tokens,
+                    hapticEnabled = hapticEnabled,
+                    keyAnimationEnabled = keyAnimationEnabled
+                )
+
+                // Keys Container
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 4.dp),
+                    verticalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    when (keyboardMode) {
+                        KeyboardMode.ALPHA -> {
+                            AlphaKeyboardLayout(shiftState, actionListener, tokens, keyHeightDp, keyAnimationEnabled, hapticEnabled, onKeyBoundsChanged)
+                        }
+                        KeyboardMode.SYMBOLS -> {
+                            SymbolsKeyboardLayout(isAlt = false, actionListener, tokens, keyHeightDp, keyAnimationEnabled, hapticEnabled, onKeyBoundsChanged)
+                        }
+                        KeyboardMode.ALT_SYMBOLS -> {
+                            SymbolsKeyboardLayout(isAlt = true, actionListener, tokens, keyHeightDp, keyAnimationEnabled, hapticEnabled, onKeyBoundsChanged)
+                        }
+                        KeyboardMode.EMOJI -> {
+                            EmojiKeyboardLayout(actionListener, tokens, keyHeightDp, keyAnimationEnabled, hapticEnabled)
+                        }
                     }
                 }
+            }
+        }
+
+        // M1D Anchored Key Press Enlarged Character Popup Preview
+        if (keyAnimationEnabled && activePopupInfo != null) {
+            val popup = activePopupInfo!!
+            val density = LocalDensity.current
+
+            val defaultPopupWidthDp = 44.dp
+            val defaultPopupHeightDp = 48.dp
+            val gapDp = 4.dp
+            val edgePaddingDp = 4.dp
+
+            val defaultPopupWidthPx = with(density) { defaultPopupWidthDp.toPx() }
+            val defaultPopupHeightPx = with(density) { defaultPopupHeightDp.toPx() }
+            val gapPx = with(density) { gapDp.toPx() }
+            val edgePaddingPx = with(density) { edgePaddingDp.toPx() }
+
+            val rootWidthPx = rootCoordinates?.size?.width?.toFloat() ?: 1000f
+
+            // 1. Horizontally centered over the pressed key
+            val keyCenterX = popup.x + popup.keyWidth / 2f
+            val centeredX = keyCenterX - defaultPopupWidthPx / 2f
+
+            // 6. Stay within visible keyboard bounds (edges)
+            val minX = edgePaddingPx
+            val maxX = (rootWidthPx - defaultPopupWidthPx - edgePaddingPx).coerceAtLeast(minX)
+            val clampedX = centeredX.coerceIn(minX, maxX)
+
+            // 2. Appear above the pressed key with small consistent gap
+            // 4. Never cover the pressed key itself
+            val popupBottom = popup.y - gapPx
+            val availableHeightPx = popupBottom - edgePaddingPx
+            val minHeightPx = with(density) { 36.dp.toPx() }
+            val actualHeightPx = defaultPopupHeightPx.coerceAtMost(availableHeightPx.coerceAtLeast(minHeightPx))
+            val clampedY = (popupBottom - actualHeightPx).coerceAtLeast(edgePaddingPx)
+
+            val popupHeightDp = with(density) { actualHeightPx.toDp() }
+            val fontSize = if (popupHeightDp < 42.dp) 20.sp else 22.sp
+
+            Box(
+                modifier = Modifier
+                    .offset {
+                        androidx.compose.ui.unit.IntOffset(
+                            clampedX.toInt(),
+                            clampedY.toInt()
+                        )
+                    }
+                    .size(width = defaultPopupWidthDp, height = popupHeightDp)
+                    .zIndex(999f)
+                    .shadow(10.dp, RoundedCornerShape(topStart = 12.dp, topEnd = 12.dp, bottomStart = 4.dp, bottomEnd = 4.dp))
+                    .clip(RoundedCornerShape(topStart = 12.dp, topEnd = 12.dp, bottomStart = 4.dp, bottomEnd = 4.dp))
+                    .background(tokens.keySurfacePressed)
+                    .border(1.5.dp, tokens.keyAccent, RoundedCornerShape(topStart = 12.dp, topEnd = 12.dp, bottomStart = 4.dp, bottomEnd = 4.dp)),
+                contentAlignment = Alignment.Center
+            ) {
+                Text(
+                    text = popup.char,
+                    fontSize = fontSize,
+                    fontWeight = FontWeight.Bold,
+                    color = tokens.textPrimary
+                )
             }
         }
     }
@@ -110,7 +230,8 @@ private fun AlphaKeyboardLayout(
     tokens: KeyboardColorTokens,
     keyHeightDp: Int,
     keyAnimationEnabled: Boolean,
-    hapticEnabled: Boolean
+    hapticEnabled: Boolean,
+    onKeyBoundsChanged: (Boolean, String, LayoutCoordinates?) -> Unit
 ) {
     val row1 = listOf("q", "w", "e", "r", "t", "y", "u", "i", "o", "p")
     val row2 = listOf("a", "s", "d", "f", "g", "h", "j", "k", "l")
@@ -132,6 +253,7 @@ private fun AlphaKeyboardLayout(
                 keyHeightDp = keyHeightDp,
                 keyAnimationEnabled = keyAnimationEnabled,
                 hapticEnabled = hapticEnabled,
+                onKeyBoundsChanged = onKeyBoundsChanged,
                 onClick = { listener.onTextInput(display) }
             )
         }
@@ -153,6 +275,7 @@ private fun AlphaKeyboardLayout(
                 keyHeightDp = keyHeightDp,
                 keyAnimationEnabled = keyAnimationEnabled,
                 hapticEnabled = hapticEnabled,
+                onKeyBoundsChanged = onKeyBoundsChanged,
                 onClick = { listener.onTextInput(display) }
             )
         }
@@ -191,6 +314,7 @@ private fun AlphaKeyboardLayout(
                 keyHeightDp = keyHeightDp,
                 keyAnimationEnabled = keyAnimationEnabled,
                 hapticEnabled = hapticEnabled,
+                onKeyBoundsChanged = onKeyBoundsChanged,
                 onClick = { listener.onTextInput(display) }
             )
         }
@@ -206,7 +330,8 @@ private fun AlphaKeyboardLayout(
         )
     }
 
-    // Row 4
+    // Row 4: Bottom row with dedicated comma key
+    // [ ?123 ] [ Emoji ] [ , ] [     Space     ] [ . ] [ Enter ]
     BottomActionRow(
         modeText = "?123",
         tokens = tokens,
@@ -214,6 +339,7 @@ private fun AlphaKeyboardLayout(
         keyAnimationEnabled = keyAnimationEnabled,
         hapticEnabled = hapticEnabled,
         onModeClick = { listener.onSwitchMode(KeyboardMode.SYMBOLS) },
+        onKeyBoundsChanged = onKeyBoundsChanged,
         listener = listener
     )
 }
@@ -225,7 +351,8 @@ private fun SymbolsKeyboardLayout(
     tokens: KeyboardColorTokens,
     keyHeightDp: Int,
     keyAnimationEnabled: Boolean,
-    hapticEnabled: Boolean
+    hapticEnabled: Boolean,
+    onKeyBoundsChanged: (Boolean, String, LayoutCoordinates?) -> Unit
 ) {
     val row1 = if (!isAlt) {
         listOf("1", "2", "3", "4", "5", "6", "7", "8", "9", "0")
@@ -257,6 +384,7 @@ private fun SymbolsKeyboardLayout(
                 keyHeightDp = keyHeightDp,
                 keyAnimationEnabled = keyAnimationEnabled,
                 hapticEnabled = hapticEnabled,
+                onKeyBoundsChanged = onKeyBoundsChanged,
                 onClick = { listener.onTextInput(char) }
             )
         }
@@ -265,7 +393,7 @@ private fun SymbolsKeyboardLayout(
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(horizontal = 6.dp),
+            .padding(horizontal = 8.dp),
         horizontalArrangement = Arrangement.spacedBy(4.dp)
     ) {
         row2.forEach { char ->
@@ -276,6 +404,7 @@ private fun SymbolsKeyboardLayout(
                 keyHeightDp = keyHeightDp,
                 keyAnimationEnabled = keyAnimationEnabled,
                 hapticEnabled = hapticEnabled,
+                onKeyBoundsChanged = onKeyBoundsChanged,
                 onClick = { listener.onTextInput(char) }
             )
         }
@@ -288,13 +417,14 @@ private fun SymbolsKeyboardLayout(
     ) {
         SpecialKey(
             text = if (!isAlt) "=\\<" else "?123",
-            modifier = Modifier.weight(1.4f),
+            modifier = Modifier.weight(1.5f),
             tokens = tokens,
             keyHeightDp = keyHeightDp,
             keyAnimationEnabled = keyAnimationEnabled,
             hapticEnabled = hapticEnabled,
             onClick = {
-                listener.onSwitchMode(if (!isAlt) KeyboardMode.ALT_SYMBOLS else KeyboardMode.SYMBOLS)
+                val nextMode = if (!isAlt) KeyboardMode.ALT_SYMBOLS else KeyboardMode.SYMBOLS
+                listener.onSwitchMode(nextMode)
             }
         )
 
@@ -306,6 +436,7 @@ private fun SymbolsKeyboardLayout(
                 keyHeightDp = keyHeightDp,
                 keyAnimationEnabled = keyAnimationEnabled,
                 hapticEnabled = hapticEnabled,
+                onKeyBoundsChanged = onKeyBoundsChanged,
                 onClick = { listener.onTextInput(char) }
             )
         }
@@ -321,6 +452,7 @@ private fun SymbolsKeyboardLayout(
         )
     }
 
+    // Row 4: Bottom row for Symbols
     BottomActionRow(
         modeText = "ABC",
         tokens = tokens,
@@ -328,10 +460,15 @@ private fun SymbolsKeyboardLayout(
         keyAnimationEnabled = keyAnimationEnabled,
         hapticEnabled = hapticEnabled,
         onModeClick = { listener.onSwitchMode(KeyboardMode.ALPHA) },
+        onKeyBoundsChanged = onKeyBoundsChanged,
         listener = listener
     )
 }
 
+/**
+ * Milestone 1D: Dedicated Bottom Action Row
+ * Structure: [ ?123 / ABC ] [ Emoji ] [ , ] [     Space     ] [ . ] [ Enter ]
+ */
 @Composable
 private fun BottomActionRow(
     modeText: String,
@@ -340,6 +477,7 @@ private fun BottomActionRow(
     keyAnimationEnabled: Boolean,
     hapticEnabled: Boolean,
     onModeClick: () -> Unit,
+    onKeyBoundsChanged: (Boolean, String, LayoutCoordinates?) -> Unit,
     listener: KeyboardActionListener
 ) {
     Row(
@@ -347,9 +485,10 @@ private fun BottomActionRow(
         horizontalArrangement = Arrangement.spacedBy(4.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
+        // 1. [ ?123 / ABC ] Mode switch
         SpecialKey(
             text = modeText,
-            modifier = Modifier.weight(1.5f),
+            modifier = Modifier.weight(1.3f),
             tokens = tokens,
             keyHeightDp = keyHeightDp,
             keyAnimationEnabled = keyAnimationEnabled,
@@ -357,9 +496,10 @@ private fun BottomActionRow(
             onClick = onModeClick
         )
 
+        // 2. [ Emoji ] Button
         SpecialKey(
             icon = Icons.Filled.SentimentSatisfiedAlt,
-            modifier = Modifier.weight(1.1f),
+            modifier = Modifier.weight(1.0f),
             tokens = tokens,
             keyHeightDp = keyHeightDp,
             keyAnimationEnabled = keyAnimationEnabled,
@@ -367,10 +507,23 @@ private fun BottomActionRow(
             onClick = { listener.onEmojiClicked() }
         )
 
+        // 3. [ , ] Dedicated Comma Key (Milestone 1D Required)
+        KeyboardKey(
+            text = ",",
+            modifier = Modifier.weight(1.0f),
+            tokens = tokens,
+            keyHeightDp = keyHeightDp,
+            keyAnimationEnabled = keyAnimationEnabled,
+            hapticEnabled = hapticEnabled,
+            onKeyBoundsChanged = onKeyBoundsChanged,
+            onClick = { listener.onTextInput(",") }
+        )
+
+        // 4. [     Space     ] Largest key in bottom row
         KeyboardKey(
             text = "space",
             isSpace = true,
-            modifier = Modifier.weight(4.5f),
+            modifier = Modifier.weight(4.2f),
             tokens = tokens,
             keyHeightDp = keyHeightDp,
             keyAnimationEnabled = keyAnimationEnabled,
@@ -378,19 +531,22 @@ private fun BottomActionRow(
             onClick = { listener.onSpace() }
         )
 
+        // 5. [ . ] Period Key
         KeyboardKey(
             text = ".",
-            modifier = Modifier.weight(1.1f),
+            modifier = Modifier.weight(1.0f),
             tokens = tokens,
             keyHeightDp = keyHeightDp,
             keyAnimationEnabled = keyAnimationEnabled,
             hapticEnabled = hapticEnabled,
+            onKeyBoundsChanged = onKeyBoundsChanged,
             onClick = { listener.onPeriod() }
         )
 
+        // 6. [ Enter ] Action Key
         SpecialKey(
             icon = Icons.Filled.ArrowForward,
-            modifier = Modifier.weight(1.6f),
+            modifier = Modifier.weight(1.5f),
             isPrimary = true,
             tokens = tokens,
             keyHeightDp = keyHeightDp,
@@ -401,6 +557,187 @@ private fun BottomActionRow(
     }
 }
 
+/**
+ * Milestone 1D: Usable Android Emoji Picker Interface
+ * Fast, offline, categorized emoji grid with 1-click ABC return button.
+ */
+@Composable
+private fun EmojiKeyboardLayout(
+    listener: KeyboardActionListener,
+    tokens: KeyboardColorTokens,
+    keyHeightDp: Int,
+    keyAnimationEnabled: Boolean,
+    hapticEnabled: Boolean
+) {
+    val categories = remember {
+        listOf(
+            "Smileys" to listOf(
+                "😀", "😃", "😄", "😁", "😆", "😅", "🤣", "😂", "🙂", "🙃", "😉", "😊",
+                "😇", "🥰", "😍", "🤩", "😘", "😗", "😚", "😋", "😛", "😜", "🤪", "😝",
+                "🤑", "🤗", "🤭", "🤫", "🤔", "🤐", "🤨", "😐", "😑", "😶", "😏", "😒",
+                "🙄", "😬", "🤥", "😌", "😔", "😪", "🤤", "😴", "😷", "🤒", "🤕", "🤢",
+                "🤮", "🤧", "🥵", "🥶", "🥴", "😵", "🤯", "🤠", "🥳", "🥸", "😎", "🤓",
+                "🧐", "😕", "😟", "🙁", "😮", "😯", "😲", "😳", "🥺", "😦", "😧", "😨",
+                "😰", "😥", "😢", "😭", "😱", "😖", "😣", "😞", "😓", "😩", "😫", "🥱"
+            ),
+            "Gestures" to listOf(
+                "👋", "🤚", "🖐️", "✋", "🖖", "🫱", "🫲", "🫳", "🫴", "👌", "🤌", "🤏",
+                "✌️", "🤞", "🫰", "🤟", "🤘", "🤙", "👈", "👉", "👆", "🖕", "👇", "☝️",
+                "🫵", "👍", "👎", "✊", "👊", "🤛", "🤜", "👏", "🙌", "🫶", "👐", "🤲",
+                "🤝", "🙏", "✍️", "💅", "🤳", "💪"
+            ),
+            "Hearts" to listOf(
+                "❤️", "🧡", "💛", "💚", "💙", "💜", "🖤", "🤍", "🤎", "💔", "❣️", "💕",
+                "💞", "💓", "💗", "💖", "💘", "💝", "💟", "☮️", "✝️", "☪️", "🕉️", "☸️",
+                "✡️", "🔯", "🕎", "☯️", "☦️", "🛐", "💯", "🔥", "✨", "🌟", "💫", "💥"
+            ),
+            "Objects" to listOf(
+                "🎉", "🎊", "🎈", "🎁", "🏆", "🥇", "🥈", "🥉", "⚽", "🏀", "🏈", "⚾",
+                "🎾", "🎮", "🎯", "🎲", "🚀", "✈️", "🚗", "🚲", "📱", "💻", "📷", "💡",
+                "🔑", "💎", "🔔", "📢", "🎧", "🎸", "🎨", "🎬"
+            ),
+            "Food/Nature" to listOf(
+                "🍕", "🍔", "🍟", "🌭", "🍿", "🥓", "🍳", "🥞", "🥐", "☕", "🍵", "🧃",
+                "🥤", "🍺", "🍻", "🍷", "🍎", "🍊", "🍋", "🍌", "🍉", "🍇", "🍓", "🍒",
+                "🐶", "🐱", "🐭", "🐰", "🦊", "🐻", "🐼", "🐨", "🐯", "🦁", "🐸", "🦄",
+                "🐝", "🦋", "🌺", "🌸", "🌼", "🌻", "🌞", "🌙", "🌈", "⭐"
+            )
+        )
+    }
+
+    var selectedCategoryIndex by remember { mutableStateOf(0) }
+    val haptic = LocalHapticFeedback.current
+
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 2.dp),
+        verticalArrangement = Arrangement.spacedBy(6.dp)
+    ) {
+        // Category Selector Chips
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .horizontalScroll(rememberScrollState()),
+            horizontalArrangement = Arrangement.spacedBy(4.dp)
+        ) {
+            categories.forEachIndexed { index, (name, emojis) ->
+                val isSelected = selectedCategoryIndex == index
+                val chipShape = RoundedCornerShape(8.dp)
+                Box(
+                    modifier = Modifier
+                        .clip(chipShape)
+                        .background(if (isSelected) tokens.keyAccent else tokens.keySurface)
+                        .border(1.dp, if (isSelected) tokens.keyAccent else tokens.borderRim, chipShape)
+                        .clickable {
+                            if (hapticEnabled) haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                            selectedCategoryIndex = index
+                        }
+                        .padding(horizontal = 10.dp, vertical = 5.dp),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text(
+                        text = "${emojis.first()} $name",
+                        fontSize = 12.sp,
+                        fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
+                        color = if (isSelected) Color.White else tokens.textPrimary
+                    )
+                }
+            }
+        }
+
+        // Emoji Grid Container
+        val activeEmojis = categories[selectedCategoryIndex].second
+        LazyVerticalGrid(
+            columns = GridCells.Fixed(7),
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(160.dp)
+                .clip(RoundedCornerShape(8.dp))
+                .background(tokens.keySurface.copy(alpha = 0.5f))
+                .border(1.dp, tokens.borderRim, RoundedCornerShape(8.dp))
+                .padding(4.dp),
+            verticalArrangement = Arrangement.spacedBy(4.dp),
+            horizontalArrangement = Arrangement.spacedBy(4.dp)
+        ) {
+            items(activeEmojis) { emoji ->
+                Box(
+                    modifier = Modifier
+                        .size(38.dp)
+                        .clip(RoundedCornerShape(6.dp))
+                        .clickable {
+                            if (hapticEnabled) haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                            listener.onTextInput(emoji)
+                        },
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text(
+                        text = emoji,
+                        fontSize = 22.sp
+                    )
+                }
+            }
+        }
+
+        // Bottom Navigation Bar for Emoji Mode
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(4.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            // [ ABC ] Button -> Return directly to normal QWERTY keyboard
+            SpecialKey(
+                text = "ABC",
+                modifier = Modifier.weight(1.8f),
+                tokens = tokens,
+                keyHeightDp = keyHeightDp,
+                keyAnimationEnabled = keyAnimationEnabled,
+                hapticEnabled = hapticEnabled,
+                isPrimary = true,
+                onClick = { listener.onSwitchMode(KeyboardMode.ALPHA) }
+            )
+
+            // Space Bar
+            KeyboardKey(
+                text = "space",
+                isSpace = true,
+                modifier = Modifier.weight(3.8f),
+                tokens = tokens,
+                keyHeightDp = keyHeightDp,
+                keyAnimationEnabled = keyAnimationEnabled,
+                hapticEnabled = hapticEnabled,
+                onClick = { listener.onSpace() }
+            )
+
+            // Backspace Key
+            SpecialKey(
+                icon = Icons.Filled.Backspace,
+                modifier = Modifier.weight(1.4f),
+                tokens = tokens,
+                keyHeightDp = keyHeightDp,
+                keyAnimationEnabled = keyAnimationEnabled,
+                hapticEnabled = hapticEnabled,
+                onClick = { listener.onBackspace() }
+            )
+
+            // Enter Key
+            SpecialKey(
+                icon = Icons.Filled.ArrowForward,
+                modifier = Modifier.weight(1.4f),
+                tokens = tokens,
+                keyHeightDp = keyHeightDp,
+                keyAnimationEnabled = keyAnimationEnabled,
+                hapticEnabled = hapticEnabled,
+                onClick = { listener.onEnter() }
+            )
+        }
+    }
+}
+
+/**
+ * Standard Key Composable with immediate touch feedback, 80-150ms bounce,
+ * subtle pressed-state visual, and exact measured layout position anchoring for character popup.
+ */
 @Composable
 fun KeyboardKey(
     text: String,
@@ -410,14 +747,23 @@ fun KeyboardKey(
     keyAnimationEnabled: Boolean = true,
     isSpace: Boolean = false,
     hapticEnabled: Boolean = true,
+    onKeyBoundsChanged: ((Boolean, String, LayoutCoordinates?) -> Unit)? = null,
     onClick: () -> Unit
 ) {
     val haptic = LocalHapticFeedback.current
     val interactionSource = remember { MutableInteractionSource() }
     val isPressed by interactionSource.collectIsPressedAsState()
+    var keyCoordinates by remember { mutableStateOf<LayoutCoordinates?>(null) }
 
+    LaunchedEffect(isPressed, text, keyCoordinates) {
+        if (!isSpace && text.length == 1) {
+            onKeyBoundsChanged?.invoke(isPressed, text, keyCoordinates)
+        }
+    }
+
+    // 80-150ms scale bounce feedback (100ms)
     val scale by animateFloatAsState(
-        targetValue = if (isPressed && keyAnimationEnabled) 0.95f else 1.0f,
+        targetValue = if (isPressed && keyAnimationEnabled) 0.94f else 1.0f,
         animationSpec = tween(durationMillis = 100),
         label = "key_scale"
     )
@@ -427,29 +773,46 @@ fun KeyboardKey(
 
     Box(
         modifier = modifier
-            .scale(scale)
+            .zIndex(if (isPressed) 25f else 1f)
             .height(keyHeightDp.dp)
-            .shadow(if (isPressed) 1.dp else 2.dp, shape)
-            .clip(shape)
-            .background(bgColor)
-            .border(1.dp, tokens.borderRim, shape)
-            .clickable(
-                interactionSource = interactionSource,
-                indication = null
-            ) {
-                if (hapticEnabled) {
-                    haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+            .onGloballyPositioned { coords ->
+                keyCoordinates = coords
+                if (isPressed && !isSpace && text.length == 1) {
+                    onKeyBoundsChanged?.invoke(true, text, coords)
                 }
-                onClick()
             },
         contentAlignment = Alignment.Center
     ) {
-        Text(
-            text = if (isSpace) "" else text,
-            fontSize = if (isSpace) 13.sp else 20.sp,
-            fontWeight = FontWeight.Medium,
-            color = if (isPressed) (if (tokens.isDark) Color.White else tokens.textPrimary) else tokens.textPrimary
-        )
+        // Key Body
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .scale(scale)
+                .shadow(if (isPressed) 1.dp else 2.dp, shape)
+                .clip(shape)
+                .background(bgColor)
+                .border(1.dp, if (isPressed && keyAnimationEnabled) tokens.keyAccent else tokens.borderRim, shape)
+                .clickable(
+                    interactionSource = interactionSource,
+                    indication = null
+                ) {
+                    if (hapticEnabled) {
+                        haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                    }
+                    if (!isSpace && text.length == 1 && keyCoordinates != null) {
+                        onKeyBoundsChanged?.invoke(true, text, keyCoordinates)
+                    }
+                    onClick()
+                },
+            contentAlignment = Alignment.Center
+        ) {
+            Text(
+                text = if (isSpace) "" else text,
+                fontSize = if (isSpace) 13.sp else 20.sp,
+                fontWeight = FontWeight.Medium,
+                color = if (isPressed) (if (tokens.isDark) Color.White else tokens.textPrimary) else tokens.textPrimary
+            )
+        }
     }
 }
 

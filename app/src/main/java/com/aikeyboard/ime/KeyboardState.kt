@@ -6,7 +6,8 @@ package com.aikeyboard.ime
 enum class KeyboardMode {
     ALPHA,
     SYMBOLS,
-    ALT_SYMBOLS
+    ALT_SYMBOLS,
+    EMOJI
 }
 
 /**

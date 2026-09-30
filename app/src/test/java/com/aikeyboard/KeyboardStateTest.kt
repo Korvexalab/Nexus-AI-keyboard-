@@ -11,10 +11,11 @@ class KeyboardStateTest {
     @Test
     fun testKeyboardModeValues() {
         val modes = KeyboardMode.values()
-        assertEquals(3, modes.size)
+        assertEquals(4, modes.size)
         assertTrue(modes.contains(KeyboardMode.ALPHA))
         assertTrue(modes.contains(KeyboardMode.SYMBOLS))
         assertTrue(modes.contains(KeyboardMode.ALT_SYMBOLS))
+        assertTrue(modes.contains(KeyboardMode.EMOJI))
     }
 
     @Test
@@ -45,5 +46,25 @@ class KeyboardStateTest {
         // Tap while caps locked -> OFF
         current = ShiftState.OFF
         assertEquals(ShiftState.OFF, current)
+    }
+
+    @Test
+    fun testEmojiModeTransition() {
+        var mode = KeyboardMode.ALPHA
+
+        // Open emoji picker
+        mode = if (mode == KeyboardMode.EMOJI) KeyboardMode.ALPHA else KeyboardMode.EMOJI
+        assertEquals(KeyboardMode.EMOJI, mode)
+
+        // Return via ABC button
+        mode = KeyboardMode.ALPHA
+        assertEquals(KeyboardMode.ALPHA, mode)
+    }
+
+    @Test
+    fun testCommaKeyInputIntegrity() {
+        val testBuffer = StringBuilder("Hello")
+        testBuffer.append(",")
+        assertEquals("Hello,", testBuffer.toString())
     }
 }

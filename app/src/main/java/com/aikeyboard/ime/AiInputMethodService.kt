@@ -184,7 +184,11 @@ class AiInputMethodService : ComposeLifecycleInputMethodService(), KeyboardActio
     }
 
     override fun onEmojiClicked() {
-        currentInputConnection?.commitText("😀", 1)
+        keyboardModeState.value = if (keyboardModeState.value == KeyboardMode.EMOJI) {
+            KeyboardMode.ALPHA
+        } else {
+            KeyboardMode.EMOJI
+        }
     }
 
     // --- Toolbar Actions ---
