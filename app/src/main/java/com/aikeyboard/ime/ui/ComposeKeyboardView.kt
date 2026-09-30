@@ -5,6 +5,9 @@ import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
+import androidx.compose.foundation.gestures.waitForUpOrCancellation
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsPressedAsState
@@ -19,14 +22,17 @@ import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowForward
 import androidx.compose.material.icons.filled.Backspace
+import androidx.compose.material.icons.filled.ContentPaste
 import androidx.compose.material.icons.filled.KeyboardCapslock
 import androidx.compose.material.icons.filled.SentimentSatisfiedAlt
 import androidx.compose.material.icons.outlined.ArrowUpward
@@ -34,10 +40,12 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -47,19 +55,26 @@ import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.LayoutCoordinates
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.zIndex
 import com.aikeyboard.ime.KeyboardActionListener
 import com.aikeyboard.ime.KeyboardMode
+import com.aikeyboard.ime.KeyboardPreferences
 import com.aikeyboard.ime.ShiftState
 import com.aikeyboard.ime.ui.theme.KeyboardColorTokens
 import com.aikeyboard.ime.ui.theme.KeyboardThemes
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.isActive
+import kotlinx.coroutines.launch
 
 data class ActiveKeyPopupInfo(
     val char: String,
@@ -79,6 +94,7 @@ fun ComposeKeyboardView(
     keyAnimationEnabled: Boolean = true,
     hapticEnabled: Boolean = true,
     aiNoticeVisible: Boolean = false,
+    preferences: KeyboardPreferences? = null,
     modifier: Modifier = Modifier
 ) {
     var rootCoordinates by remember { mutableStateOf<LayoutCoordinates?>(null) }
@@ -153,6 +169,9 @@ fun ComposeKeyboardView(
                         }
                         KeyboardMode.EMOJI -> {
                             EmojiKeyboardLayout(actionListener, tokens, keyHeightDp, keyAnimationEnabled, hapticEnabled)
+                        }
+                        KeyboardMode.CLIPBOARD -> {
+                            ClipboardPanelView(preferences, actionListener, tokens, keyHeightDp, hapticEnabled)
                         }
                     }
                 }
@@ -319,14 +338,13 @@ private fun AlphaKeyboardLayout(
             )
         }
 
-        SpecialKey(
-            icon = Icons.Filled.Backspace,
+        BackspaceKey(
             modifier = Modifier.weight(1.4f),
             tokens = tokens,
             keyHeightDp = keyHeightDp,
             keyAnimationEnabled = keyAnimationEnabled,
             hapticEnabled = hapticEnabled,
-            onClick = { listener.onBackspace() }
+            onDelete = { listener.onBackspace() }
         )
     }
 
@@ -441,14 +459,13 @@ private fun SymbolsKeyboardLayout(
             )
         }
 
-        SpecialKey(
-            icon = Icons.Filled.Backspace,
+        BackspaceKey(
             modifier = Modifier.weight(1.4f),
             tokens = tokens,
             keyHeightDp = keyHeightDp,
             keyAnimationEnabled = keyAnimationEnabled,
             hapticEnabled = hapticEnabled,
-            onClick = { listener.onBackspace() }
+            onDelete = { listener.onBackspace() }
         )
     }
 
@@ -709,15 +726,14 @@ private fun EmojiKeyboardLayout(
                 onClick = { listener.onSpace() }
             )
 
-            // Backspace Key
-            SpecialKey(
-                icon = Icons.Filled.Backspace,
+            // Backspace Key with long-press repeat
+            BackspaceKey(
                 modifier = Modifier.weight(1.4f),
                 tokens = tokens,
                 keyHeightDp = keyHeightDp,
                 keyAnimationEnabled = keyAnimationEnabled,
                 hapticEnabled = hapticEnabled,
-                onClick = { listener.onBackspace() }
+                onDelete = { listener.onBackspace() }
             )
 
             // Enter Key
@@ -888,6 +904,311 @@ fun SpecialKey(
                 fontWeight = FontWeight.SemiBold,
                 color = contentColor
             )
+        }
+    }
+}
+
+/**
+ * Milestone 1E: Long-press Backspace Key with Natural Continuous Deletion
+ * - Short tap: Deletes 1 character immediately
+ * - Long press: Waits 400ms (350-500ms range), then continuously deletes every 65ms (50-100ms range)
+ * - Releases/Cancels: Stops immediately
+ * - Single deletion loop guarantee
+ * - Respects haptic feedback setting
+ */
+@Composable
+fun BackspaceKey(
+    modifier: Modifier = Modifier,
+    tokens: KeyboardColorTokens,
+    keyHeightDp: Int = 47,
+    keyAnimationEnabled: Boolean = true,
+    hapticEnabled: Boolean = true,
+    onDelete: () -> Unit
+) {
+    val haptic = LocalHapticFeedback.current
+    var isPressed by remember { mutableStateOf(false) }
+    val scope = rememberCoroutineScope()
+    var repeatJob by remember { mutableStateOf<Job?>(null) }
+
+    val scale by animateFloatAsState(
+        targetValue = if (isPressed && keyAnimationEnabled) 0.94f else 1.0f,
+        animationSpec = tween(durationMillis = 100),
+        label = "backspace_scale"
+    )
+
+    val shape = RoundedCornerShape(9.dp)
+    val bgColor = if (isPressed) tokens.keySpecialPressed else tokens.keySpecial
+    val contentColor = if (isPressed) tokens.textPrimary else tokens.textSecondary
+
+    Box(
+        modifier = modifier
+            .scale(scale)
+            .height(keyHeightDp.dp)
+            .shadow(if (isPressed) 1.dp else 2.dp, shape)
+            .clip(shape)
+            .background(bgColor)
+            .border(1.dp, tokens.borderRim, shape)
+            .pointerInput(Unit) {
+                awaitEachGesture {
+                    awaitFirstDown(requireUnconsumed = false)
+                    isPressed = true
+
+                    // Initial single deletion on touch down
+                    onDelete()
+                    if (hapticEnabled) {
+                        haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                    }
+
+                    // Start continuous deletion loop after 400ms initial delay
+                    repeatJob?.cancel()
+                    repeatJob = scope.launch {
+                        delay(400) // Initial delay: 400ms (within 350-500ms)
+                        while (isActive) {
+                            onDelete()
+                            if (hapticEnabled) {
+                                haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                            }
+                            delay(65) // Natural repeat interval: 65ms (within 50-100ms)
+                        }
+                    }
+
+                    // Wait for finger release (ACTION_UP) or gesture cancellation (ACTION_CANCEL)
+                    waitForUpOrCancellation()
+                    repeatJob?.cancel()
+                    repeatJob = null
+                    isPressed = false
+                }
+            },
+        contentAlignment = Alignment.Center
+    ) {
+        Icon(
+            imageVector = Icons.Filled.Backspace,
+            contentDescription = "Backspace",
+            tint = contentColor
+        )
+    }
+
+    DisposableEffect(Unit) {
+        onDispose {
+            repeatJob?.cancel()
+            repeatJob = null
+        }
+    }
+}
+
+/**
+ * Milestone 1E: Compact Clipboard History Panel
+ * - Displays up to 10 recent text clips (newest first)
+ * - Tapping a clip inserts it and returns to normal keyboard (ALPHA)
+ * - Clear history action to purge local clips
+ * - ABC return buttons so the user is never trapped
+ * - Privacy-respecting: entirely offline, on-device SharedPreferences
+ */
+@Composable
+private fun ClipboardPanelView(
+    preferences: KeyboardPreferences?,
+    listener: KeyboardActionListener,
+    tokens: KeyboardColorTokens,
+    keyHeightDp: Int,
+    hapticEnabled: Boolean
+) {
+    val haptic = LocalHapticFeedback.current
+    var clips by remember { mutableStateOf(preferences?.getClipboardHistory() ?: emptyList()) }
+
+    LaunchedEffect(Unit) {
+        clips = preferences?.getClipboardHistory() ?: emptyList()
+    }
+
+    val totalPanelHeight = (keyHeightDp * 4 + 18).dp
+
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(totalPanelHeight)
+            .padding(horizontal = 4.dp),
+        verticalArrangement = Arrangement.spacedBy(6.dp)
+    ) {
+        // Clipboard Header: Title, Count, Clear history, ABC return button
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 4.dp, vertical = 2.dp),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(6.dp)
+            ) {
+                Icon(
+                    imageVector = Icons.Filled.ContentPaste,
+                    contentDescription = null,
+                    tint = tokens.keyAccent,
+                    modifier = Modifier.size(18.dp)
+                )
+                Text(
+                    text = "Clipboard",
+                    fontSize = 15.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = tokens.textPrimary
+                )
+                if (clips.isNotEmpty()) {
+                    Text(
+                        text = "(${clips.size}/10)",
+                        fontSize = 12.sp,
+                        color = tokens.textSecondary
+                    )
+                }
+            }
+
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                if (clips.isNotEmpty()) {
+                    Box(
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(6.dp))
+                            .background(tokens.keySpecial)
+                            .border(1.dp, tokens.borderRim, RoundedCornerShape(6.dp))
+                            .clickable {
+                                if (hapticEnabled) {
+                                    haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                }
+                                preferences?.clearClipboardHistory()
+                                clips = emptyList()
+                            }
+                            .padding(horizontal = 8.dp, vertical = 4.dp),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Text(
+                            text = "Clear history",
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.Medium,
+                            color = tokens.textSecondary
+                        )
+                    }
+                }
+
+                // Return to normal keyboard (ABC)
+                Box(
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(6.dp))
+                        .background(tokens.keyAccent)
+                        .clickable {
+                            if (hapticEnabled) {
+                                haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                            }
+                            listener.onSwitchMode(KeyboardMode.ALPHA)
+                        }
+                        .padding(horizontal = 10.dp, vertical = 4.dp),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text(
+                        text = "ABC",
+                        fontSize = 13.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = Color.White
+                    )
+                }
+            }
+        }
+
+        // List of clips or Empty State
+        if (clips.isEmpty()) {
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .weight(1f),
+                contentAlignment = Alignment.Center
+            ) {
+                Column(
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.spacedBy(4.dp)
+                ) {
+                    Icon(
+                        imageVector = Icons.Filled.ContentPaste,
+                        contentDescription = null,
+                        tint = tokens.textSecondary.copy(alpha = 0.5f),
+                        modifier = Modifier.size(32.dp)
+                    )
+                    Text(
+                        text = "No clips saved yet",
+                        fontSize = 14.sp,
+                        fontWeight = FontWeight.Medium,
+                        color = tokens.textPrimary
+                    )
+                    Text(
+                        text = "Copied text will appear here (up to 10 items).",
+                        fontSize = 12.sp,
+                        color = tokens.textSecondary
+                    )
+                }
+            }
+        } else {
+            LazyColumn(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .weight(1f),
+                verticalArrangement = Arrangement.spacedBy(6.dp)
+            ) {
+                items(clips) { clip ->
+                    val shape = RoundedCornerShape(8.dp)
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clip(shape)
+                            .background(tokens.keySurface)
+                            .border(1.dp, tokens.borderRim, shape)
+                            .clickable {
+                                if (hapticEnabled) {
+                                    haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                }
+                                listener.onTextInput(clip)
+                                listener.onSwitchMode(KeyboardMode.ALPHA)
+                            }
+                            .padding(horizontal = 12.dp, vertical = 10.dp)
+                    ) {
+                        Text(
+                            text = clip,
+                            fontSize = 14.sp,
+                            fontWeight = FontWeight.Normal,
+                            color = tokens.textPrimary,
+                            maxLines = 2,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                    }
+                }
+            }
+        }
+
+        // Bottom Return Button
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(4.dp)
+        ) {
+            Box(
+                modifier = Modifier
+                    .weight(1f)
+                    .height(38.dp)
+                    .clip(RoundedCornerShape(8.dp))
+                    .background(tokens.keySpecial)
+                    .border(1.dp, tokens.borderRim, RoundedCornerShape(8.dp))
+                    .clickable {
+                        if (hapticEnabled) {
+                            haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                        }
+                        listener.onSwitchMode(KeyboardMode.ALPHA)
+                    },
+                contentAlignment = Alignment.Center
+            ) {
+                Text(
+                    text = "Return to Keyboard",
+                    fontSize = 13.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    color = tokens.textPrimary
+                )
+            }
         }
     }
 }

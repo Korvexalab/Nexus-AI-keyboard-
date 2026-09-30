@@ -1,4 +1,4 @@
-export type KeyboardMode = 'ALPHA' | 'SYMBOLS' | 'ALT_SYMBOLS' | 'EMOJI';
+export type KeyboardMode = 'ALPHA' | 'SYMBOLS' | 'ALT_SYMBOLS' | 'EMOJI' | 'CLIPBOARD';
 
 export type ShiftState = 'OFF' | 'SHIFTED' | 'CAPS_LOCK';
 

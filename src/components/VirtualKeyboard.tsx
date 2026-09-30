@@ -1,6 +1,6 @@
 import React, { useState, useRef } from 'react';
 import { KeyboardMode, ShiftState, KeyboardActionListener, KeyboardThemeId, KeyboardHeight } from '../types';
-import { ArrowUp, CornerDownLeft, Delete, Smile } from 'lucide-react';
+import { ArrowUp, Clipboard, CornerDownLeft, Delete, Smile, Trash2 } from 'lucide-react';
 import { KeyboardToolbar } from './KeyboardToolbar';
 
 interface VirtualKeyboardProps {
@@ -104,6 +104,70 @@ export const VirtualKeyboard: React.FC<VirtualKeyboardProps> = ({
   const [activePopup, setActivePopup] = useState<PopupState | null>(null);
   const [activeCategory, setActiveCategory] = useState<string>('smileys');
 
+  // Milestone 1E: Long-press Backspace Continuous Deletion
+  const backspaceTimerRef = useRef<number | null>(null);
+  const backspaceIntervalRef = useRef<number | null>(null);
+
+  const stopBackspaceRepeat = () => {
+    if (backspaceTimerRef.current !== null) {
+      window.clearTimeout(backspaceTimerRef.current);
+      backspaceTimerRef.current = null;
+    }
+    if (backspaceIntervalRef.current !== null) {
+      window.clearInterval(backspaceIntervalRef.current);
+      backspaceIntervalRef.current = null;
+    }
+    setActiveKey((prev) => (prev === 'backspace' ? null : prev));
+  };
+
+  const startBackspaceRepeat = () => {
+    stopBackspaceRepeat();
+    setActiveKey('backspace');
+    triggerHaptic();
+    // 1. Initial single deletion
+    listener.onBackspace();
+
+    // 2. Wait 400ms (350-500ms range)
+    backspaceTimerRef.current = window.setTimeout(() => {
+      // 3. Continuous deletion every 65ms (50-100ms range)
+      backspaceIntervalRef.current = window.setInterval(() => {
+        triggerHaptic();
+        listener.onBackspace();
+      }, 65);
+    }, 400);
+  };
+
+  // Milestone 1E: Local-only Clipboard History (up to 10 items)
+  const [clipboardHistory, setClipboardHistory] = useState<string[]>(() => {
+    try {
+      const stored = localStorage.getItem('ai_keyboard_clipboard_history');
+      if (stored) return JSON.parse(stored);
+    } catch {
+      // ignore
+    }
+    return [
+      'Welcome to Nexus AI Keyboard! ✨',
+      'Meeting at 3:00 PM tomorrow.',
+      'https://github.com/Korvexalab/Nexus-AI-keyboard-'
+    ];
+  });
+
+  const handleClearClipboard = () => {
+    setClipboardHistory([]);
+    try {
+      localStorage.removeItem('ai_keyboard_clipboard_history');
+    } catch {
+      // ignore
+    }
+    triggerHaptic();
+  };
+
+  const handleSelectClip = (clip: string) => {
+    triggerHaptic();
+    listener.onTextInput(clip);
+    listener.onSwitchMode('ALPHA');
+  };
+
   const triggerHaptic = () => {
     if (hapticEnabled && typeof navigator !== 'undefined' && navigator.vibrate) {
       try {
@@ -179,6 +243,7 @@ export const VirtualKeyboard: React.FC<VirtualKeyboardProps> = ({
   const handlePointerUp = () => {
     setActiveKey(null);
     setActivePopup(null);
+    stopBackspaceRepeat();
   };
 
   const handleKeyPress = (
@@ -379,14 +444,13 @@ export const VirtualKeyboard: React.FC<VirtualKeyboardProps> = ({
                 );
               })}
 
-              {/* Backspace Key */}
+              {/* Backspace Key with long-press repeat */}
               <button
                 id="key-backspace"
-                onPointerDown={() => {
-                  setActiveKey('backspace');
-                  triggerHaptic();
-                }}
-                onClick={() => handleKeyPress('backspace', listener.onBackspace)}
+                onPointerDown={startBackspaceRepeat}
+                onPointerUp={stopBackspaceRepeat}
+                onPointerLeave={stopBackspaceRepeat}
+                onPointerCancel={stopBackspaceRepeat}
                 className={`w-12 ${specialHeightClass} rounded-[9px] flex items-center justify-center transition-all duration-100 border ${getSpecialKeyStyle(
                   activeKey === 'backspace'
                 )}`}
@@ -476,12 +540,11 @@ export const VirtualKeyboard: React.FC<VirtualKeyboardProps> = ({
               })}
 
               <button
-                id="key-backspace"
-                onPointerDown={() => {
-                  setActiveKey('backspace');
-                  triggerHaptic();
-                }}
-                onClick={() => handleKeyPress('backspace', listener.onBackspace)}
+                id="key-backspace-symbols"
+                onPointerDown={startBackspaceRepeat}
+                onPointerUp={stopBackspaceRepeat}
+                onPointerLeave={stopBackspaceRepeat}
+                onPointerCancel={stopBackspaceRepeat}
                 className={`w-12 ${specialHeightClass} rounded-[9px] flex items-center justify-center transition-all duration-100 border ${getSpecialKeyStyle(
                   activeKey === 'backspace'
                 )}`}
@@ -571,12 +634,11 @@ export const VirtualKeyboard: React.FC<VirtualKeyboardProps> = ({
               })}
 
               <button
-                id="key-backspace"
-                onPointerDown={() => {
-                  setActiveKey('backspace');
-                  triggerHaptic();
-                }}
-                onClick={() => handleKeyPress('backspace', listener.onBackspace)}
+                id="key-backspace-altsym"
+                onPointerDown={startBackspaceRepeat}
+                onPointerUp={stopBackspaceRepeat}
+                onPointerLeave={stopBackspaceRepeat}
+                onPointerCancel={stopBackspaceRepeat}
                 className={`w-12 ${specialHeightClass} rounded-[9px] flex items-center justify-center transition-all duration-100 border ${getSpecialKeyStyle(
                   activeKey === 'backspace'
                 )}`}
@@ -675,12 +737,11 @@ export const VirtualKeyboard: React.FC<VirtualKeyboardProps> = ({
               </button>
 
               <button
-                id="key-backspace"
-                onPointerDown={() => {
-                  setActiveKey('backspace');
-                  triggerHaptic();
-                }}
-                onClick={() => handleKeyPress('backspace', listener.onBackspace)}
+                id="key-backspace-emoji"
+                onPointerDown={startBackspaceRepeat}
+                onPointerUp={stopBackspaceRepeat}
+                onPointerLeave={stopBackspaceRepeat}
+                onPointerCancel={stopBackspaceRepeat}
                 className={`w-12 ${specialHeightClass} rounded-[9px] flex items-center justify-center transition-all duration-100 border ${getSpecialKeyStyle(
                   activeKey === 'backspace'
                 )}`}
@@ -709,10 +770,88 @@ export const VirtualKeyboard: React.FC<VirtualKeyboardProps> = ({
         )}
 
         {/* ============================================================== */}
+        {/* MODE: Clipboard History Panel                                  */}
+        {/* ============================================================== */}
+        {mode === 'CLIPBOARD' && (
+          <div className="flex flex-col gap-2 p-1 h-[216px]">
+            {/* Header */}
+            <div className="flex items-center justify-between px-2 py-1 border-b border-slate-700/40">
+              <div className="flex items-center gap-1.5">
+                <Clipboard className="w-4 h-4 text-blue-400" />
+                <span className="font-bold text-sm">Clipboard</span>
+                {clipboardHistory.length > 0 && (
+                  <span className="text-xs text-slate-400">({clipboardHistory.length}/10)</span>
+                )}
+              </div>
+              <div className="flex items-center gap-2">
+                {clipboardHistory.length > 0 && (
+                  <button
+                    onClick={handleClearClipboard}
+                    className="flex items-center gap-1 text-xs px-2 py-1 rounded bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700 transition-colors"
+                  >
+                    <Trash2 className="w-3 h-3 text-red-400" />
+                    <span>Clear history</span>
+                  </button>
+                )}
+                <button
+                  onClick={() => {
+                    triggerHaptic();
+                    listener.onSwitchMode('ALPHA');
+                  }}
+                  className="text-xs font-bold px-2.5 py-1 rounded bg-blue-600 hover:bg-blue-500 text-white transition-colors"
+                >
+                  ABC
+                </button>
+              </div>
+            </div>
+
+            {/* Clips list or Empty State */}
+            {clipboardHistory.length === 0 ? (
+              <div className="flex-1 flex flex-col items-center justify-center gap-1 text-slate-400">
+                <Clipboard className="w-7 h-7 opacity-40 mb-1" />
+                <span className="text-sm font-medium text-slate-200">No clips saved yet</span>
+                <span className="text-xs">Copied text will appear here (up to 10 items).</span>
+              </div>
+            ) : (
+              <div className="flex-1 overflow-y-auto space-y-1.5 pr-1">
+                {clipboardHistory.map((clip, idx) => (
+                  <button
+                    key={idx}
+                    onClick={() => handleSelectClip(clip)}
+                    className={`w-full text-left p-2.5 rounded-lg text-sm border transition-all truncate block ${
+                      isLight
+                        ? 'bg-white hover:bg-slate-50 text-slate-900 border-slate-200 shadow-xs'
+                        : 'bg-[#1E283D] hover:bg-[#283652] text-white border-white/[0.08] shadow-sm'
+                    }`}
+                  >
+                    <span className="line-clamp-2 text-xs leading-relaxed">{clip}</span>
+                  </button>
+                ))}
+              </div>
+            )}
+
+            {/* Bottom Return Button */}
+            <button
+              onClick={() => {
+                triggerHaptic();
+                listener.onSwitchMode('ALPHA');
+              }}
+              className={`w-full py-2 rounded-lg text-xs font-semibold border transition-colors ${
+                isLight
+                  ? 'bg-slate-200 hover:bg-slate-300 text-slate-800 border-slate-300'
+                  : 'bg-[#161F33] hover:bg-[#1E283D] text-slate-300 border-slate-700/60'
+              }`}
+            >
+              Return to Keyboard
+            </button>
+          </div>
+        )}
+
+        {/* ============================================================== */}
         {/* ROW 4 (Bottom Bar for ALPHA, SYMBOLS, and ALT_SYMBOLS)         */}
         {/* Structure: [ ?123 ] [ Emoji ] [ , ] [     Space     ] [ . ] [ Enter ] */}
         {/* ============================================================== */}
-        {mode !== 'EMOJI' && (
+        {mode !== 'EMOJI' && mode !== 'CLIPBOARD' && (
           <div className="flex w-full gap-1 justify-center pt-0.5">
             {/* 1. Toggle between ABC and ?123 */}
             <button

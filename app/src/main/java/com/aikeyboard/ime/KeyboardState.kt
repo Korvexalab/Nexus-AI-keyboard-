@@ -7,7 +7,8 @@ enum class KeyboardMode {
     ALPHA,
     SYMBOLS,
     ALT_SYMBOLS,
-    EMOJI
+    EMOJI,
+    CLIPBOARD
 }
 
 /**

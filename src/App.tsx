@@ -338,10 +338,8 @@ export default function App() {
 
     onClipboardClicked: () => {
       playClickSound();
-      const sampleClip = '📋 [Pasted Clipboard Text]';
-      setText((prev) => prev + sampleClip);
-      setCursorPos((prev) => prev + sampleClip.length);
-      addLog('Toolbar: Clipboard', `Pasted "${sampleClip}" via InputConnection`, 'commit');
+      setKeyboardMode((prev) => (prev === 'CLIPBOARD' ? 'ALPHA' : 'CLIPBOARD'));
+      addLog('Toolbar: Clipboard', 'Toggled Clipboard History Panel', 'state');
     },
 
     onThemeClicked: () => {

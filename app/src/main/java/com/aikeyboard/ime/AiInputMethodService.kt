@@ -76,7 +76,8 @@ class AiInputMethodService : ComposeLifecycleInputMethodService(), KeyboardActio
                     keyHeightDp = heightOptionState.value.keyHeightDp,
                     keyAnimationEnabled = keyAnimationEnabledState.value,
                     hapticEnabled = hapticEnabledState.value,
-                    aiNoticeVisible = aiNoticeVisible.value
+                    aiNoticeVisible = aiNoticeVisible.value,
+                    preferences = preferences
                 )
             }
         }
@@ -204,13 +205,21 @@ class AiInputMethodService : ComposeLifecycleInputMethodService(), KeyboardActio
     }
 
     override fun onClipboardClicked() {
+        // Privacy: Only query ClipboardManager when user explicitly invokes clipboard feature
         val clipboard = getSystemService(Context.CLIPBOARD_SERVICE) as? ClipboardManager
         val clip = clipboard?.primaryClip
         if (clip != null && clip.itemCount > 0) {
             val text = clip.getItemAt(0).coerceToText(this).toString()
-            if (text.isNotEmpty()) {
-                currentInputConnection?.commitText(text, 1)
+            if (text.isNotBlank()) {
+                preferences.addClipboardItem(text)
             }
+        }
+
+        // Toggle or switch to Clipboard panel mode
+        keyboardModeState.value = if (keyboardModeState.value == KeyboardMode.CLIPBOARD) {
+            KeyboardMode.ALPHA
+        } else {
+            KeyboardMode.CLIPBOARD
         }
     }
 
