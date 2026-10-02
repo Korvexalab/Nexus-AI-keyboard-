@@ -52,4 +52,6 @@ export interface KeyboardActionListener {
   // Milestone 2: AI Reply Panel Actions
   onAiGenerate?: (style: string, customPrompt: string) => void;
   onCloseAiPanel?: () => void;
+  onSetAiPromptFocused?: (focused: boolean) => void;
+  onClearAiPrompt?: () => void;
 }

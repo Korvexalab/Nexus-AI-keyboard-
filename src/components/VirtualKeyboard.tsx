@@ -1,4 +1,4 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { KeyboardMode, ShiftState, KeyboardActionListener, KeyboardThemeId, KeyboardHeight } from '../types';
 import { ArrowUp, Clipboard, CornerDownLeft, Delete, Smile, Trash2 } from 'lucide-react';
 import { KeyboardToolbar } from './KeyboardToolbar';
@@ -11,6 +11,8 @@ interface VirtualKeyboardProps {
   listener: KeyboardActionListener;
   aiNoticeVisible?: boolean;
   aiPanelVisible?: boolean;
+  aiPromptFocused?: boolean;
+  onSetAiPromptFocused?: (focused: boolean) => void;
   enterLabel?: string;
   theme?: KeyboardThemeId;
   height?: KeyboardHeight;
@@ -94,6 +96,8 @@ export const VirtualKeyboard: React.FC<VirtualKeyboardProps> = ({
   listener,
   aiNoticeVisible = false,
   aiPanelVisible = false,
+  aiPromptFocused,
+  onSetAiPromptFocused,
   enterLabel = 'Enter',
   theme = 'midnight',
   height = 'normal',
@@ -102,58 +106,90 @@ export const VirtualKeyboard: React.FC<VirtualKeyboardProps> = ({
 }) => {
   const keyboardRef = useRef<HTMLDivElement>(null);
 
-  // Milestone 2: AI Reply Panel State
+  // Milestone 2: AI Reply Panel State & Explicit Focus Routing
   const [selectedAiStyle, setSelectedAiStyle] = useState<AiReplyStyle>('reply');
   const [customPrompt, setCustomPrompt] = useState<string>('');
-  const [isPromptFocused, setIsPromptFocused] = useState<boolean>(false);
+  const [localPromptFocused, setLocalPromptFocused] = useState<boolean>(false);
+
+  // Support controlled or uncontrolled focus state
+  const isPromptFocused = aiPromptFocused !== undefined ? aiPromptFocused : localPromptFocused;
+  const setPromptFocused = onSetAiPromptFocused || setLocalPromptFocused;
+
+  // Refs ensure asynchronous loops and gestures always see real-time focus and panel state
+  const isPromptFocusedRef = useRef(isPromptFocused);
+  isPromptFocusedRef.current = isPromptFocused;
+
+  const aiPanelVisibleRef = useRef(aiPanelVisible);
+  aiPanelVisibleRef.current = aiPanelVisible;
+
+  // When AI panel is closed or dismissed, immediately return focus to host application
+  useEffect(() => {
+    if (!aiPanelVisible) {
+      setPromptFocused(false);
+    }
+  }, [aiPanelVisible, setPromptFocused]);
 
   const handleAiGenerate = () => {
     if (listener.onAiGenerate) {
       listener.onAiGenerate(selectedAiStyle, customPrompt);
     }
-    setIsPromptFocused(false);
+    setPromptFocused(false);
     setCustomPrompt('');
+  };
+
+  /**
+   * M2 Core Routing: Delete one character from the active target.
+   * - If AI prompt is focused: deletes from custom prompt state (host text is never touched).
+   * - If normal chat input is active: calls host InputConnection (listener.onBackspace()).
+   */
+  const handleBackspaceAction = () => {
+    if (aiPanelVisibleRef.current && isPromptFocusedRef.current) {
+      setCustomPrompt((prev) => (prev.length > 0 ? prev.slice(0, -1) : ''));
+    } else {
+      listener.onBackspace();
+    }
+  };
+
+  /**
+   * M2 Core Routing: Text commit routing.
+   * - If AI prompt is focused: appends to custom prompt state.
+   * - If normal chat input is active: calls host InputConnection (listener.onTextInput()).
+   */
+  const handleTextInput = (text: string) => {
+    if (aiPanelVisibleRef.current && isPromptFocusedRef.current) {
+      setCustomPrompt((prev) => prev + text);
+      if (shiftState === 'SHIFTED') {
+        listener.onShiftClicked();
+      }
+    } else {
+      listener.onTextInput(text);
+    }
   };
 
   // Intercept keyboard typing into custom prompt when focused
   const effectiveListener: KeyboardActionListener = {
     ...listener,
-    onTextInput: (text: string) => {
-      if (isPromptFocused) {
-        setCustomPrompt((prev) => prev + text);
-        if (shiftState === 'SHIFTED') {
-          listener.onShiftClicked();
-        }
-      } else {
-        listener.onTextInput(text);
-      }
-    },
-    onBackspace: () => {
-      if (isPromptFocused) {
-        setCustomPrompt((prev) => prev.slice(0, -1));
-      } else {
-        listener.onBackspace();
-      }
-    },
+    onTextInput: handleTextInput,
+    onBackspace: handleBackspaceAction,
     onSpace: () => {
-      if (isPromptFocused) {
+      if (aiPanelVisibleRef.current && isPromptFocusedRef.current) {
         setCustomPrompt((prev) => prev + ' ');
       } else {
-        effectiveListener.onSpace();
+        listener.onSpace();
       }
     },
     onPeriod: () => {
-      if (isPromptFocused) {
+      if (aiPanelVisibleRef.current && isPromptFocusedRef.current) {
         setCustomPrompt((prev) => prev + '.');
       } else {
-        effectiveListener.onPeriod();
+        listener.onPeriod();
       }
     },
     onEnter: () => {
-      if (isPromptFocused) {
+      if (aiPanelVisibleRef.current && isPromptFocusedRef.current) {
         handleAiGenerate();
       } else {
-        effectiveListener.onEnter();
+        listener.onEnter();
       }
     }
   };
@@ -164,9 +200,10 @@ export const VirtualKeyboard: React.FC<VirtualKeyboardProps> = ({
   const [activePopup, setActivePopup] = useState<PopupState | null>(null);
   const [activeCategory, setActiveCategory] = useState<string>('smileys');
 
-  // Milestone 1E: Long-press Backspace Continuous Deletion
+  // Milestone 1E & M2: Long-press Backspace Continuous Deletion
   const backspaceTimerRef = useRef<number | null>(null);
   const backspaceIntervalRef = useRef<number | null>(null);
+  const pointerHandledBackspaceRef = useRef<boolean>(false);
 
   const stopBackspaceRepeat = () => {
     if (backspaceTimerRef.current !== null) {
@@ -180,22 +217,75 @@ export const VirtualKeyboard: React.FC<VirtualKeyboardProps> = ({
     setActiveKey((prev) => (prev === 'backspace' ? null : prev));
   };
 
-  const startBackspaceRepeat = () => {
+  const startBackspaceRepeat = (e?: React.PointerEvent) => {
+    if (e) {
+      pointerHandledBackspaceRef.current = true;
+    }
     stopBackspaceRepeat();
     setActiveKey('backspace');
     triggerHaptic();
-    // 1. Initial single deletion
-    effectiveListener.onBackspace();
+
+    // M2 Requirement: The deletion loop must lock the target at touch-down and never switch targets
+    const targetIsAiPrompt = aiPanelVisibleRef.current && isPromptFocusedRef.current;
+
+    const performDelete = () => {
+      if (targetIsAiPrompt) {
+        setCustomPrompt((prev) => (prev.length > 0 ? prev.slice(0, -1) : ''));
+      } else {
+        listener.onBackspace();
+      }
+    };
+
+    // 1. Initial single deletion on touch down
+    performDelete();
 
     // 2. Wait 400ms (350-500ms range)
     backspaceTimerRef.current = window.setTimeout(() => {
       // 3. Continuous deletion every 65ms (50-100ms range)
       backspaceIntervalRef.current = window.setInterval(() => {
         triggerHaptic();
-        effectiveListener.onBackspace();
+        performDelete();
       }, 65);
     }, 400);
   };
+
+  const handleBackspaceClick = (e: React.MouseEvent) => {
+    e.preventDefault();
+    if (pointerHandledBackspaceRef.current) {
+      pointerHandledBackspaceRef.current = false;
+      return;
+    }
+    handleBackspaceAction();
+  };
+
+  // Support physical keyboard routing when interacting with the emulator
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      const target = e.target as HTMLElement | null;
+      if (target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable)) {
+        return;
+      }
+
+      if (e.key === 'Backspace') {
+        e.preventDefault();
+        handleBackspaceAction();
+      } else if (e.key === ' ') {
+        e.preventDefault();
+        effectiveListener.onSpace();
+      } else if (e.key === 'Enter') {
+        e.preventDefault();
+        effectiveListener.onEnter();
+      } else if (e.key.length === 1 && !e.ctrlKey && !e.metaKey && !e.altKey) {
+        e.preventDefault();
+        effectiveListener.onTextInput(e.key);
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => {
+      window.removeEventListener('keydown', handleKeyDown);
+    };
+  });
 
   // Milestone 1E: Local-only Clipboard History (up to 10 items)
   const [clipboardHistory, setClipboardHistory] = useState<string[]>(() => {
@@ -389,10 +479,10 @@ export const VirtualKeyboard: React.FC<VirtualKeyboardProps> = ({
           customPrompt={customPrompt}
           onClearPrompt={() => setCustomPrompt('')}
           isPromptFocused={isPromptFocused}
-          onTogglePromptFocus={setIsPromptFocused}
+          onTogglePromptFocus={setPromptFocused}
           onGenerate={handleAiGenerate}
           onClose={() => {
-            setIsPromptFocused(false);
+            setPromptFocused(false);
             if (listener.onCloseAiPanel) {
               listener.onCloseAiPanel();
             } else {
@@ -534,6 +624,7 @@ export const VirtualKeyboard: React.FC<VirtualKeyboardProps> = ({
                 onPointerUp={stopBackspaceRepeat}
                 onPointerLeave={stopBackspaceRepeat}
                 onPointerCancel={stopBackspaceRepeat}
+                onClick={handleBackspaceClick}
                 className={`w-12 ${specialHeightClass} rounded-[9px] flex items-center justify-center transition-all duration-100 border ${getSpecialKeyStyle(
                   activeKey === 'backspace'
                 )}`}
@@ -628,6 +719,7 @@ export const VirtualKeyboard: React.FC<VirtualKeyboardProps> = ({
                 onPointerUp={stopBackspaceRepeat}
                 onPointerLeave={stopBackspaceRepeat}
                 onPointerCancel={stopBackspaceRepeat}
+                onClick={handleBackspaceClick}
                 className={`w-12 ${specialHeightClass} rounded-[9px] flex items-center justify-center transition-all duration-100 border ${getSpecialKeyStyle(
                   activeKey === 'backspace'
                 )}`}
@@ -722,6 +814,7 @@ export const VirtualKeyboard: React.FC<VirtualKeyboardProps> = ({
                 onPointerUp={stopBackspaceRepeat}
                 onPointerLeave={stopBackspaceRepeat}
                 onPointerCancel={stopBackspaceRepeat}
+                onClick={handleBackspaceClick}
                 className={`w-12 ${specialHeightClass} rounded-[9px] flex items-center justify-center transition-all duration-100 border ${getSpecialKeyStyle(
                   activeKey === 'backspace'
                 )}`}
@@ -825,6 +918,7 @@ export const VirtualKeyboard: React.FC<VirtualKeyboardProps> = ({
                 onPointerUp={stopBackspaceRepeat}
                 onPointerLeave={stopBackspaceRepeat}
                 onPointerCancel={stopBackspaceRepeat}
+                onClick={handleBackspaceClick}
                 className={`w-12 ${specialHeightClass} rounded-[9px] flex items-center justify-center transition-all duration-100 border ${getSpecialKeyStyle(
                   activeKey === 'backspace'
                 )}`}

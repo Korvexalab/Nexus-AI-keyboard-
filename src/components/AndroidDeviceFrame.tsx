@@ -16,6 +16,8 @@ interface AndroidDeviceFrameProps {
   keyboardListener: KeyboardActionListener;
   aiNoticeVisible?: boolean;
   aiPanelVisible?: boolean;
+  aiPromptFocused?: boolean;
+  onSetAiPromptFocused?: (focused: boolean) => void;
   isImeEnabledInSettings: boolean;
   onToggleImeInSettings: () => void;
   isImeSelected: boolean;
@@ -42,6 +44,8 @@ export const AndroidDeviceFrame: React.FC<AndroidDeviceFrameProps> = ({
   keyboardListener,
   aiNoticeVisible = false,
   aiPanelVisible = false,
+  aiPromptFocused,
+  onSetAiPromptFocused,
   isImeEnabledInSettings,
   onToggleImeInSettings,
   isImeSelected,
@@ -172,6 +176,8 @@ export const AndroidDeviceFrame: React.FC<AndroidDeviceFrameProps> = ({
             listener={keyboardListener}
             aiNoticeVisible={aiNoticeVisible}
             aiPanelVisible={aiPanelVisible}
+            aiPromptFocused={aiPromptFocused}
+            onSetAiPromptFocused={onSetAiPromptFocused}
             enterLabel={enterLabel}
             theme={settings.theme}
             height={settings.height}

@@ -1315,58 +1315,98 @@ fun ComposeKeyboardView(
     hapticEnabled: Boolean = true,
     aiNoticeVisible: Boolean = false,
     aiPanelVisible: Boolean = false,
+    aiPromptFocused: Boolean? = null,
+    customPrompt: String? = null,
+    selectedAiStyle: AiReplyStyle? = null,
+    onSelectAiStyle: ((AiReplyStyle) -> Unit)? = null,
+    onSetAiPromptFocused: ((Boolean) -> Unit)? = null,
+    onClearAiPrompt: (() -> Unit)? = null,
     preferences: KeyboardPreferences? = null,
     modifier: Modifier = Modifier
 ) {
     var rootCoordinates by remember { mutableStateOf<LayoutCoordinates?>(null) }
     var activePopupInfo by remember { mutableStateOf<ActiveKeyPopupInfo?>(null) }
 
-    // Milestone 2: AI Reply Panel State
-    var selectedAiStyle by remember { mutableStateOf(AiReplyStyle.REPLY) }
-    var customPromptText by remember { mutableStateOf("") }
-    var isCustomPromptFocused by remember { mutableStateOf(false) }
+    // Milestone 2: AI Reply Panel State (supports controlled or local state)
+    var localSelectedAiStyle by remember { mutableStateOf(AiReplyStyle.REPLY) }
+    var localCustomPromptText by remember { mutableStateOf("") }
+    var localIsCustomPromptFocused by remember { mutableStateOf(false) }
+
+    val effectiveAiStyle = selectedAiStyle ?: localSelectedAiStyle
+    val effectiveCustomPrompt = customPrompt ?: localCustomPromptText
+    val effectivePromptFocused = aiPromptFocused ?: localIsCustomPromptFocused
+
+    // When the AI panel is closed or dismissed, immediately return input focus to the host application
+    LaunchedEffect(aiPanelVisible) {
+        if (!aiPanelVisible) {
+            localIsCustomPromptFocused = false
+            onSetAiPromptFocused?.invoke(false)
+        }
+    }
 
     // Intercept keyboard typing when user is editing custom prompt in AI Reply Panel
     val effectiveListener: KeyboardActionListener = remember(
         actionListener,
-        isCustomPromptFocused,
-        customPromptText,
+        effectivePromptFocused,
+        aiPanelVisible,
         shiftState,
-        selectedAiStyle
+        effectiveAiStyle,
+        aiPromptFocused
     ) {
-        if (!isCustomPromptFocused) {
+        if (!aiPanelVisible || !effectivePromptFocused) {
             actionListener
         } else {
             object : KeyboardActionListener by actionListener {
                 override fun onTextInput(text: String) {
-                    val toAdd = when (shiftState) {
-                        ShiftState.SHIFTED, ShiftState.CAPS_LOCK -> text.uppercase()
-                        ShiftState.OFF -> text.lowercase()
-                    }
-                    customPromptText += toAdd
-                    if (shiftState == ShiftState.SHIFTED) {
-                        actionListener.onShiftClicked()
+                    if (aiPromptFocused != null) {
+                        actionListener.onTextInput(text)
+                    } else {
+                        val toAdd = when (shiftState) {
+                            ShiftState.SHIFTED, ShiftState.CAPS_LOCK -> text.uppercase()
+                            ShiftState.OFF -> text.lowercase()
+                        }
+                        localCustomPromptText += toAdd
+                        if (shiftState == ShiftState.SHIFTED) {
+                            actionListener.onShiftClicked()
+                        }
                     }
                 }
 
                 override fun onBackspace() {
-                    if (customPromptText.isNotEmpty()) {
-                        customPromptText = customPromptText.dropLast(1)
+                    // Milestone 2 Fix: Route backspace to AI prompt state when focused, never touching host InputConnection
+                    if (aiPromptFocused != null) {
+                        actionListener.onBackspace()
+                    } else {
+                        if (localCustomPromptText.isNotEmpty()) {
+                            localCustomPromptText = localCustomPromptText.dropLast(1)
+                        }
                     }
                 }
 
                 override fun onSpace() {
-                    customPromptText += " "
+                    if (aiPromptFocused != null) {
+                        actionListener.onSpace()
+                    } else {
+                        localCustomPromptText += " "
+                    }
                 }
 
                 override fun onPeriod() {
-                    customPromptText += "."
+                    if (aiPromptFocused != null) {
+                        actionListener.onPeriod()
+                    } else {
+                        localCustomPromptText += "."
+                    }
                 }
 
                 override fun onEnter() {
-                    actionListener.onAiGenerate(selectedAiStyle.name, customPromptText)
-                    isCustomPromptFocused = false
-                    customPromptText = ""
+                    if (aiPromptFocused != null) {
+                        actionListener.onEnter()
+                    } else {
+                        actionListener.onAiGenerate(effectiveAiStyle.name, effectiveCustomPrompt)
+                        localIsCustomPromptFocused = false
+                        localCustomPromptText = ""
+                    }
                 }
             }
         }
@@ -1416,20 +1456,32 @@ fun ComposeKeyboardView(
                 // Milestone 2: Compact AI Reply Panel situated above toolbar & keyboard
                 if (aiPanelVisible) {
                     AiReplyPanelView(
-                        selectedStyle = selectedAiStyle,
-                        onSelectStyle = { selectedAiStyle = it },
-                        customPrompt = customPromptText,
-                        onClearPrompt = { customPromptText = "" },
-                        isPromptFocused = isCustomPromptFocused,
-                        onTogglePromptFocus = { isCustomPromptFocused = it },
+                        selectedStyle = effectiveAiStyle,
+                        onSelectStyle = { style ->
+                            localSelectedAiStyle = style
+                            onSelectAiStyle?.invoke(style)
+                        },
+                        customPrompt = effectiveCustomPrompt,
+                        onClearPrompt = {
+                            localCustomPromptText = ""
+                            onClearAiPrompt?.invoke()
+                        },
+                        isPromptFocused = effectivePromptFocused,
+                        onTogglePromptFocus = { focused ->
+                            localIsCustomPromptFocused = focused
+                            onSetAiPromptFocused?.invoke(focused)
+                        },
                         onGenerate = { style, prompt ->
                             actionListener.onAiGenerate(style.name, prompt)
-                            isCustomPromptFocused = false
-                            customPromptText = ""
+                            localIsCustomPromptFocused = false
+                            localCustomPromptText = ""
+                            onSetAiPromptFocused?.invoke(false)
+                            onClearAiPrompt?.invoke()
                         },
                         onClose = {
                             actionListener.onCloseAiPanel()
-                            isCustomPromptFocused = false
+                            localIsCustomPromptFocused = false
+                            onSetAiPromptFocused?.invoke(false)
                         },
                         tokens = tokens,
                         hapticEnabled = hapticEnabled,
@@ -2548,6 +2600,9 @@ class AiInputMethodService : ComposeLifecycleInputMethodService(), KeyboardActio
     private val shiftState = mutableStateOf(ShiftState.OFF)
     private val aiNoticeVisible = mutableStateOf(false)
     private val aiPanelVisible = mutableStateOf(false)
+    private val aiPromptFocused = mutableStateOf(false)
+    private val customPromptTextState = mutableStateOf("")
+    private val selectedAiStyleState = mutableStateOf(AiReplyStyle.REPLY)
 
     // Milestone 1C: Dynamic Local Settings
     private val themeIdState = mutableStateOf(KeyboardThemeId.MIDNIGHT)
@@ -2598,6 +2653,12 @@ class AiInputMethodService : ComposeLifecycleInputMethodService(), KeyboardActio
                     hapticEnabled = hapticEnabledState.value,
                     aiNoticeVisible = aiNoticeVisible.value,
                     aiPanelVisible = aiPanelVisible.value,
+                    aiPromptFocused = aiPromptFocused.value,
+                    customPrompt = customPromptTextState.value,
+                    selectedAiStyle = selectedAiStyleState.value,
+                    onSelectAiStyle = { selectedAiStyleState.value = it },
+                    onSetAiPromptFocused = { aiPromptFocused.value = it },
+                    onClearAiPrompt = { customPromptTextState.value = "" },
                     preferences = preferences
                 )
             }
@@ -2619,63 +2680,103 @@ class AiInputMethodService : ComposeLifecycleInputMethodService(), KeyboardActio
             shiftState.value = ShiftState.OFF
             aiNoticeVisible.value = false
             aiPanelVisible.value = false
+            aiPromptFocused.value = false
+            customPromptTextState.value = ""
         }
     }
 
-    // --- KeyboardActionListener Implementation via InputConnection ---
+    override fun onFinishInputView(finishingInput: Boolean) {
+        super.onFinishInputView(finishingInput)
+        aiPanelVisible.value = false
+        aiPromptFocused.value = false
+    }
+
+    // --- KeyboardActionListener Implementation with Explicit Input Routing ---
 
     override fun onTextInput(text: String) {
-        val ic = currentInputConnection ?: return
-        val textToCommit = when (shiftState.value) {
-            ShiftState.SHIFTED, ShiftState.CAPS_LOCK -> text.uppercase()
-            ShiftState.OFF -> text.lowercase()
-        }
-        ic.commitText(textToCommit, 1)
+        if (aiPanelVisible.value && aiPromptFocused.value) {
+            val toAdd = when (shiftState.value) {
+                ShiftState.SHIFTED, ShiftState.CAPS_LOCK -> text.uppercase()
+                ShiftState.OFF -> text.lowercase()
+            }
+            customPromptTextState.value += toAdd
+            if (shiftState.value == ShiftState.SHIFTED) {
+                shiftState.value = ShiftState.OFF
+            }
+        } else {
+            val ic = currentInputConnection ?: return
+            val textToCommit = when (shiftState.value) {
+                ShiftState.SHIFTED, ShiftState.CAPS_LOCK -> text.uppercase()
+                ShiftState.OFF -> text.lowercase()
+            }
+            ic.commitText(textToCommit, 1)
 
-        if (shiftState.value == ShiftState.SHIFTED) {
-            shiftState.value = ShiftState.OFF
+            if (shiftState.value == ShiftState.SHIFTED) {
+                shiftState.value = ShiftState.OFF
+            }
         }
     }
 
     override fun onBackspace() {
-        val ic = currentInputConnection ?: return
-        val selectedText = ic.getSelectedText(0)
-        if (!selectedText.isNullOrEmpty()) {
-            ic.commitText("", 1)
+        if (aiPanelVisible.value && aiPromptFocused.value) {
+            // Milestone 2 Fix: Route backspace to AI custom prompt state when focused, never touching host InputConnection
+            if (customPromptTextState.value.isNotEmpty()) {
+                customPromptTextState.value = customPromptTextState.value.dropLast(1)
+            }
         } else {
-            ic.deleteSurroundingText(1, 0)
+            val ic = currentInputConnection ?: return
+            val selectedText = ic.getSelectedText(0)
+            if (!selectedText.isNullOrEmpty()) {
+                ic.commitText("", 1)
+            } else {
+                ic.deleteSurroundingText(1, 0)
+            }
         }
     }
 
     override fun onSpace() {
-        currentInputConnection?.commitText(" ", 1)
+        if (aiPanelVisible.value && aiPromptFocused.value) {
+            customPromptTextState.value += " "
+        } else {
+            currentInputConnection?.commitText(" ", 1)
+        }
     }
 
     override fun onPeriod() {
-        currentInputConnection?.commitText(".", 1)
+        if (aiPanelVisible.value && aiPromptFocused.value) {
+            customPromptTextState.value += "."
+        } else {
+            currentInputConnection?.commitText(".", 1)
+        }
     }
 
     override fun onEnter() {
-        val ic = currentInputConnection ?: return
-        val info = currentInputEditorInfo
-
-        val action = if (info != null) {
-            info.imeOptions and (EditorInfo.IME_MASK_ACTION or EditorInfo.IME_FLAG_NO_ENTER_ACTION)
+        if (aiPanelVisible.value && aiPromptFocused.value) {
+            onAiGenerate(selectedAiStyleState.value.name, customPromptTextState.value)
+            aiPromptFocused.value = false
+            customPromptTextState.value = ""
         } else {
-            EditorInfo.IME_ACTION_NONE
-        }
+            val ic = currentInputConnection ?: return
+            val info = currentInputEditorInfo
 
-        when (action) {
-            EditorInfo.IME_ACTION_GO,
-            EditorInfo.IME_ACTION_SEARCH,
-            EditorInfo.IME_ACTION_SEND,
-            EditorInfo.IME_ACTION_NEXT,
-            EditorInfo.IME_ACTION_DONE -> {
-                ic.performEditorAction(action)
+            val action = if (info != null) {
+                info.imeOptions and (EditorInfo.IME_MASK_ACTION or EditorInfo.IME_FLAG_NO_ENTER_ACTION)
+            } else {
+                EditorInfo.IME_ACTION_NONE
             }
-            else -> {
-                ic.sendKeyEvent(KeyEvent(KeyEvent.ACTION_DOWN, KeyEvent.KEYCODE_ENTER))
-                ic.sendKeyEvent(KeyEvent(KeyEvent.ACTION_UP, KeyEvent.KEYCODE_ENTER))
+
+            when (action) {
+                EditorInfo.IME_ACTION_GO,
+                EditorInfo.IME_ACTION_SEARCH,
+                EditorInfo.IME_ACTION_SEND,
+                EditorInfo.IME_ACTION_NEXT,
+                EditorInfo.IME_ACTION_DONE -> {
+                    ic.performEditorAction(action)
+                }
+                else -> {
+                    ic.sendKeyEvent(KeyEvent(KeyEvent.ACTION_DOWN, KeyEvent.KEYCODE_ENTER))
+                    ic.sendKeyEvent(KeyEvent(KeyEvent.ACTION_UP, KeyEvent.KEYCODE_ENTER))
+                }
             }
         }
     }
@@ -2714,15 +2815,27 @@ class AiInputMethodService : ComposeLifecycleInputMethodService(), KeyboardActio
         }
     }
 
-    // --- Toolbar Actions ---
+    // --- Toolbar & AI Reply Actions ---
 
     override fun onAiClicked() {
         // Milestone 2: Toggle the compact AI reply panel
         aiPanelVisible.value = !aiPanelVisible.value
+        if (!aiPanelVisible.value) {
+            aiPromptFocused.value = false
+        }
     }
 
     override fun onCloseAiPanel() {
         aiPanelVisible.value = false
+        aiPromptFocused.value = false
+    }
+
+    override fun onSetAiPromptFocused(focused: Boolean) {
+        aiPromptFocused.value = focused
+    }
+
+    override fun onClearAiPrompt() {
+        customPromptTextState.value = ""
     }
 
     override fun onAiGenerate(style: String, customPrompt: String) {
@@ -2737,8 +2850,10 @@ class AiInputMethodService : ComposeLifecycleInputMethodService(), KeyboardActio
             ic.commitText(mockReply, 1)
         }
 
-        // Close AI panel after insertion, leaving user on normal keyboard ready to edit or send
+        // Close AI panel and reset focus after insertion, leaving user on normal keyboard
         aiPanelVisible.value = false
+        aiPromptFocused.value = false
+        customPromptTextState.value = ""
     }
 
     override fun onGifClicked() {
@@ -2842,6 +2957,8 @@ interface KeyboardActionListener {
     // Milestone 2: AI Reply Panel Actions
     fun onAiGenerate(style: String, customPrompt: String) {}
     fun onCloseAiPanel() {}
+    fun onSetAiPromptFocused(focused: Boolean) {}
+    fun onClearAiPrompt() {}
 }
 `
   },
@@ -3587,6 +3704,91 @@ class KeyboardStateTest {
             customPrompt
         )
         assertTrue(customReply.contains(customPrompt))
+    }
+
+    @Test
+    fun testInputRoutingAndBackspaceTargeting() {
+        var hostBuffer = "hello"
+        var customPrompt = ""
+        var aiPanelVisible = false
+        var aiPromptFocused = false
+
+        fun handleTextInput(text: String) {
+            if (aiPanelVisible && aiPromptFocused) {
+                customPrompt += text
+            } else {
+                hostBuffer += text
+            }
+        }
+
+        fun handleBackspace() {
+            if (aiPanelVisible && aiPromptFocused) {
+                if (customPrompt.isNotEmpty()) {
+                    customPrompt = customPrompt.dropLast(1)
+                }
+            } else {
+                if (hostBuffer.isNotEmpty()) {
+                    hostBuffer = hostBuffer.dropLast(1)
+                }
+            }
+        }
+
+        fun handleSpace() {
+            if (aiPanelVisible && aiPromptFocused) {
+                customPrompt += " "
+            } else {
+                hostBuffer += " "
+            }
+        }
+
+        fun handleClearButton() {
+            customPrompt = ""
+        }
+
+        // Case 1: Normal chat input focused
+        assertEquals("hello", hostBuffer)
+        handleBackspace()
+        assertEquals("hell", hostBuffer)
+        handleTextInput("o")
+        assertEquals("hello", hostBuffer)
+        assertEquals("", customPrompt)
+
+        // Case 2: Open AI panel and focus custom prompt
+        aiPanelVisible = true
+        aiPromptFocused = true
+
+        // Type letters into custom prompt
+        val promptToType = "make this sound professional"
+        for (ch in promptToType) {
+            if (ch == ' ') handleSpace() else handleTextInput(ch.toString())
+        }
+        assertEquals("make this sound professional", customPrompt)
+        assertEquals("hello", hostBuffer) // Host chat buffer MUST remain untouched!
+
+        // Backspace several times in custom prompt
+        repeat(7) { handleBackspace() }
+        assertEquals("make this sound professio", customPrompt)
+        assertEquals("hello", hostBuffer) // Host remains untouched
+
+        // Simulate long-press continuous backspace until empty
+        repeat(50) { handleBackspace() }
+        assertEquals("", customPrompt)
+        assertEquals("hello", hostBuffer) // Even when custom prompt is empty, host is never touched
+
+        // Clear button clears prompt
+        customPrompt = "some prompt"
+        handleClearButton()
+        assertEquals("", customPrompt)
+        assertEquals("hello", hostBuffer)
+
+        // Case 3: Close AI panel / leave custom prompt -> returns to normal chat input
+        aiPanelVisible = false
+        aiPromptFocused = false
+
+        handleTextInput(" world")
+        assertEquals("hello world", hostBuffer)
+        handleBackspace()
+        assertEquals("hello worl", hostBuffer)
     }
 }
 `

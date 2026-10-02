@@ -46,4 +46,6 @@ interface KeyboardActionListener {
     // Milestone 2: AI Reply Panel Actions
     fun onAiGenerate(style: String, customPrompt: String) {}
     fun onCloseAiPanel() {}
+    fun onSetAiPromptFocused(focused: Boolean) {}
+    fun onClearAiPrompt() {}
 }

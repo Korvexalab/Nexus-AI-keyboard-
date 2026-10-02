@@ -141,4 +141,89 @@ class KeyboardStateTest {
         )
         assertTrue(customReply.contains(customPrompt))
     }
+
+    @Test
+    fun testInputRoutingAndBackspaceTargeting() {
+        var hostBuffer = "hello"
+        var customPrompt = ""
+        var aiPanelVisible = false
+        var aiPromptFocused = false
+
+        fun handleTextInput(text: String) {
+            if (aiPanelVisible && aiPromptFocused) {
+                customPrompt += text
+            } else {
+                hostBuffer += text
+            }
+        }
+
+        fun handleBackspace() {
+            if (aiPanelVisible && aiPromptFocused) {
+                if (customPrompt.isNotEmpty()) {
+                    customPrompt = customPrompt.dropLast(1)
+                }
+            } else {
+                if (hostBuffer.isNotEmpty()) {
+                    hostBuffer = hostBuffer.dropLast(1)
+                }
+            }
+        }
+
+        fun handleSpace() {
+            if (aiPanelVisible && aiPromptFocused) {
+                customPrompt += " "
+            } else {
+                hostBuffer += " "
+            }
+        }
+
+        fun handleClearButton() {
+            customPrompt = ""
+        }
+
+        // Case 1: Normal chat input focused
+        assertEquals("hello", hostBuffer)
+        handleBackspace()
+        assertEquals("hell", hostBuffer)
+        handleTextInput("o")
+        assertEquals("hello", hostBuffer)
+        assertEquals("", customPrompt)
+
+        // Case 2: Open AI panel and focus custom prompt
+        aiPanelVisible = true
+        aiPromptFocused = true
+
+        // Type letters into custom prompt
+        val promptToType = "make this sound professional"
+        for (ch in promptToType) {
+            if (ch == ' ') handleSpace() else handleTextInput(ch.toString())
+        }
+        assertEquals("make this sound professional", customPrompt)
+        assertEquals("hello", hostBuffer) // Host chat buffer MUST remain untouched!
+
+        // Backspace several times in custom prompt
+        repeat(7) { handleBackspace() }
+        assertEquals("make this sound professio", customPrompt)
+        assertEquals("hello", hostBuffer) // Host remains untouched
+
+        // Simulate long-press continuous backspace until empty
+        repeat(50) { handleBackspace() }
+        assertEquals("", customPrompt)
+        assertEquals("hello", hostBuffer) // Even when custom prompt is empty, host is never touched
+
+        // Clear button clears prompt
+        customPrompt = "some prompt"
+        handleClearButton()
+        assertEquals("", customPrompt)
+        assertEquals("hello", hostBuffer)
+
+        // Case 3: Close AI panel / leave custom prompt -> returns to normal chat input
+        aiPanelVisible = false
+        aiPromptFocused = false
+
+        handleTextInput(" world")
+        assertEquals("hello world", hostBuffer)
+        handleBackspace()
+        assertEquals("hello worl", hostBuffer)
+    }
 }

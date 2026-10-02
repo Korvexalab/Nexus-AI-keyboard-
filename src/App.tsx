@@ -77,6 +77,7 @@ export default function App() {
 
   // Milestone 2: AI Reply Panel State
   const [aiPanelVisible, setAiPanelVisible] = useState<boolean>(false);
+  const [aiPromptFocused, setAiPromptFocused] = useState<boolean>(false);
   const [aiNoticeVisible, setAiNoticeVisible] = useState<boolean>(false);
   const aiNoticeTimeoutRef = useRef<number | null>(null);
 
@@ -323,13 +324,23 @@ export default function App() {
     // Milestone 2: AI Reply Actions
     onAiClicked: () => {
       playClickSound();
-      setAiPanelVisible((prev) => !prev);
+      setAiPanelVisible((prev) => {
+        const next = !prev;
+        if (!next) setAiPromptFocused(false);
+        return next;
+      });
       addLog('Toolbar: AI', `✨ AI button clicked -> ${!aiPanelVisible ? 'Opened' : 'Closed'} Fast AI Reply panel`, 'action');
     },
 
     onCloseAiPanel: () => {
       setAiPanelVisible(false);
+      setAiPromptFocused(false);
       addLog('AI Reply', 'Closed AI Reply panel', 'state');
+    },
+
+    onSetAiPromptFocused: (focused: boolean) => {
+      setAiPromptFocused(focused);
+      addLog('AI Prompt', `Custom prompt focus: ${focused ? 'ACTIVE' : 'RELEASED'}`, 'state');
     },
 
     onAiGenerate: (style: string, customPrompt: string) => {
@@ -350,8 +361,9 @@ export default function App() {
         addLog('ic.commitText()', `commitText("${mockReply}", 1) [AI Reply inserted directly into chat bar]`, 'commit');
       }
 
-      // Close the AI panel so the normal keyboard is immediately available
+      // Close the AI panel and reset focus so the normal keyboard is immediately available
       setAiPanelVisible(false);
+      setAiPromptFocused(false);
     },
 
     onGifClicked: () => {
@@ -586,6 +598,8 @@ export default function App() {
                 keyboardListener={keyboardListener}
                 aiNoticeVisible={aiNoticeVisible}
                 aiPanelVisible={aiPanelVisible}
+                aiPromptFocused={aiPromptFocused}
+                onSetAiPromptFocused={setAiPromptFocused}
                 isImeEnabledInSettings={isImeEnabledInSettings}
                 onToggleImeInSettings={() => {
                   const next = !isImeEnabledInSettings;

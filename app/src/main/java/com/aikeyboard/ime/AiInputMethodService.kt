@@ -31,6 +31,9 @@ class AiInputMethodService : ComposeLifecycleInputMethodService(), KeyboardActio
     private val shiftState = mutableStateOf(ShiftState.OFF)
     private val aiNoticeVisible = mutableStateOf(false)
     private val aiPanelVisible = mutableStateOf(false)
+    private val aiPromptFocused = mutableStateOf(false)
+    private val customPromptTextState = mutableStateOf("")
+    private val selectedAiStyleState = mutableStateOf(AiReplyStyle.REPLY)
 
     // Milestone 1C: Dynamic Local Settings
     private val themeIdState = mutableStateOf(KeyboardThemeId.MIDNIGHT)
@@ -81,6 +84,12 @@ class AiInputMethodService : ComposeLifecycleInputMethodService(), KeyboardActio
                     hapticEnabled = hapticEnabledState.value,
                     aiNoticeVisible = aiNoticeVisible.value,
                     aiPanelVisible = aiPanelVisible.value,
+                    aiPromptFocused = aiPromptFocused.value,
+                    customPrompt = customPromptTextState.value,
+                    selectedAiStyle = selectedAiStyleState.value,
+                    onSelectAiStyle = { selectedAiStyleState.value = it },
+                    onSetAiPromptFocused = { aiPromptFocused.value = it },
+                    onClearAiPrompt = { customPromptTextState.value = "" },
                     preferences = preferences
                 )
             }
@@ -102,63 +111,103 @@ class AiInputMethodService : ComposeLifecycleInputMethodService(), KeyboardActio
             shiftState.value = ShiftState.OFF
             aiNoticeVisible.value = false
             aiPanelVisible.value = false
+            aiPromptFocused.value = false
+            customPromptTextState.value = ""
         }
     }
 
-    // --- KeyboardActionListener Implementation via InputConnection ---
+    override fun onFinishInputView(finishingInput: Boolean) {
+        super.onFinishInputView(finishingInput)
+        aiPanelVisible.value = false
+        aiPromptFocused.value = false
+    }
+
+    // --- KeyboardActionListener Implementation with Explicit Input Routing ---
 
     override fun onTextInput(text: String) {
-        val ic = currentInputConnection ?: return
-        val textToCommit = when (shiftState.value) {
-            ShiftState.SHIFTED, ShiftState.CAPS_LOCK -> text.uppercase()
-            ShiftState.OFF -> text.lowercase()
-        }
-        ic.commitText(textToCommit, 1)
+        if (aiPanelVisible.value && aiPromptFocused.value) {
+            val toAdd = when (shiftState.value) {
+                ShiftState.SHIFTED, ShiftState.CAPS_LOCK -> text.uppercase()
+                ShiftState.OFF -> text.lowercase()
+            }
+            customPromptTextState.value += toAdd
+            if (shiftState.value == ShiftState.SHIFTED) {
+                shiftState.value = ShiftState.OFF
+            }
+        } else {
+            val ic = currentInputConnection ?: return
+            val textToCommit = when (shiftState.value) {
+                ShiftState.SHIFTED, ShiftState.CAPS_LOCK -> text.uppercase()
+                ShiftState.OFF -> text.lowercase()
+            }
+            ic.commitText(textToCommit, 1)
 
-        if (shiftState.value == ShiftState.SHIFTED) {
-            shiftState.value = ShiftState.OFF
+            if (shiftState.value == ShiftState.SHIFTED) {
+                shiftState.value = ShiftState.OFF
+            }
         }
     }
 
     override fun onBackspace() {
-        val ic = currentInputConnection ?: return
-        val selectedText = ic.getSelectedText(0)
-        if (!selectedText.isNullOrEmpty()) {
-            ic.commitText("", 1)
+        if (aiPanelVisible.value && aiPromptFocused.value) {
+            // Milestone 2 Fix: Route backspace to AI custom prompt state when focused, never touching host InputConnection
+            if (customPromptTextState.value.isNotEmpty()) {
+                customPromptTextState.value = customPromptTextState.value.dropLast(1)
+            }
         } else {
-            ic.deleteSurroundingText(1, 0)
+            val ic = currentInputConnection ?: return
+            val selectedText = ic.getSelectedText(0)
+            if (!selectedText.isNullOrEmpty()) {
+                ic.commitText("", 1)
+            } else {
+                ic.deleteSurroundingText(1, 0)
+            }
         }
     }
 
     override fun onSpace() {
-        currentInputConnection?.commitText(" ", 1)
+        if (aiPanelVisible.value && aiPromptFocused.value) {
+            customPromptTextState.value += " "
+        } else {
+            currentInputConnection?.commitText(" ", 1)
+        }
     }
 
     override fun onPeriod() {
-        currentInputConnection?.commitText(".", 1)
+        if (aiPanelVisible.value && aiPromptFocused.value) {
+            customPromptTextState.value += "."
+        } else {
+            currentInputConnection?.commitText(".", 1)
+        }
     }
 
     override fun onEnter() {
-        val ic = currentInputConnection ?: return
-        val info = currentInputEditorInfo
-
-        val action = if (info != null) {
-            info.imeOptions and (EditorInfo.IME_MASK_ACTION or EditorInfo.IME_FLAG_NO_ENTER_ACTION)
+        if (aiPanelVisible.value && aiPromptFocused.value) {
+            onAiGenerate(selectedAiStyleState.value.name, customPromptTextState.value)
+            aiPromptFocused.value = false
+            customPromptTextState.value = ""
         } else {
-            EditorInfo.IME_ACTION_NONE
-        }
+            val ic = currentInputConnection ?: return
+            val info = currentInputEditorInfo
 
-        when (action) {
-            EditorInfo.IME_ACTION_GO,
-            EditorInfo.IME_ACTION_SEARCH,
-            EditorInfo.IME_ACTION_SEND,
-            EditorInfo.IME_ACTION_NEXT,
-            EditorInfo.IME_ACTION_DONE -> {
-                ic.performEditorAction(action)
+            val action = if (info != null) {
+                info.imeOptions and (EditorInfo.IME_MASK_ACTION or EditorInfo.IME_FLAG_NO_ENTER_ACTION)
+            } else {
+                EditorInfo.IME_ACTION_NONE
             }
-            else -> {
-                ic.sendKeyEvent(KeyEvent(KeyEvent.ACTION_DOWN, KeyEvent.KEYCODE_ENTER))
-                ic.sendKeyEvent(KeyEvent(KeyEvent.ACTION_UP, KeyEvent.KEYCODE_ENTER))
+
+            when (action) {
+                EditorInfo.IME_ACTION_GO,
+                EditorInfo.IME_ACTION_SEARCH,
+                EditorInfo.IME_ACTION_SEND,
+                EditorInfo.IME_ACTION_NEXT,
+                EditorInfo.IME_ACTION_DONE -> {
+                    ic.performEditorAction(action)
+                }
+                else -> {
+                    ic.sendKeyEvent(KeyEvent(KeyEvent.ACTION_DOWN, KeyEvent.KEYCODE_ENTER))
+                    ic.sendKeyEvent(KeyEvent(KeyEvent.ACTION_UP, KeyEvent.KEYCODE_ENTER))
+                }
             }
         }
     }
@@ -197,15 +246,27 @@ class AiInputMethodService : ComposeLifecycleInputMethodService(), KeyboardActio
         }
     }
 
-    // --- Toolbar Actions ---
+    // --- Toolbar & AI Reply Actions ---
 
     override fun onAiClicked() {
         // Milestone 2: Toggle the compact AI reply panel
         aiPanelVisible.value = !aiPanelVisible.value
+        if (!aiPanelVisible.value) {
+            aiPromptFocused.value = false
+        }
     }
 
     override fun onCloseAiPanel() {
         aiPanelVisible.value = false
+        aiPromptFocused.value = false
+    }
+
+    override fun onSetAiPromptFocused(focused: Boolean) {
+        aiPromptFocused.value = focused
+    }
+
+    override fun onClearAiPrompt() {
+        customPromptTextState.value = ""
     }
 
     override fun onAiGenerate(style: String, customPrompt: String) {
@@ -220,8 +281,10 @@ class AiInputMethodService : ComposeLifecycleInputMethodService(), KeyboardActio
             ic.commitText(mockReply, 1)
         }
 
-        // Close AI panel after insertion, leaving user on normal keyboard ready to edit or send
+        // Close AI panel and reset focus after insertion, leaving user on normal keyboard
         aiPanelVisible.value = false
+        aiPromptFocused.value = false
+        customPromptTextState.value = ""
     }
 
     override fun onGifClicked() {
