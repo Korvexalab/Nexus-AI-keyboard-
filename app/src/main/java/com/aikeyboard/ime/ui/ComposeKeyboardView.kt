@@ -70,6 +70,9 @@ import com.aikeyboard.ime.KeyboardActionListener
 import com.aikeyboard.ime.KeyboardMode
 import com.aikeyboard.ime.KeyboardPreferences
 import com.aikeyboard.ime.ShiftState
+import com.aikeyboard.ime.ai.AiAction
+import com.aikeyboard.ime.ai.AiPersona
+import com.aikeyboard.ime.ai.AiReplyGenerator
 import com.aikeyboard.ime.ai.AiReplyStyle
 import com.aikeyboard.ime.ui.theme.KeyboardColorTokens
 import com.aikeyboard.ime.ui.theme.KeyboardThemes
@@ -109,7 +112,11 @@ fun ComposeKeyboardView(
     var rootCoordinates by remember { mutableStateOf<LayoutCoordinates?>(null) }
     var activePopupInfo by remember { mutableStateOf<ActiveKeyPopupInfo?>(null) }
 
-    // Milestone 2: AI Reply Panel State (supports controlled or local state)
+    // Milestone 2: AI Command Center State (supports controlled or local state)
+    var localSelectedAiAction by remember { mutableStateOf(AiAction.REPLY) }
+    var localSelectedAiPersona by remember { mutableStateOf(AiPersona.FRIENDLY) }
+    var localIsContextExpanded by remember { mutableStateOf(false) }
+    var localIsMoreExpanded by remember { mutableStateOf(false) }
     var localSelectedAiStyle by remember { mutableStateOf(AiReplyStyle.REPLY) }
     var localCustomPromptText by remember { mutableStateOf("") }
     var localIsCustomPromptFocused by remember { mutableStateOf(false) }
@@ -235,15 +242,14 @@ fun ComposeKeyboardView(
                     .padding(bottom = 6.dp),
                 verticalArrangement = Arrangement.spacedBy(4.dp)
             ) {
-                // Milestone 2: Compact AI Reply Panel situated above toolbar & keyboard
+                // Milestone 2: Compact AI Command Center Panel situated above toolbar & keyboard
                 if (aiPanelVisible) {
                     AiReplyPanelView(
-                        selectedStyle = effectiveAiStyle,
-                        onSelectStyle = { style ->
-                            localSelectedAiStyle = style
-                            onSelectAiStyle?.invoke(style)
-                        },
-                        customPrompt = effectiveCustomPrompt,
+                        selectedAction = localSelectedAiAction,
+                        onSelectAction = { action -> localSelectedAiAction = action },
+                        selectedPersona = localSelectedAiPersona,
+                        onSelectPersona = { persona -> localSelectedAiPersona = persona },
+                        contextText = effectiveCustomPrompt,
                         onClearPrompt = {
                             localCustomPromptText = ""
                             onClearAiPrompt?.invoke()
@@ -253,8 +259,14 @@ fun ComposeKeyboardView(
                             localIsCustomPromptFocused = focused
                             onSetAiPromptFocused?.invoke(focused)
                         },
-                        onGenerate = { style, prompt ->
-                            actionListener.onAiGenerate(style.name, prompt)
+                        isContextExpanded = localIsContextExpanded,
+                        onToggleContextExpanded = { expanded -> localIsContextExpanded = expanded },
+                        isMoreExpanded = localIsMoreExpanded,
+                        onToggleMoreExpanded = { expanded -> localIsMoreExpanded = expanded },
+                        onGenerate = { action, persona, context ->
+                            val generated = AiReplyGenerator.generateReply(action, persona, context)
+                            actionListener.onTextInput(generated)
+                            actionListener.onCloseAiPanel()
                             localIsCustomPromptFocused = false
                             localCustomPromptText = ""
                             onSetAiPromptFocused?.invoke(false)

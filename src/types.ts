@@ -49,8 +49,8 @@ export interface KeyboardActionListener {
   onThemeClicked: () => void;
   onSettingsClicked: () => void;
 
-  // Milestone 2: AI Reply Panel Actions
-  onAiGenerate?: (style: string, customPrompt: string) => void;
+  // Milestone 2: AI Command Center Panel Actions
+  onAiGenerate?: (action: string, persona: string, context: string) => void;
   onCloseAiPanel?: () => void;
   onSetAiPromptFocused?: (focused: boolean) => void;
   onClearAiPrompt?: () => void;

@@ -27,7 +27,7 @@ import {
 } from 'lucide-react';
 import JSZip from 'jszip';
 import { ANDROID_FILES } from './androidSources';
-import { AiReplyGenerator, AiReplyStyle } from './services/aiReplyGenerator';
+import { defaultAiGenerator, AiActionId, AiPersonaId } from './services/aiReplyGenerator';
 
 export default function App() {
   // Navigation tabs for desktop view
@@ -343,22 +343,26 @@ export default function App() {
       addLog('AI Prompt', `Custom prompt focus: ${focused ? 'ACTIVE' : 'RELEASED'}`, 'state');
     },
 
-    onAiGenerate: (style: string, customPrompt: string) => {
+    onAiGenerate: (action: string, persona: string, context: string) => {
       playClickSound();
-      const mockReply = AiReplyGenerator.generateMockReply(style as AiReplyStyle, customPrompt);
+      const mockResult = defaultAiGenerator.generate({
+        action: (action as AiActionId) || 'reply',
+        persona: (persona as AiPersonaId) || 'friendly',
+        context
+      });
 
       if (appTarget === 'gmail' && activeField === 'subject') {
-        setEmailSubject((prev) => prev + (prev.length > 0 && !prev.endsWith(' ') ? ' ' : '') + mockReply);
-        addLog('ic.commitText()', `commitText("${mockReply}", 1) [AI Reply inserted to Subject]`, 'commit');
+        setEmailSubject((prev) => prev + (prev.length > 0 && !prev.endsWith(' ') ? ' ' : '') + mockResult);
+        addLog('ic.commitText()', `commitText("${mockResult}", 1) [AI ${action} inserted to Subject]`, 'commit');
       } else {
         setText((prev) => {
           const before = prev.slice(0, cursorPos);
           const after = prev.slice(cursorPos);
-          const insertion = (before.length > 0 && !before.endsWith(' ') ? ' ' : '') + mockReply;
+          const insertion = (before.length > 0 && !before.endsWith(' ') ? ' ' : '') + mockResult;
           setCursorPos(before.length + insertion.length);
           return before + insertion + after;
         });
-        addLog('ic.commitText()', `commitText("${mockReply}", 1) [AI Reply inserted directly into chat bar]`, 'commit');
+        addLog('ic.commitText()', `commitText("${mockResult}", 1) [AI ${action} inserted directly into field]`, 'commit');
       }
 
       // Close the AI panel and reset focus so the normal keyboard is immediately available

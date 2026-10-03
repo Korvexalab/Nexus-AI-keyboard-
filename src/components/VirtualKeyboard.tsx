@@ -3,7 +3,7 @@ import { KeyboardMode, ShiftState, KeyboardActionListener, KeyboardThemeId, Keyb
 import { ArrowUp, Clipboard, CornerDownLeft, Delete, Smile, Trash2 } from 'lucide-react';
 import { KeyboardToolbar } from './KeyboardToolbar';
 import { AiReplyPanel } from './AiReplyPanel';
-import { AiReplyStyle } from '../services/aiReplyGenerator';
+import { AiActionId, AiPersonaId } from '../services/aiReplyGenerator';
 
 interface VirtualKeyboardProps {
   mode: KeyboardMode;
@@ -106,9 +106,12 @@ export const VirtualKeyboard: React.FC<VirtualKeyboardProps> = ({
 }) => {
   const keyboardRef = useRef<HTMLDivElement>(null);
 
-  // Milestone 2: AI Reply Panel State & Explicit Focus Routing
-  const [selectedAiStyle, setSelectedAiStyle] = useState<AiReplyStyle>('reply');
-  const [customPrompt, setCustomPrompt] = useState<string>('');
+  // Milestone 2: AI Command Center State & Explicit Focus Routing
+  const [selectedAiAction, setSelectedAiAction] = useState<AiActionId>('reply');
+  const [selectedAiPersona, setSelectedAiPersona] = useState<AiPersonaId>('friendly');
+  const [contextText, setContextText] = useState<string>('');
+  const [isContextExpanded, setIsContextExpanded] = useState<boolean>(false);
+  const [isMoreExpanded, setIsMoreExpanded] = useState<boolean>(false);
   const [localPromptFocused, setLocalPromptFocused] = useState<boolean>(false);
 
   // Support controlled or uncontrolled focus state
@@ -131,10 +134,14 @@ export const VirtualKeyboard: React.FC<VirtualKeyboardProps> = ({
 
   const handleAiGenerate = () => {
     if (listener.onAiGenerate) {
-      listener.onAiGenerate(selectedAiStyle, customPrompt);
+      listener.onAiGenerate(selectedAiAction, selectedAiPersona, contextText);
     }
     setPromptFocused(false);
-    setCustomPrompt('');
+    setContextText('');
+  };
+
+  const handleInsertAskAi = (textToInsert: string) => {
+    listener.onTextInput(textToInsert);
   };
 
   /**
@@ -144,7 +151,7 @@ export const VirtualKeyboard: React.FC<VirtualKeyboardProps> = ({
    */
   const handleBackspaceAction = () => {
     if (aiPanelVisibleRef.current && isPromptFocusedRef.current) {
-      setCustomPrompt((prev) => (prev.length > 0 ? prev.slice(0, -1) : ''));
+      setContextText((prev) => (prev.length > 0 ? prev.slice(0, -1) : ''));
     } else {
       listener.onBackspace();
     }
@@ -157,7 +164,7 @@ export const VirtualKeyboard: React.FC<VirtualKeyboardProps> = ({
    */
   const handleTextInput = (text: string) => {
     if (aiPanelVisibleRef.current && isPromptFocusedRef.current) {
-      setCustomPrompt((prev) => prev + text);
+      setContextText((prev) => prev + text);
       if (shiftState === 'SHIFTED') {
         listener.onShiftClicked();
       }
@@ -173,14 +180,14 @@ export const VirtualKeyboard: React.FC<VirtualKeyboardProps> = ({
     onBackspace: handleBackspaceAction,
     onSpace: () => {
       if (aiPanelVisibleRef.current && isPromptFocusedRef.current) {
-        setCustomPrompt((prev) => prev + ' ');
+        setContextText((prev) => prev + ' ');
       } else {
         listener.onSpace();
       }
     },
     onPeriod: () => {
       if (aiPanelVisibleRef.current && isPromptFocusedRef.current) {
-        setCustomPrompt((prev) => prev + '.');
+        setContextText((prev) => prev + '.');
       } else {
         listener.onPeriod();
       }
@@ -230,7 +237,7 @@ export const VirtualKeyboard: React.FC<VirtualKeyboardProps> = ({
 
     const performDelete = () => {
       if (targetIsAiPrompt) {
-        setCustomPrompt((prev) => (prev.length > 0 ? prev.slice(0, -1) : ''));
+        setContextText((prev) => (prev.length > 0 ? prev.slice(0, -1) : ''));
       } else {
         listener.onBackspace();
       }
@@ -471,16 +478,23 @@ export const VirtualKeyboard: React.FC<VirtualKeyboardProps> = ({
         isLight ? 'bg-[#F1F5F9] border-slate-300 text-slate-900' : 'bg-[#090D16] border-slate-800/80 text-white'
       } border-t shadow-2xl flex flex-col font-sans transition-colors duration-200 relative`}
     >
-      {/* Milestone 2: Compact AI Reply Panel situated directly above the keyboard */}
+      {/* Milestone 2: Compact AI Command Center Panel situated directly above the keyboard */}
       {aiPanelVisible && (
         <AiReplyPanel
-          selectedStyle={selectedAiStyle}
-          onSelectStyle={setSelectedAiStyle}
-          customPrompt={customPrompt}
-          onClearPrompt={() => setCustomPrompt('')}
+          selectedAction={selectedAiAction}
+          onSelectAction={setSelectedAiAction}
+          selectedPersona={selectedAiPersona}
+          onSelectPersona={setSelectedAiPersona}
+          contextText={contextText}
+          onClearPrompt={() => setContextText('')}
           isPromptFocused={isPromptFocused}
           onTogglePromptFocus={setPromptFocused}
+          isContextExpanded={isContextExpanded}
+          onToggleContextExpanded={setIsContextExpanded}
+          isMoreExpanded={isMoreExpanded}
+          onToggleMoreExpanded={setIsMoreExpanded}
           onGenerate={handleAiGenerate}
+          onInsertAskAiResult={handleInsertAskAi}
           onClose={() => {
             setPromptFocused(false);
             if (listener.onCloseAiPanel) {

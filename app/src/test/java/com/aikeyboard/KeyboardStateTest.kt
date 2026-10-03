@@ -118,6 +118,55 @@ class KeyboardStateTest {
     }
 
     @Test
+    fun testAiCommandCenterActionsAndPersonas() {
+        val actions = com.aikeyboard.ime.ai.AiAction.values()
+        assertEquals(6, actions.size)
+        assertTrue(actions.contains(com.aikeyboard.ime.ai.AiAction.REPLY))
+        assertTrue(actions.contains(com.aikeyboard.ime.ai.AiAction.ASK_AI))
+        assertTrue(actions.contains(com.aikeyboard.ime.ai.AiAction.CONTINUE))
+        assertTrue(actions.contains(com.aikeyboard.ime.ai.AiAction.START))
+        assertTrue(actions.contains(com.aikeyboard.ime.ai.AiAction.REWRITE))
+        assertTrue(actions.contains(com.aikeyboard.ime.ai.AiAction.CREATE))
+
+        // Check primary actions
+        val primary = actions.filter { it.isPrimary }
+        assertEquals(4, primary.size)
+
+        // Check secondary actions (revealed on "more")
+        val secondary = actions.filter { !it.isPrimary }
+        assertEquals(2, secondary.size)
+        assertTrue(secondary.contains(com.aikeyboard.ime.ai.AiAction.REWRITE))
+        assertTrue(secondary.contains(com.aikeyboard.ime.ai.AiAction.CREATE))
+
+        // Check temporary personas
+        val personas = com.aikeyboard.ime.ai.AiPersona.values()
+        assertEquals(5, personas.size)
+        assertTrue(personas.contains(com.aikeyboard.ime.ai.AiPersona.FRIENDLY))
+        assertTrue(personas.contains(com.aikeyboard.ime.ai.AiPersona.PROFESSIONAL))
+        assertTrue(personas.contains(com.aikeyboard.ime.ai.AiPersona.FUNNY))
+        assertTrue(personas.contains(com.aikeyboard.ime.ai.AiPersona.SHORT))
+        assertTrue(personas.contains(com.aikeyboard.ime.ai.AiPersona.NATURAL))
+
+        // Test generation for actions
+        val testContext = "meeting at 4pm"
+        for (action in actions) {
+            val res = com.aikeyboard.ime.ai.AiReplyGenerator.generateReply(
+                action = action,
+                persona = com.aikeyboard.ime.ai.AiPersona.FRIENDLY,
+                context = testContext
+            )
+            assertTrue(res.isNotEmpty())
+        }
+
+        // Test Ask AI generator
+        val askRes = com.aikeyboard.ime.ai.AiReplyGenerator.generateMockAskAiResponse(
+            question = "how to prepare for the sprint",
+            persona = com.aikeyboard.ime.ai.AiPersona.PROFESSIONAL
+        )
+        assertTrue(askRes.contains("sprint") || askRes.isNotEmpty())
+    }
+
+    @Test
     fun testAiReplyStylesAndGeneration() {
         val styles = com.aikeyboard.ime.ai.AiReplyStyle.values()
         assertEquals(5, styles.size)
