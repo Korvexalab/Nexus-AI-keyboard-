@@ -17,19 +17,18 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.lazy.LazyRow
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.Clear
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.ExpandLess
 import androidx.compose.material.icons.filled.ExpandMore
-import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.KeyboardArrowUp
-import androidx.compose.material.icons.filled.Psychology
-import androidx.compose.material3.DropdownMenu
-import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -57,35 +56,47 @@ import com.aikeyboard.ime.ui.theme.AiPillGradientEnd
 import com.aikeyboard.ime.ui.theme.AiPillGradientStart
 import com.aikeyboard.ime.ui.theme.KeyboardColorTokens
 
+enum class AiPanelMode {
+    ACTION_BOARD,
+    ASK_AI
+}
+
+enum class InputTarget {
+    HOST,
+    AI_CONTEXT
+}
+
 /**
  * Milestone 2: AI Command Center Panel
  *
- * Hierarchy:
- * Action (reply, ask_ai, continue, start + more: rewrite, create)
- * ↓
- * Persona (friendly, professional, funny, short, natural)
- * ↓
- * Context / Instruction (+ add context or instruction... expands to input)
- * ↓
- * Generate (generate ✨)
+ * Two main UI modes:
+ * Mode A: AI Action Board
+ * Mode B: Ask AI
  *
- * Compact, phone-friendly, completely offline mock generator for Milestone 2.
+ * Explicit InputTarget architecture:
+ * - When context/question field is tapped: inputTarget = AI_CONTEXT
+ * - When non-text controls (actions, persona, more, generate, back, close) are tapped: inputTarget = HOST
+ * - The IME keyboard remains completely stable and never hides/reopens.
+ * - In-panel horizontal scrolling for persona selector (NO dropdowns).
  */
 @Composable
 fun AiReplyPanelView(
+    panelMode: AiPanelMode = AiPanelMode.ACTION_BOARD,
+    onSetPanelMode: (AiPanelMode) -> Unit = {},
     selectedAction: AiAction = AiAction.REPLY,
     onSelectAction: (AiAction) -> Unit = {},
     selectedPersona: AiPersona = AiPersona.FRIENDLY,
     onSelectPersona: (AiPersona) -> Unit = {},
     contextText: String = "",
     onClearPrompt: () -> Unit = {},
-    isPromptFocused: Boolean = false,
-    onTogglePromptFocus: (Boolean) -> Unit = {},
+    inputTarget: InputTarget = InputTarget.HOST,
+    onSetInputTarget: (InputTarget) -> Unit = {},
     isContextExpanded: Boolean = false,
     onToggleContextExpanded: (Boolean) -> Unit = {},
     isMoreExpanded: Boolean = false,
     onToggleMoreExpanded: (Boolean) -> Unit = {},
     onGenerate: (AiAction, AiPersona, String) -> Unit,
+    onInsertAskAiResult: ((String) -> Unit)? = null,
     onClose: () -> Unit,
     tokens: KeyboardColorTokens,
     hapticEnabled: Boolean = true,
@@ -98,8 +109,8 @@ fun AiReplyPanelView(
     val panelBg = if (tokens.isDark) Color(0xFF0F172A) else Color(0xFFF8FAFC)
     val panelBorder = if (tokens.isDark) Color(0x33818CF8) else Color(0x40CBD5E1)
 
-    var personaMenuOpen by remember { mutableStateOf(false) }
     var askAiResponse by remember { mutableStateOf<String?>(null) }
+    val isContextFocused = inputTarget == InputTarget.AI_CONTEXT
 
     Column(
         modifier = modifier
@@ -110,24 +121,40 @@ fun AiReplyPanelView(
             .padding(horizontal = 12.dp, vertical = 7.dp),
         verticalArrangement = Arrangement.spacedBy(6.dp)
     ) {
-        // Ask AI Mode Branch
-        if (selectedAction == AiAction.ASK_AI) {
-            // Ask AI Header: 🧠 ask ai + writing mode switch + Close
+        // ==========================================
+        // MODE B: ASK AI MODE
+        // ==========================================
+        if (panelMode == AiPanelMode.ASK_AI) {
+            // Header: [← writing actions]               [🧠 ask ai] [×]
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Row(
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(6.dp))
+                        .background(if (tokens.isDark) Color(0xFF1E283D) else Color(0xFFE2E8F0))
+                        .clickable {
+                            if (hapticEnabled) haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                            onSetInputTarget(InputTarget.HOST)
+                            onSetPanelMode(AiPanelMode.ACTION_BOARD)
+                        }
+                        .padding(horizontal = 8.dp, vertical = 4.dp),
                     verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                    horizontalArrangement = Arrangement.spacedBy(4.dp)
                 ) {
-                    Text(text = "🧠", fontSize = 14.sp)
+                    Icon(
+                        imageVector = Icons.Filled.ArrowBack,
+                        contentDescription = "Return to action board",
+                        tint = tokens.textSecondary,
+                        modifier = Modifier.size(12.dp)
+                    )
                     Text(
-                        text = "ask ai",
-                        fontSize = 13.sp,
-                        fontWeight = FontWeight.Bold,
-                        color = tokens.textPrimary
+                        text = "writing actions",
+                        fontSize = 11.sp,
+                        color = tokens.textPrimary,
+                        fontWeight = FontWeight.Medium
                     )
                 }
 
@@ -135,31 +162,27 @@ fun AiReplyPanelView(
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(6.dp)
                 ) {
-                    Box(
-                        modifier = Modifier
-                            .clip(RoundedCornerShape(6.dp))
-                            .background(if (tokens.isDark) Color(0xFF1E283D) else Color(0xFFE2E8F0))
-                            .clickable {
-                                if (hapticEnabled) haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                                onSelectAction(AiAction.REPLY)
-                            }
-                            .padding(horizontal = 8.dp, vertical = 4.dp)
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(4.dp)
                     ) {
+                        Text(text = "🧠", fontSize = 13.sp)
                         Text(
-                            text = "Writing Actions",
-                            fontSize = 10.sp,
-                            color = tokens.textSecondary,
-                            fontWeight = FontWeight.Medium
+                            text = "ask ai",
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = tokens.textPrimary
                         )
                     }
 
                     Box(
                         modifier = Modifier
-                            .size(24.dp)
+                            .size(22.dp)
                             .clip(CircleShape)
                             .background(if (tokens.isDark) Color(0xFF1E283D) else Color(0xFFE2E8F0))
                             .clickable {
                                 if (hapticEnabled) haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                onSetInputTarget(InputTarget.HOST)
                                 onClose()
                             },
                         contentAlignment = Alignment.Center
@@ -168,66 +191,8 @@ fun AiReplyPanelView(
                             imageVector = Icons.Filled.Close,
                             contentDescription = "Close AI Panel",
                             tint = tokens.textSecondary,
-                            modifier = Modifier.size(14.dp)
-                        )
-                    }
-                }
-            }
-
-            // Ask AI Persona selector row
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Text(
-                    text = "persona",
-                    fontSize = 11.sp,
-                    color = tokens.textSecondary,
-                    fontWeight = FontWeight.Medium
-                )
-                Box {
-                    Row(
-                        modifier = Modifier
-                            .clip(RoundedCornerShape(6.dp))
-                            .background(if (tokens.isDark) Color(0xFF1E283D) else Color(0xFFE2E8F0))
-                            .clickable { personaMenuOpen = true }
-                            .padding(horizontal = 8.dp, vertical = 3.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(4.dp)
-                    ) {
-                        Text(text = selectedPersona.emoji, fontSize = 11.sp)
-                        Text(
-                            text = selectedPersona.displayName,
-                            fontSize = 11.sp,
-                            color = tokens.textPrimary,
-                            fontWeight = FontWeight.Medium
-                        )
-                        Icon(
-                            imageVector = Icons.Filled.KeyboardArrowDown,
-                            contentDescription = null,
-                            tint = tokens.textSecondary,
                             modifier = Modifier.size(12.dp)
                         )
-                    }
-                    DropdownMenu(
-                        expanded = personaMenuOpen,
-                        onDismissRequest = { personaMenuOpen = false }
-                    ) {
-                        AiPersona.values().forEach { persona ->
-                            DropdownMenuItem(
-                                text = {
-                                    Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                                        Text(text = persona.emoji)
-                                        Text(text = persona.displayName)
-                                    }
-                                },
-                                onClick = {
-                                    onSelectPersona(persona)
-                                    personaMenuOpen = false
-                                }
-                            )
-                        }
                     }
                 }
             }
@@ -235,14 +200,14 @@ fun AiReplyPanelView(
             // Question prompt field
             Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
                 Text(
-                    text = "ask or instruct ai...",
+                    text = "ask or instruct ai",
                     fontSize = 11.sp,
                     color = tokens.textSecondary,
                     fontWeight = FontWeight.Medium
                 )
 
                 val promptFieldShape = RoundedCornerShape(8.dp)
-                val promptBorderColor = if (isPromptFocused) {
+                val promptBorderColor = if (isContextFocused) {
                     if (tokens.isDark) Color(0xFF818CF8) else Color(0xFF4F46E5)
                 } else {
                     tokens.borderRim
@@ -255,10 +220,10 @@ fun AiReplyPanelView(
                         .height(34.dp)
                         .clip(promptFieldShape)
                         .background(promptBg)
-                        .border(if (isPromptFocused) 1.5.dp else 1.dp, promptBorderColor, promptFieldShape)
+                        .border(if (isContextFocused) 1.5.dp else 1.dp, promptBorderColor, promptFieldShape)
                         .clickable {
                             if (hapticEnabled) haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                            onTogglePromptFocus(true)
+                            onSetInputTarget(InputTarget.AI_CONTEXT)
                         }
                         .padding(horizontal = 10.dp),
                     verticalAlignment = Alignment.CenterVertically,
@@ -311,6 +276,7 @@ fun AiReplyPanelView(
             ActionPrimaryButton(
                 label = "ask",
                 onClick = {
+                    onSetInputTarget(InputTarget.HOST)
                     val answer = AiReplyGenerator.generateMockAskAiResponse(contextText, selectedPersona)
                     askAiResponse = answer
                 },
@@ -319,26 +285,60 @@ fun AiReplyPanelView(
                 keyAnimationEnabled = keyAnimationEnabled
             )
 
-            // Local Ask AI response display
+            // AI Response Card (proper response card/container with insert button)
             askAiResponse?.let { resp ->
-                Box(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .clip(RoundedCornerShape(8.dp))
-                        .background(if (tokens.isDark) Color(0xFF1E283D) else Color(0xFFF1F5F9))
-                        .padding(8.dp)
-                ) {
+                Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
                     Text(
-                        text = resp,
-                        fontSize = 11.sp,
-                        color = tokens.textPrimary,
-                        lineHeight = 15.sp
+                        text = "ai response",
+                        fontSize = 10.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        color = tokens.textSecondary
                     )
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(8.dp))
+                            .background(if (tokens.isDark) Color(0xFF141E30) else Color(0xFFF1F5F9))
+                            .border(1.dp, if (tokens.isDark) Color(0x33818CF8) else Color(0x40CBD5E1), RoundedCornerShape(8.dp))
+                            .padding(8.dp)
+                    ) {
+                        Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                            Text(
+                                text = resp,
+                                fontSize = 11.sp,
+                                color = tokens.textPrimary,
+                                lineHeight = 15.sp
+                            )
+                            onInsertAskAiResult?.let { insertFn ->
+                                Box(
+                                    modifier = Modifier
+                                        .align(Alignment.End)
+                                        .clip(RoundedCornerShape(6.dp))
+                                        .background(Color(0xFF4F46E5))
+                                        .clickable {
+                                            if (hapticEnabled) haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                            onSetInputTarget(InputTarget.HOST)
+                                            insertFn(resp)
+                                        }
+                                        .padding(horizontal = 8.dp, vertical = 3.dp)
+                                ) {
+                                    Text(
+                                        text = "insert",
+                                        fontSize = 10.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        color = Color.White
+                                    )
+                                }
+                            }
+                        }
+                    }
                 }
             }
 
         } else {
-            // Default Writing Actions Panel
+            // ==========================================
+            // MODE A: ACTION BOARD (DEFAULT)
+            // ==========================================
             // 1. Header: ✨ ai command center + Close (×)
             Row(
                 modifier = Modifier.fillMaxWidth(),
@@ -356,25 +356,21 @@ fun AiReplyPanelView(
                         modifier = Modifier.size(15.dp)
                     )
                     Text(
-                        text = "ai",
+                        text = "ai command center",
                         fontSize = 13.sp,
                         fontWeight = FontWeight.Bold,
                         color = tokens.textPrimary
-                    )
-                    Text(
-                        text = "command center",
-                        fontSize = 10.sp,
-                        color = tokens.textSecondary
                     )
                 }
 
                 Box(
                     modifier = Modifier
-                        .size(24.dp)
+                        .size(22.dp)
                         .clip(CircleShape)
                         .background(if (tokens.isDark) Color(0xFF1E283D) else Color(0xFFE2E8F0))
                         .clickable {
                             if (hapticEnabled) haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                            onSetInputTarget(InputTarget.HOST)
                             onClose()
                         },
                     contentAlignment = Alignment.Center
@@ -383,7 +379,7 @@ fun AiReplyPanelView(
                         imageVector = Icons.Filled.Close,
                         contentDescription = "Close AI Panel",
                         tint = tokens.textSecondary,
-                        modifier = Modifier.size(14.dp)
+                        modifier = Modifier.size(12.dp)
                     )
                 }
             }
@@ -399,7 +395,10 @@ fun AiReplyPanelView(
                     ActionChip(
                         action = AiAction.REPLY,
                         isSelected = selectedAction == AiAction.REPLY,
-                        onClick = { onSelectAction(AiAction.REPLY) },
+                        onClick = {
+                            onSetInputTarget(InputTarget.HOST)
+                            onSelectAction(AiAction.REPLY)
+                        },
                         tokens = tokens,
                         keyAnimationEnabled = keyAnimationEnabled,
                         hapticEnabled = hapticEnabled,
@@ -408,7 +407,10 @@ fun AiReplyPanelView(
                     ActionChip(
                         action = AiAction.ASK_AI,
                         isSelected = selectedAction == AiAction.ASK_AI,
-                        onClick = { onSelectAction(AiAction.ASK_AI) },
+                        onClick = {
+                            onSetInputTarget(InputTarget.HOST)
+                            onSetPanelMode(AiPanelMode.ASK_AI)
+                        },
                         tokens = tokens,
                         keyAnimationEnabled = keyAnimationEnabled,
                         hapticEnabled = hapticEnabled,
@@ -423,7 +425,10 @@ fun AiReplyPanelView(
                     ActionChip(
                         action = AiAction.CONTINUE,
                         isSelected = selectedAction == AiAction.CONTINUE,
-                        onClick = { onSelectAction(AiAction.CONTINUE) },
+                        onClick = {
+                            onSetInputTarget(InputTarget.HOST)
+                            onSelectAction(AiAction.CONTINUE)
+                        },
                         tokens = tokens,
                         keyAnimationEnabled = keyAnimationEnabled,
                         hapticEnabled = hapticEnabled,
@@ -432,7 +437,10 @@ fun AiReplyPanelView(
                     ActionChip(
                         action = AiAction.START,
                         isSelected = selectedAction == AiAction.START,
-                        onClick = { onSelectAction(AiAction.START) },
+                        onClick = {
+                            onSetInputTarget(InputTarget.HOST)
+                            onSelectAction(AiAction.START)
+                        },
                         tokens = tokens,
                         keyAnimationEnabled = keyAnimationEnabled,
                         hapticEnabled = hapticEnabled,
@@ -446,6 +454,7 @@ fun AiReplyPanelView(
                 modifier = Modifier
                     .clickable {
                         if (hapticEnabled) haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                        onSetInputTarget(InputTarget.HOST)
                         onToggleMoreExpanded(!isMoreExpanded)
                     }
                     .padding(vertical = 1.dp),
@@ -474,7 +483,10 @@ fun AiReplyPanelView(
                     ActionChip(
                         action = AiAction.REWRITE,
                         isSelected = selectedAction == AiAction.REWRITE,
-                        onClick = { onSelectAction(AiAction.REWRITE) },
+                        onClick = {
+                            onSetInputTarget(InputTarget.HOST)
+                            onSelectAction(AiAction.REWRITE)
+                        },
                         tokens = tokens,
                         keyAnimationEnabled = keyAnimationEnabled,
                         hapticEnabled = hapticEnabled,
@@ -483,7 +495,10 @@ fun AiReplyPanelView(
                     ActionChip(
                         action = AiAction.CREATE,
                         isSelected = selectedAction == AiAction.CREATE,
-                        onClick = { onSelectAction(AiAction.CREATE) },
+                        onClick = {
+                            onSetInputTarget(InputTarget.HOST)
+                            onSelectAction(AiAction.CREATE)
+                        },
                         tokens = tokens,
                         keyAnimationEnabled = keyAnimationEnabled,
                         hapticEnabled = hapticEnabled,
@@ -492,13 +507,10 @@ fun AiReplyPanelView(
                 }
             }
 
-            // 4. Persona Selector Row
-            // persona [ 😊 friendly ▾ ]
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
+            // 4. In-Panel Horizontal Scrolling Persona Selector (NO DROPDOWN!)
+            // persona
+            // [😊 friendly] [💼 freelancer] [😂 funny] [⚡ short] [💬 natural] [❤️ romantic]
+            Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
                 Text(
                     text = "persona",
                     fontSize = 11.sp,
@@ -506,47 +518,48 @@ fun AiReplyPanelView(
                     fontWeight = FontWeight.Medium
                 )
 
-                Box {
-                    Row(
-                        modifier = Modifier
-                            .clip(RoundedCornerShape(6.dp))
-                            .background(if (tokens.isDark) Color(0xFF1E283D) else Color(0xFFE2E8F0))
-                            .clickable { personaMenuOpen = true }
-                            .padding(horizontal = 8.dp, vertical = 3.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(4.dp)
-                    ) {
-                        Text(text = selectedPersona.emoji, fontSize = 11.sp)
-                        Text(
-                            text = selectedPersona.displayName,
-                            fontSize = 11.sp,
-                            color = tokens.textPrimary,
-                            fontWeight = FontWeight.Medium
-                        )
-                        Icon(
-                            imageVector = Icons.Filled.KeyboardArrowDown,
-                            contentDescription = null,
-                            tint = tokens.textSecondary,
-                            modifier = Modifier.size(12.dp)
-                        )
-                    }
+                LazyRow(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    items(AiPersona.values()) { persona ->
+                        val isSelected = selectedPersona == persona
+                        val chipBg = if (isSelected) {
+                            if (tokens.isDark) Color(0xFF261D52) else Color(0xFFDBEAFE)
+                        } else {
+                            if (tokens.isDark) Color(0xFF1E283D) else Color(0xFFF1F5F9)
+                        }
+                        val chipBorder = if (isSelected) {
+                            if (tokens.isDark) Color(0xFF818CF8) else Color(0xFF3B82F6)
+                        } else {
+                            tokens.borderRim
+                        }
+                        val chipText = if (isSelected) {
+                            if (tokens.isDark) Color(0xFFC7D2FE) else Color(0xFF1D4ED8)
+                        } else {
+                            tokens.textPrimary
+                        }
 
-                    DropdownMenu(
-                        expanded = personaMenuOpen,
-                        onDismissRequest = { personaMenuOpen = false }
-                    ) {
-                        AiPersona.values().forEach { persona ->
-                            DropdownMenuItem(
-                                text = {
-                                    Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                                        Text(text = persona.emoji)
-                                        Text(text = persona.displayName)
-                                    }
-                                },
-                                onClick = {
+                        Row(
+                            modifier = Modifier
+                                .clip(RoundedCornerShape(6.dp))
+                                .background(chipBg)
+                                .border(1.dp, chipBorder, RoundedCornerShape(6.dp))
+                                .clickable {
+                                    if (hapticEnabled) haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                    onSetInputTarget(InputTarget.HOST)
                                     onSelectPersona(persona)
-                                    personaMenuOpen = false
                                 }
+                                .padding(horizontal = 8.dp, vertical = 4.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(4.dp)
+                        ) {
+                            Text(text = persona.emoji, fontSize = 11.sp)
+                            Text(
+                                text = persona.displayName,
+                                fontSize = 11.sp,
+                                fontWeight = if (isSelected) FontWeight.SemiBold else FontWeight.Normal,
+                                color = chipText
                             )
                         }
                     }
@@ -569,7 +582,7 @@ fun AiReplyPanelView(
                         .clickable {
                             if (hapticEnabled) haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
                             onToggleContextExpanded(true)
-                            onTogglePromptFocus(true)
+                            onSetInputTarget(InputTarget.AI_CONTEXT)
                         }
                         .padding(horizontal = 8.dp),
                     contentAlignment = Alignment.CenterStart
@@ -594,7 +607,7 @@ fun AiReplyPanelView(
                             fontWeight = FontWeight.Medium,
                             color = tokens.textSecondary
                         )
-                        if (isPromptFocused) {
+                        if (isContextFocused) {
                             Text(
                                 text = "Keyboard typing active",
                                 fontSize = 10.sp,
@@ -605,7 +618,7 @@ fun AiReplyPanelView(
                     }
 
                     val promptFieldShape = RoundedCornerShape(8.dp)
-                    val promptBorderColor = if (isPromptFocused) {
+                    val promptBorderColor = if (isContextFocused) {
                         if (tokens.isDark) Color(0xFF818CF8) else Color(0xFF4F46E5)
                     } else {
                         tokens.borderRim
@@ -618,10 +631,10 @@ fun AiReplyPanelView(
                             .height(34.dp)
                             .clip(promptFieldShape)
                             .background(promptBg)
-                            .border(if (isPromptFocused) 1.5.dp else 1.dp, promptBorderColor, promptFieldShape)
+                            .border(if (isContextFocused) 1.5.dp else 1.dp, promptBorderColor, promptFieldShape)
                             .clickable {
                                 if (hapticEnabled) haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                                onTogglePromptFocus(true)
+                                onSetInputTarget(InputTarget.AI_CONTEXT)
                             }
                             .padding(horizontal = 10.dp),
                         verticalAlignment = Alignment.CenterVertically,
@@ -679,7 +692,7 @@ fun AiReplyPanelView(
                                         .clip(CircleShape)
                                         .clickable {
                                             onToggleContextExpanded(false)
-                                            onTogglePromptFocus(false)
+                                            onSetInputTarget(InputTarget.HOST)
                                         },
                                     contentAlignment = Alignment.Center
                                 ) {
@@ -700,6 +713,7 @@ fun AiReplyPanelView(
             ActionPrimaryButton(
                 label = "generate",
                 onClick = {
+                    onSetInputTarget(InputTarget.HOST)
                     onGenerate(selectedAction, selectedPersona, contextText)
                 },
                 tokens = tokens,
@@ -863,6 +877,8 @@ fun AiReplyPanelView(
     modifier: Modifier = Modifier
 ) {
     AiReplyPanelView(
+        panelMode = AiPanelMode.ACTION_BOARD,
+        onSetPanelMode = {},
         selectedAction = AiAction.REPLY,
         onSelectAction = { },
         selectedPersona = when (selectedStyle) {
@@ -875,24 +891,26 @@ fun AiReplyPanelView(
         onSelectPersona = { persona ->
             val style = when (persona) {
                 AiPersona.FRIENDLY -> AiReplyStyle.FRIENDLY
-                AiPersona.PROFESSIONAL -> AiReplyStyle.PROFESSIONAL
+                AiPersona.FREELANCER, AiPersona.PROFESSIONAL -> AiReplyStyle.PROFESSIONAL
                 AiPersona.FUNNY -> AiReplyStyle.FUNNY
                 AiPersona.SHORT -> AiReplyStyle.SHORT
                 AiPersona.NATURAL -> AiReplyStyle.FRIENDLY
+                AiPersona.ROMANTIC -> AiReplyStyle.FRIENDLY
             }
             onSelectStyle(style)
         },
         contextText = customPrompt,
         onClearPrompt = onClearPrompt,
-        isPromptFocused = isPromptFocused,
-        onTogglePromptFocus = onTogglePromptFocus,
+        inputTarget = if (isPromptFocused) InputTarget.AI_CONTEXT else InputTarget.HOST,
+        onSetInputTarget = { target -> onTogglePromptFocus(target == InputTarget.AI_CONTEXT) },
         onGenerate = { _, persona, ctx ->
             val style = when (persona) {
                 AiPersona.FRIENDLY -> AiReplyStyle.FRIENDLY
-                AiPersona.PROFESSIONAL -> AiReplyStyle.PROFESSIONAL
+                AiPersona.FREELANCER, AiPersona.PROFESSIONAL -> AiReplyStyle.PROFESSIONAL
                 AiPersona.FUNNY -> AiReplyStyle.FUNNY
                 AiPersona.SHORT -> AiReplyStyle.SHORT
                 AiPersona.NATURAL -> AiReplyStyle.FRIENDLY
+                AiPersona.ROMANTIC -> AiReplyStyle.FRIENDLY
             }
             onGenerate(style, ctx)
         },

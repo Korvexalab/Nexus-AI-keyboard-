@@ -2,7 +2,7 @@ import React, { useState, useRef, useEffect } from 'react';
 import { KeyboardMode, ShiftState, KeyboardActionListener, KeyboardThemeId, KeyboardHeight } from '../types';
 import { ArrowUp, Clipboard, CornerDownLeft, Delete, Smile, Trash2 } from 'lucide-react';
 import { KeyboardToolbar } from './KeyboardToolbar';
-import { AiReplyPanel } from './AiReplyPanel';
+import { AiReplyPanel, InputTarget, AiPanelMode } from './AiReplyPanel';
 import { AiActionId, AiPersonaId } from '../services/aiReplyGenerator';
 
 interface VirtualKeyboardProps {
@@ -106,51 +106,65 @@ export const VirtualKeyboard: React.FC<VirtualKeyboardProps> = ({
 }) => {
   const keyboardRef = useRef<HTMLDivElement>(null);
 
-  // Milestone 2: AI Command Center State & Explicit Focus Routing
+  // Milestone 2: AI Command Center State & Explicit InputTarget Architecture
+  const [panelMode, setPanelMode] = useState<AiPanelMode>('action_board');
   const [selectedAiAction, setSelectedAiAction] = useState<AiActionId>('reply');
   const [selectedAiPersona, setSelectedAiPersona] = useState<AiPersonaId>('friendly');
   const [contextText, setContextText] = useState<string>('');
   const [isContextExpanded, setIsContextExpanded] = useState<boolean>(false);
   const [isMoreExpanded, setIsMoreExpanded] = useState<boolean>(false);
-  const [localPromptFocused, setLocalPromptFocused] = useState<boolean>(false);
+  const [localInputTarget, setLocalInputTarget] = useState<InputTarget>('host');
 
   // Support controlled or uncontrolled focus state
-  const isPromptFocused = aiPromptFocused !== undefined ? aiPromptFocused : localPromptFocused;
-  const setPromptFocused = onSetAiPromptFocused || setLocalPromptFocused;
+  const inputTarget: InputTarget =
+    aiPromptFocused !== undefined
+      ? aiPromptFocused
+        ? 'ai_context'
+        : 'host'
+      : localInputTarget;
 
-  // Refs ensure asynchronous loops and gestures always see real-time focus and panel state
-  const isPromptFocusedRef = useRef(isPromptFocused);
-  isPromptFocusedRef.current = isPromptFocused;
+  const setInputTarget = (target: InputTarget) => {
+    setLocalInputTarget(target);
+    if (onSetAiPromptFocused) {
+      onSetAiPromptFocused(target === 'ai_context');
+    }
+  };
+
+  // Refs ensure asynchronous loops and gestures always see real-time target and panel state
+  const inputTargetRef = useRef<InputTarget>(inputTarget);
+  inputTargetRef.current = inputTarget;
 
   const aiPanelVisibleRef = useRef(aiPanelVisible);
   aiPanelVisibleRef.current = aiPanelVisible;
 
-  // When AI panel is closed or dismissed, immediately return focus to host application
+  // When AI panel is closed or dismissed, immediately return logical input target to host
   useEffect(() => {
     if (!aiPanelVisible) {
-      setPromptFocused(false);
+      setInputTarget('host');
+      setPanelMode('action_board');
     }
-  }, [aiPanelVisible, setPromptFocused]);
+  }, [aiPanelVisible]);
 
   const handleAiGenerate = () => {
     if (listener.onAiGenerate) {
       listener.onAiGenerate(selectedAiAction, selectedAiPersona, contextText);
     }
-    setPromptFocused(false);
+    setInputTarget('host');
     setContextText('');
   };
 
   const handleInsertAskAi = (textToInsert: string) => {
     listener.onTextInput(textToInsert);
+    setInputTarget('host');
   };
 
   /**
    * M2 Core Routing: Delete one character from the active target.
-   * - If AI prompt is focused: deletes from custom prompt state (host text is never touched).
-   * - If normal chat input is active: calls host InputConnection (listener.onBackspace()).
+   * - If inputTarget === 'ai_context': deletes from contextText state (host text is never touched).
+   * - If inputTarget === 'host': calls host InputConnection (listener.onBackspace()).
    */
   const handleBackspaceAction = () => {
-    if (aiPanelVisibleRef.current && isPromptFocusedRef.current) {
+    if (aiPanelVisibleRef.current && inputTargetRef.current === 'ai_context') {
       setContextText((prev) => (prev.length > 0 ? prev.slice(0, -1) : ''));
     } else {
       listener.onBackspace();
@@ -159,11 +173,11 @@ export const VirtualKeyboard: React.FC<VirtualKeyboardProps> = ({
 
   /**
    * M2 Core Routing: Text commit routing.
-   * - If AI prompt is focused: appends to custom prompt state.
-   * - If normal chat input is active: calls host InputConnection (listener.onTextInput()).
+   * - If inputTarget === 'ai_context': appends to contextText state.
+   * - If inputTarget === 'host': calls host InputConnection (listener.onTextInput()).
    */
   const handleTextInput = (text: string) => {
-    if (aiPanelVisibleRef.current && isPromptFocusedRef.current) {
+    if (aiPanelVisibleRef.current && inputTargetRef.current === 'ai_context') {
       setContextText((prev) => prev + text);
       if (shiftState === 'SHIFTED') {
         listener.onShiftClicked();
@@ -173,28 +187,32 @@ export const VirtualKeyboard: React.FC<VirtualKeyboardProps> = ({
     }
   };
 
-  // Intercept keyboard typing into custom prompt when focused
+  // Intercept keyboard typing into context when target is ai_context
   const effectiveListener: KeyboardActionListener = {
     ...listener,
     onTextInput: handleTextInput,
     onBackspace: handleBackspaceAction,
     onSpace: () => {
-      if (aiPanelVisibleRef.current && isPromptFocusedRef.current) {
+      if (aiPanelVisibleRef.current && inputTargetRef.current === 'ai_context') {
         setContextText((prev) => prev + ' ');
       } else {
         listener.onSpace();
       }
     },
     onPeriod: () => {
-      if (aiPanelVisibleRef.current && isPromptFocusedRef.current) {
+      if (aiPanelVisibleRef.current && inputTargetRef.current === 'ai_context') {
         setContextText((prev) => prev + '.');
       } else {
         listener.onPeriod();
       }
     },
     onEnter: () => {
-      if (aiPanelVisibleRef.current && isPromptFocusedRef.current) {
-        handleAiGenerate();
+      if (aiPanelVisibleRef.current && inputTargetRef.current === 'ai_context') {
+        if (panelMode === 'ask_ai') {
+          setInputTarget('host');
+        } else {
+          handleAiGenerate();
+        }
       } else {
         listener.onEnter();
       }
@@ -233,10 +251,10 @@ export const VirtualKeyboard: React.FC<VirtualKeyboardProps> = ({
     triggerHaptic();
 
     // M2 Requirement: The deletion loop must lock the target at touch-down and never switch targets
-    const targetIsAiPrompt = aiPanelVisibleRef.current && isPromptFocusedRef.current;
+    const targetIsAiContext = aiPanelVisibleRef.current && inputTargetRef.current === 'ai_context';
 
     const performDelete = () => {
-      if (targetIsAiPrompt) {
+      if (targetIsAiContext) {
         setContextText((prev) => (prev.length > 0 ? prev.slice(0, -1) : ''));
       } else {
         listener.onBackspace();
@@ -481,14 +499,16 @@ export const VirtualKeyboard: React.FC<VirtualKeyboardProps> = ({
       {/* Milestone 2: Compact AI Command Center Panel situated directly above the keyboard */}
       {aiPanelVisible && (
         <AiReplyPanel
+          panelMode={panelMode}
+          onSetPanelMode={setPanelMode}
           selectedAction={selectedAiAction}
           onSelectAction={setSelectedAiAction}
           selectedPersona={selectedAiPersona}
           onSelectPersona={setSelectedAiPersona}
           contextText={contextText}
           onClearPrompt={() => setContextText('')}
-          isPromptFocused={isPromptFocused}
-          onTogglePromptFocus={setPromptFocused}
+          inputTarget={inputTarget}
+          onSetInputTarget={setInputTarget}
           isContextExpanded={isContextExpanded}
           onToggleContextExpanded={setIsContextExpanded}
           isMoreExpanded={isMoreExpanded}
@@ -496,7 +516,7 @@ export const VirtualKeyboard: React.FC<VirtualKeyboardProps> = ({
           onGenerate={handleAiGenerate}
           onInsertAskAiResult={handleInsertAskAi}
           onClose={() => {
-            setPromptFocused(false);
+            setInputTarget('host');
             if (listener.onCloseAiPanel) {
               listener.onCloseAiPanel();
             } else {

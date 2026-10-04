@@ -113,6 +113,7 @@ fun ComposeKeyboardView(
     var activePopupInfo by remember { mutableStateOf<ActiveKeyPopupInfo?>(null) }
 
     // Milestone 2: AI Command Center State (supports controlled or local state)
+    var localPanelMode by remember { mutableStateOf(AiPanelMode.ACTION_BOARD) }
     var localSelectedAiAction by remember { mutableStateOf(AiAction.REPLY) }
     var localSelectedAiPersona by remember { mutableStateOf(AiPersona.FRIENDLY) }
     var localIsContextExpanded by remember { mutableStateOf(false) }
@@ -245,6 +246,8 @@ fun ComposeKeyboardView(
                 // Milestone 2: Compact AI Command Center Panel situated above toolbar & keyboard
                 if (aiPanelVisible) {
                     AiReplyPanelView(
+                        panelMode = localPanelMode,
+                        onSetPanelMode = { mode -> localPanelMode = mode },
                         selectedAction = localSelectedAiAction,
                         onSelectAction = { action -> localSelectedAiAction = action },
                         selectedPersona = localSelectedAiPersona,
@@ -254,8 +257,9 @@ fun ComposeKeyboardView(
                             localCustomPromptText = ""
                             onClearAiPrompt?.invoke()
                         },
-                        isPromptFocused = effectivePromptFocused,
-                        onTogglePromptFocus = { focused ->
+                        inputTarget = if (effectivePromptFocused) InputTarget.AI_CONTEXT else InputTarget.HOST,
+                        onSetInputTarget = { target ->
+                            val focused = target == InputTarget.AI_CONTEXT
                             localIsCustomPromptFocused = focused
                             onSetAiPromptFocused?.invoke(focused)
                         },
@@ -271,6 +275,9 @@ fun ComposeKeyboardView(
                             localCustomPromptText = ""
                             onSetAiPromptFocused?.invoke(false)
                             onClearAiPrompt?.invoke()
+                        },
+                        onInsertAskAiResult = { answer ->
+                            actionListener.onTextInput(answer)
                         },
                         onClose = {
                             actionListener.onCloseAiPanel()

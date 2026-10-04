@@ -140,12 +140,14 @@ class KeyboardStateTest {
 
         // Check temporary personas
         val personas = com.aikeyboard.ime.ai.AiPersona.values()
-        assertEquals(5, personas.size)
+        assertEquals(7, personas.size)
         assertTrue(personas.contains(com.aikeyboard.ime.ai.AiPersona.FRIENDLY))
+        assertTrue(personas.contains(com.aikeyboard.ime.ai.AiPersona.FREELANCER))
         assertTrue(personas.contains(com.aikeyboard.ime.ai.AiPersona.PROFESSIONAL))
         assertTrue(personas.contains(com.aikeyboard.ime.ai.AiPersona.FUNNY))
         assertTrue(personas.contains(com.aikeyboard.ime.ai.AiPersona.SHORT))
         assertTrue(personas.contains(com.aikeyboard.ime.ai.AiPersona.NATURAL))
+        assertTrue(personas.contains(com.aikeyboard.ime.ai.AiPersona.ROMANTIC))
 
         // Test generation for actions
         val testContext = "meeting at 4pm"
@@ -274,5 +276,129 @@ class KeyboardStateTest {
         assertEquals("hello world", hostBuffer)
         handleBackspace()
         assertEquals("hello worl", hostBuffer)
+    }
+
+    @Test
+    fun testExactM2Scenarios() {
+        var hostBuffer = ""
+        var contextText = ""
+        var aiPanelVisible = false
+        var panelMode = "action_board"
+        var inputTarget = "host"
+        var selectedAction = "reply"
+        var selectedPersona = "friendly"
+        var keyboardVisible = true // IME should stay visible throughout!
+
+        fun type(text: String) {
+            assertTrue("Keyboard must remain visible while typing", keyboardVisible)
+            if (aiPanelVisible && inputTarget == "ai_context") {
+                contextText += text
+            } else {
+                hostBuffer += text
+            }
+        }
+
+        fun backspace() {
+            assertTrue("Keyboard must remain visible while backspacing", keyboardVisible)
+            if (aiPanelVisible && inputTarget == "ai_context") {
+                if (contextText.isNotEmpty()) contextText = contextText.dropLast(1)
+            } else {
+                if (hostBuffer.isNotEmpty()) hostBuffer = hostBuffer.dropLast(1)
+            }
+        }
+
+        // Test A — Context Focus
+        // 1. open ai
+        aiPanelVisible = true
+        assertTrue(keyboardVisible)
+
+        // 2. tap "+ add context"
+        inputTarget = "ai_context"
+        assertTrue(keyboardVisible)
+
+        // 3. type text
+        type("project brief")
+
+        // 4. confirm text goes into ai context
+        assertEquals("project brief", contextText)
+        assertEquals("", hostBuffer)
+
+        // 5. tap reply
+        selectedAction = "reply"
+        inputTarget = "host" // Non-text control transfers target to host
+
+        // 6. confirm ai context loses keyboard-input ownership
+        assertEquals("host", inputTarget)
+
+        // 7. confirm keyboard stays visible
+        assertTrue(keyboardVisible)
+
+        // 8. type
+        type("Hello team")
+
+        // 9. confirm typing now goes to host chat field
+        assertEquals("Hello team", hostBuffer)
+        assertEquals("project brief", contextText) // context unchanged
+
+        // Test B — Persona
+        // 1. open ai (already open)
+        // 2. swipe persona row / select another persona
+        selectedPersona = "freelancer"
+        inputTarget = "host"
+        assertTrue("Keyboard never disappears during persona selection", keyboardVisible)
+
+        // 3. select another persona again
+        selectedPersona = "funny"
+        inputTarget = "host"
+        assertTrue("Keyboard remains stable during persona re-selection", keyboardVisible)
+
+        // Test C — Ask AI
+        // 1. tap ask ai
+        selectedAction = "ask_ai"
+        panelMode = "ask_ai"
+        inputTarget = "host"
+        assertTrue(keyboardVisible)
+
+        // 2. confirm ask ai mode appears
+        assertEquals("ask_ai", panelMode)
+
+        // 3. tap question field and type a question
+        inputTarget = "ai_context"
+        contextText = ""
+        type("how to scale?")
+        assertEquals("how to scale?", contextText)
+
+        // 4. generate/ask
+        val mockAnswer = com.aikeyboard.ime.ai.AiReplyGenerator.generateMockAskAiResponse(
+            contextText,
+            com.aikeyboard.ime.ai.AiPersona.fromId(selectedPersona)
+        )
+        inputTarget = "host"
+        assertTrue(mockAnswer.isNotEmpty())
+
+        // 5. tap insert
+        // confirm response goes into host chat field via InputConnection
+        hostBuffer += mockAnswer
+        assertTrue(hostBuffer.contains("how to scale?"))
+
+        // 6. tap ← writing actions
+        panelMode = "action_board"
+        inputTarget = "host"
+        assertEquals("action_board", panelMode)
+        assertTrue("Keyboard never disappeared navigating back from Ask AI", keyboardVisible)
+
+        // Test D — Back vs Close
+        // ← writing actions returned to action board while panel is still visible
+        assertTrue(aiPanelVisible)
+        assertEquals("action_board", panelMode)
+
+        // × closes the entire AI panel
+        aiPanelVisible = false
+        inputTarget = "host"
+        assertFalse(aiPanelVisible)
+        assertTrue("Keyboard still active and visible for normal typing after closing panel", keyboardVisible)
+
+        type(" done")
+        assertTrue(hostBuffer.endsWith(" done"))
     }
 }

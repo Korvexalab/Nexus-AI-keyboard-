@@ -29,7 +29,14 @@ export const AI_SECONDARY_ACTIONS: AiActionOption[] = [
 
 export const ALL_AI_ACTIONS: AiActionOption[] = [...AI_PRIMARY_ACTIONS, ...AI_SECONDARY_ACTIONS];
 
-export type AiPersonaId = 'friendly' | 'professional' | 'funny' | 'short' | 'natural';
+export type AiPersonaId =
+  | 'friendly'
+  | 'freelancer'
+  | 'funny'
+  | 'short'
+  | 'natural'
+  | 'romantic'
+  | 'professional';
 
 export interface AiPersonaOption {
   id: AiPersonaId;
@@ -40,10 +47,11 @@ export interface AiPersonaOption {
 
 export const AI_TEMPORARY_PERSONAS: AiPersonaOption[] = [
   { id: 'friendly', name: 'Friendly', icon: '😊', description: 'Warm, conversational, and encouraging tone' },
-  { id: 'professional', name: 'Professional', icon: '💼', description: 'Formal, polite, and business-appropriate tone' },
+  { id: 'freelancer', name: 'Freelancer', icon: '💼', description: 'Clear, efficient, and business-focused tone' },
   { id: 'funny', name: 'Funny', icon: '😂', description: 'Witty, humorous, and light-hearted tone' },
   { id: 'short', name: 'Short', icon: '⚡', description: 'Direct, concise, 1-2 sentence response' },
   { id: 'natural', name: 'Natural', icon: '💬', description: 'Casual, relaxed everyday messenger tone' },
+  { id: 'romantic', name: 'Romantic', icon: '❤️', description: 'Affectionate, heartfelt, and sweet tone' },
 ];
 
 /**
@@ -87,10 +95,11 @@ export class MockReplyGenerator implements ReplyGenerator {
             return hasContext
               ? `Hey there! Regarding '${trimmed}', that sounds wonderful! 😊✨`
               : "Hey there! That sounds awesome, can't wait! 😊";
+          case 'freelancer':
           case 'professional':
             return hasContext
-              ? `Thank you for the update. With regard to '${trimmed}', I have reviewed the details and will proceed accordingly.`
-              : "Thank you for reaching out. I have reviewed the matter and will follow up accordingly.";
+              ? `Thanks for the details. Regarding '${trimmed}', I'll review and follow up with the deliverables shortly.`
+              : "Thanks for reaching out! I've reviewed the scope and will proceed accordingly.";
           case 'funny':
             return hasContext
               ? `Say no more! Working my magic on '${trimmed}' as we speak! 😂🚀`
@@ -99,6 +108,12 @@ export class MockReplyGenerator implements ReplyGenerator {
             return hasContext ? `Got it (${trimmed}) — on it!` : "Sounds good, thanks!";
           case 'natural':
             return hasContext ? `Yeah sounds good! Looking into '${trimmed}' now.` : "Sounds good to me, talk soon!";
+          case 'romantic':
+            return hasContext
+              ? `Thinking of you! Regarding '${trimmed}', that makes me smile ❤️`
+              : "Thinking of you, hope your day is as sweet as you are! ❤️✨";
+          default:
+            return hasContext ? `Sounds good regarding '${trimmed}'!` : "Sounds good, talk soon!";
         }
 
       case 'continue':
@@ -107,18 +122,25 @@ export class MockReplyGenerator implements ReplyGenerator {
             return hasContext
               ? `Totally with you on '${trimmed}'! How should we tackle the next steps together? 🙌`
               : "That makes a lot of sense! How did the rest of it go? 😊";
+          case 'freelancer':
           case 'professional':
             return hasContext
-              ? `Building upon '${trimmed}', we should coordinate our subsequent milestones.`
-              : "Following up on our earlier discussion, let us establish the timeline.";
+              ? `Building upon '${trimmed}', here are the immediate next milestones we should align on.`
+              : "Following up on our earlier discussion, let's establish the next delivery milestones.";
           case 'funny':
             return hasContext
               ? `And just when you thought '${trimmed}' was settled... boom, part two! 🍿`
               : "And then what happened? The suspense is killing me! 🍿";
           case 'short':
-            return hasContext ? `Next step on '${trimmed}':` : "Agreed. What is next?";
+            return hasContext ? `Next step on '${trimmed}':` : "Agreed. What's next?";
           case 'natural':
             return hasContext ? `Yeah, and about '${trimmed}', I was thinking we could follow up tomorrow.` : "Totally. What are you thinking for the next move?";
+          case 'romantic':
+            return hasContext
+              ? `Can't stop thinking about what you said about '${trimmed}'... tell me more ❤️`
+              : "Tell me more, I love hearing about your day ❤️";
+          default:
+            return hasContext ? `Continuing on '${trimmed}':` : "Agreed, let's keep going!";
         }
 
       case 'start':
@@ -127,46 +149,63 @@ export class MockReplyGenerator implements ReplyGenerator {
             return hasContext
               ? `Hey! Hope your day is going great! Quick question about '${trimmed}' 😊`
               : "Hey! Hope you are having a wonderful day! 😊";
+          case 'freelancer':
           case 'professional':
             return hasContext
-              ? `Good day. I am writing to initiate our discussion regarding '${trimmed}'.`
-              : "Good day. I hope this message finds you well.";
+              ? `Hi there, reaching out regarding '${trimmed}'. Would you be open to syncing briefly this week?`
+              : "Hello, reaching out to connect and discuss potential collaboration opportunities.";
           case 'funny':
             return hasContext
-              ? `Knock knock! Who is there? Me, asking about '${trimmed}' 😂`
+              ? `Knock knock! Who's there? Me, asking about '${trimmed}' 😂`
               : "Knock knock! Just dropping in to say hi! 👋";
           case 'short':
             return hasContext ? `Hi — quick note regarding '${trimmed}':` : "Hi, reaching out briefly:";
           case 'natural':
             return hasContext ? `Hey! Was just thinking about '${trimmed}'.` : "Hey! How is everything going?";
+          case 'romantic':
+            return hasContext
+              ? `Hey sweetheart ❤️ Was just thinking about '${trimmed}' and couldn't help smiling.`
+              : "Hey sweetheart, just wanted to send you a little love today ❤️";
+          default:
+            return hasContext ? `Hi, reaching out about '${trimmed}'.` : "Hello there!";
         }
 
       case 'rewrite':
         switch (persona) {
           case 'friendly':
             return hasContext ? `Here is a warmer take: '${trimmed}' — let's make it happen! 😊` : "Let's make it happen! 😊";
+          case 'freelancer':
           case 'professional':
-            return hasContext ? `Formal revision: Please be advised regarding '${trimmed}'.` : "Please note the formal update as requested.";
+            return hasContext ? `Deliverable update: '${trimmed}'. Ready for your review.` : "Project update ready for review.";
           case 'funny':
             return hasContext ? `Spiced-up version: '${trimmed}' (now with 200% more pizzazz) 🎉` : "Now with 200% more pizzazz! 🎉";
           case 'short':
             return hasContext ? `'${trimmed}' (condensed)` : "Noted.";
           case 'natural':
             return hasContext ? `Rewritten naturally: '${trimmed}'` : "Sounds good!";
+          case 'romantic':
+            return hasContext ? `'${trimmed}' — with all my love ❤️` : "With all my love ❤️";
+          default:
+            return hasContext ? `'${trimmed}' (polished)` : "Sounds good!";
         }
 
       case 'create':
         switch (persona) {
           case 'friendly':
             return hasContext ? `Here is a fun draft on '${trimmed}'! ✨ What do you think?` : "Here is a friendly draft to share! ✨";
+          case 'freelancer':
           case 'professional':
-            return hasContext ? `Proposal draft regarding '${trimmed}'. Please review.` : "Draft proposal prepared for review.";
+            return hasContext ? `Proposal draft regarding '${trimmed}'. Scope and timeline included.` : "Draft proposal prepared for review.";
           case 'funny':
             return hasContext ? `Brand new masterpiece inspired by '${trimmed}' 🎨` : "Hot off the press! 📰🔥";
           case 'short':
             return hasContext ? `Draft (${trimmed}): Ready.` : "Draft ready.";
           case 'natural':
             return hasContext ? `Put together a quick message about '${trimmed}'.` : "Here is a quick draft for you.";
+          case 'romantic':
+            return hasContext ? `A heartfelt note about '${trimmed}' just for you ❤️` : "A special note just for you ❤️";
+          default:
+            return hasContext ? `Draft for '${trimmed}'` : "Draft ready.";
         }
 
       case 'ask_ai':
@@ -183,17 +222,20 @@ export class MockReplyGenerator implements ReplyGenerator {
       return "Ask me anything or provide an instruction!";
     }
     switch (persona) {
+      case 'freelancer':
       case 'professional':
-        return `Analysis for "${q}": Based on the inquiry, the recommended approach is to outline clear objectives, align stakeholder expectations, and proceed methodically.`;
+        return `Here is a structured suggestion for "${q}":\n• Clarify deliverables and milestones\n• Set concrete timelines and check-in intervals\n• Keep client communication transparent and timely.`;
       case 'funny':
-        return `According to my calculations on "${q}": 42! Just kidding — definitely go for it, but remember to bring snacks! 🍕✨`;
+        return `According to my calculations on "${q}": 42! Just kidding — definitely go for it, but remember to bring coffee and snacks! 🍕🚀`;
       case 'short':
-        return `"${q}" — Summary: Verified and recommended.`;
+        return `"${q}" — Recommended approach: Keep it focused, verify scope, proceed directly.`;
       case 'natural':
-        return `On "${q}": I'd recommend keeping it simple and straightforward.`;
+        return `On "${q}": Honestly, the simplest way is to keep it straightforward and take it one step at a time.`;
+      case 'romantic':
+        return `Regarding "${q}": Whatever you decide, follow your heart! You've got this, and I believe in you ❤️✨`;
       case 'friendly':
       default:
-        return `Great question about "${q}"! Here is a helpful breakdown: you can achieve this by breaking the goal into simple steps and tackling the most important piece first! 😊✨`;
+        return `Great question about "${q}"! Here is a helpful tip: break down your goal into small actionable chunks, tackle the most impactful piece first, and celebrate your wins along the way! 😊✨`;
     }
   }
 }
@@ -205,7 +247,7 @@ export const defaultAiGenerator = new MockReplyGenerator();
  */
 export const AiReplyGenerator = {
   generateMockReply(style: string, customPrompt = ''): string {
-    const persona = (['friendly', 'professional', 'funny', 'short', 'natural'].includes(style)
+    const persona = (['friendly', 'freelancer', 'professional', 'funny', 'short', 'natural', 'romantic'].includes(style)
       ? style
       : 'friendly') as AiPersonaId;
     return defaultAiGenerator.generate({
