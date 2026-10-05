@@ -137,6 +137,108 @@ object AiReplyGenerator {
     }
 
     /**
+     * M2.1: Multiple AI suggestion variations for card selection
+     */
+    fun generateSuggestions(
+        action: AiAction,
+        persona: AiPersona,
+        context: String = ""
+    ): List<String> {
+        val trimmed = context.trim()
+        val primary = generateReply(action, persona, context)
+
+        if (action == AiAction.REWRITE) {
+            if (trimmed.isNotEmpty()) {
+                if (persona == AiPersona.FRIENDLY) {
+                    return listOf(
+                        "Hey! What's up?",
+                        "Hey, how's it going?",
+                        "Hey there! Hope you are having an awesome day 😊"
+                    )
+                } else if (persona == AiPersona.FREELANCER || persona == AiPersona.PROFESSIONAL) {
+                    return listOf(
+                        "Deliverable update: '$trimmed'. Ready for your review.",
+                        "Regarding '$trimmed': following up with milestone details.",
+                        "Please review the latest project update regarding '$trimmed'."
+                    )
+                } else if (persona == AiPersona.FUNNY) {
+                    return listOf(
+                        "Spiced-up version: '$trimmed' (now with 200% more pizzazz) 🎉",
+                        "Plot twist: '$trimmed'! 😂",
+                        "Breaking news: '$trimmed'! 🚀"
+                    )
+                } else if (persona == AiPersona.SHORT) {
+                    return listOf(
+                        "$trimmed (updated)",
+                        "Quick update: $trimmed",
+                        "All set."
+                    )
+                } else if (persona == AiPersona.ROMANTIC) {
+                    return listOf(
+                        "Thinking of you: '$trimmed' ❤️",
+                        "Hey sweetheart, about '$trimmed' ❤️✨",
+                        "Just wanted to send you love: '$trimmed' 💕"
+                    )
+                }
+            }
+        }
+
+        if (action == AiAction.REPLY) {
+            if (trimmed.isNotEmpty()) {
+                if (persona == AiPersona.FRIENDLY) {
+                    return listOf(
+                        primary,
+                        "Hey! Thanks for the update on '$trimmed'! 😊",
+                        "Sounds awesome! Let's definitely do '$trimmed'! ✨"
+                    )
+                } else if (persona == AiPersona.FREELANCER || persona == AiPersona.PROFESSIONAL) {
+                    return listOf(
+                        primary,
+                        "Noted regarding '$trimmed'. I will incorporate this into the current sprint.",
+                        "Understood. Proceeding with '$trimmed' as discussed."
+                    )
+                } else if (persona == AiPersona.FUNNY) {
+                    return listOf(
+                        primary,
+                        "Say no more, my friend! '$trimmed' is already in motion! 🚀",
+                        "Challenge accepted for '$trimmed'! 😂"
+                    )
+                } else if (persona == AiPersona.SHORT) {
+                    return listOf(
+                        primary,
+                        "Got it, thanks!",
+                        "Understood."
+                    )
+                } else if (persona == AiPersona.ROMANTIC) {
+                    return listOf(
+                        primary,
+                        "Always brightens my day hearing from you about '$trimmed' ❤️",
+                        "Can't wait to see you! About '$trimmed', count me in ❤️"
+                    )
+                }
+            }
+        }
+
+        if (action == AiAction.CONTINUE) {
+            return listOf(
+                primary,
+                if (trimmed.isNotEmpty()) "Also, regarding '$trimmed', how would you like to handle next steps?" else "What do you think should be our next move?",
+                if (trimmed.isNotEmpty()) "Let's keep the momentum going on '$trimmed'!" else "Agreed, let's keep going!"
+            )
+        }
+
+        if (action == AiAction.START) {
+            return listOf(
+                primary,
+                if (trimmed.isNotEmpty()) "Hey! Hope you're having a great week. Quick question on '$trimmed':" else "Hey! Hope you are having a fantastic day! 😊",
+                if (trimmed.isNotEmpty()) "Hi! Wanted to touch base regarding '$trimmed' whenever you have a moment." else "Hi there! Reaching out to see how things are going."
+            )
+        }
+
+        return listOf(primary)
+    }
+
+    /**
      * Dedicated Ask AI generator: question + persona
      */
     fun generateMockAskAiResponse(

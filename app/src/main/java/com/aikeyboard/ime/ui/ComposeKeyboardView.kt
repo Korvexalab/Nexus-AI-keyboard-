@@ -243,7 +243,7 @@ fun ComposeKeyboardView(
                     .padding(bottom = 6.dp),
                 verticalArrangement = Arrangement.spacedBy(4.dp)
             ) {
-                // Milestone 2: Compact AI Command Center Panel situated above toolbar & keyboard
+                // M2.1: AI Board replaces the keyboard board when active
                 if (aiPanelVisible) {
                     AiReplyPanelView(
                         panelMode = localPanelMode,
@@ -263,10 +263,12 @@ fun ComposeKeyboardView(
                             localIsCustomPromptFocused = focused
                             onSetAiPromptFocused?.invoke(focused)
                         },
-                        isContextExpanded = localIsContextExpanded,
-                        onToggleContextExpanded = { expanded -> localIsContextExpanded = expanded },
                         isMoreExpanded = localIsMoreExpanded,
                         onToggleMoreExpanded = { expanded -> localIsMoreExpanded = expanded },
+                        hostText = effectiveCustomPrompt,
+                        onReplace = { replacement ->
+                            actionListener.onAiReplace(replacement)
+                        },
                         onGenerate = { action, persona, context ->
                             val generated = AiReplyGenerator.generateReply(action, persona, context)
                             actionListener.onTextInput(generated)
@@ -288,39 +290,39 @@ fun ComposeKeyboardView(
                         hapticEnabled = hapticEnabled,
                         keyAnimationEnabled = keyAnimationEnabled
                     )
-                }
+                } else {
+                    // Keyboard Toolbar with AI button and shortcuts
+                    KeyboardToolbar(
+                        actionListener = actionListener,
+                        aiNoticeVisible = aiNoticeVisible,
+                        tokens = tokens,
+                        hapticEnabled = hapticEnabled,
+                        keyAnimationEnabled = keyAnimationEnabled
+                    )
 
-                // Keyboard Toolbar with AI button and shortcuts
-                KeyboardToolbar(
-                    actionListener = actionListener,
-                    aiNoticeVisible = aiNoticeVisible,
-                    tokens = tokens,
-                    hapticEnabled = hapticEnabled,
-                    keyAnimationEnabled = keyAnimationEnabled
-                )
-
-                // Keys Container
-                Column(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = 4.dp),
-                    verticalArrangement = Arrangement.spacedBy(6.dp)
-                ) {
-                    when (keyboardMode) {
-                        KeyboardMode.ALPHA -> {
-                            AlphaKeyboardLayout(shiftState, effectiveListener, tokens, keyHeightDp, keyAnimationEnabled, hapticEnabled, onKeyBoundsChanged)
-                        }
-                        KeyboardMode.SYMBOLS -> {
-                            SymbolsKeyboardLayout(isAlt = false, effectiveListener, tokens, keyHeightDp, keyAnimationEnabled, hapticEnabled, onKeyBoundsChanged)
-                        }
-                        KeyboardMode.ALT_SYMBOLS -> {
-                            SymbolsKeyboardLayout(isAlt = true, effectiveListener, tokens, keyHeightDp, keyAnimationEnabled, hapticEnabled, onKeyBoundsChanged)
-                        }
-                        KeyboardMode.EMOJI -> {
-                            EmojiKeyboardLayout(effectiveListener, tokens, keyHeightDp, keyAnimationEnabled, hapticEnabled)
-                        }
-                        KeyboardMode.CLIPBOARD -> {
-                            ClipboardPanelView(preferences, effectiveListener, tokens, keyHeightDp, hapticEnabled)
+                    // Keys Container
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 4.dp),
+                        verticalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        when (keyboardMode) {
+                            KeyboardMode.ALPHA -> {
+                                AlphaKeyboardLayout(shiftState, effectiveListener, tokens, keyHeightDp, keyAnimationEnabled, hapticEnabled, onKeyBoundsChanged)
+                            }
+                            KeyboardMode.SYMBOLS -> {
+                                SymbolsKeyboardLayout(isAlt = false, effectiveListener, tokens, keyHeightDp, keyAnimationEnabled, hapticEnabled, onKeyBoundsChanged)
+                            }
+                            KeyboardMode.ALT_SYMBOLS -> {
+                                SymbolsKeyboardLayout(isAlt = true, effectiveListener, tokens, keyHeightDp, keyAnimationEnabled, hapticEnabled, onKeyBoundsChanged)
+                            }
+                            KeyboardMode.EMOJI -> {
+                                EmojiKeyboardLayout(effectiveListener, tokens, keyHeightDp, keyAnimationEnabled, hapticEnabled)
+                            }
+                            KeyboardMode.CLIPBOARD -> {
+                                ClipboardPanelView(preferences, effectiveListener, tokens, keyHeightDp, hapticEnabled)
+                            }
                         }
                     }
                 }
@@ -401,11 +403,32 @@ private fun AlphaKeyboardLayout(
     hapticEnabled: Boolean,
     onKeyBoundsChanged: (Boolean, String, LayoutCoordinates?) -> Unit
 ) {
+    val numberRow = listOf("1", "2", "3", "4", "5", "6", "7", "8", "9", "0")
     val row1 = listOf("q", "w", "e", "r", "t", "y", "u", "i", "o", "p")
     val row2 = listOf("a", "s", "d", "f", "g", "h", "j", "k", "l")
     val row3 = listOf("z", "x", "c", "v", "b", "n", "m")
 
     val isUppercase = shiftState != ShiftState.OFF
+    val numberKeyHeightDp = (keyHeightDp * 0.8f).toInt().coerceAtLeast(36)
+
+    // Permanent Number Row: 1 2 3 4 5 6 7 8 9 0
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.spacedBy(4.dp)
+    ) {
+        numberRow.forEach { num ->
+            KeyboardKey(
+                text = num,
+                modifier = Modifier.weight(1f),
+                tokens = tokens,
+                keyHeightDp = numberKeyHeightDp,
+                keyAnimationEnabled = keyAnimationEnabled,
+                hapticEnabled = hapticEnabled,
+                onKeyBoundsChanged = onKeyBoundsChanged,
+                onClick = { listener.onTextInput(num) }
+            )
+        }
+    }
 
     // Row 1
     Row(

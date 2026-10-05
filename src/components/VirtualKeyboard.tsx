@@ -18,6 +18,7 @@ interface VirtualKeyboardProps {
   height?: KeyboardHeight;
   keyAnimationEnabled?: boolean;
   hapticEnabled?: boolean;
+  hostText?: string;
 }
 
 interface PopupState {
@@ -102,7 +103,8 @@ export const VirtualKeyboard: React.FC<VirtualKeyboardProps> = ({
   theme = 'midnight',
   height = 'normal',
   keyAnimationEnabled = true,
-  hapticEnabled = true
+  hapticEnabled = true,
+  hostText = ''
 }) => {
   const keyboardRef = useRef<HTMLDivElement>(null);
 
@@ -156,6 +158,14 @@ export const VirtualKeyboard: React.FC<VirtualKeyboardProps> = ({
   const handleInsertAskAi = (textToInsert: string) => {
     listener.onTextInput(textToInsert);
     setInputTarget('host');
+  };
+
+  const handleReplaceText = (replacement: string) => {
+    if (listener.onAiReplace) {
+      listener.onAiReplace(replacement);
+    } else {
+      listener.onTextInput(replacement);
+    }
   };
 
   /**
@@ -450,6 +460,7 @@ export const VirtualKeyboard: React.FC<VirtualKeyboardProps> = ({
   // Key Height calculation
   const heightClass = height === 'short' ? 'h-9 text-base' : height === 'tall' ? 'h-13 text-xl' : 'h-11 text-lg';
   const specialHeightClass = height === 'short' ? 'h-9' : height === 'tall' ? 'h-13' : 'h-11';
+  const numberHeightClass = height === 'short' ? 'h-7.5 text-sm' : height === 'tall' ? 'h-10 text-lg' : 'h-9 text-base';
 
   // Theme Key Styles
   const getStandardKeyStyle = (isPressed: boolean) => {
@@ -474,6 +485,7 @@ export const VirtualKeyboard: React.FC<VirtualKeyboardProps> = ({
       : 'bg-[#161F33] hover:bg-[#1C2842] text-slate-300 border-white/[0.07] shadow-sm';
   };
 
+  const numberRow = ['1', '2', '3', '4', '5', '6', '7', '8', '9', '0'];
   const alphaRow1 = ['q', 'w', 'e', 'r', 't', 'y', 'u', 'i', 'o', 'p'];
   const alphaRow2 = ['a', 's', 'd', 'f', 'g', 'h', 'j', 'k', 'l'];
   const alphaRow3 = ['z', 'x', 'c', 'v', 'b', 'n', 'm'];
@@ -496,8 +508,8 @@ export const VirtualKeyboard: React.FC<VirtualKeyboardProps> = ({
         isLight ? 'bg-[#F1F5F9] border-slate-300 text-slate-900' : 'bg-[#090D16] border-slate-800/80 text-white'
       } border-t shadow-2xl flex flex-col font-sans transition-colors duration-200 relative`}
     >
-      {/* Milestone 2: Compact AI Command Center Panel situated directly above the keyboard */}
-      {aiPanelVisible && (
+      {/* M2.1 CORE CHANGE: AI Board replaces the keyboard board when active */}
+      {aiPanelVisible ? (
         <AiReplyPanel
           panelMode={panelMode}
           onSetPanelMode={setPanelMode}
@@ -509,11 +521,10 @@ export const VirtualKeyboard: React.FC<VirtualKeyboardProps> = ({
           onClearPrompt={() => setContextText('')}
           inputTarget={inputTarget}
           onSetInputTarget={setInputTarget}
-          isContextExpanded={isContextExpanded}
-          onToggleContextExpanded={setIsContextExpanded}
           isMoreExpanded={isMoreExpanded}
           onToggleMoreExpanded={setIsMoreExpanded}
-          onGenerate={handleAiGenerate}
+          hostText={hostText}
+          onReplaceText={handleReplaceText}
           onInsertAskAiResult={handleInsertAskAi}
           onClose={() => {
             setInputTarget('host');
@@ -524,45 +535,67 @@ export const VirtualKeyboard: React.FC<VirtualKeyboardProps> = ({
             }
           }}
           theme={theme}
+          height={height}
           keyAnimationEnabled={keyAnimationEnabled}
         />
-      )}
+      ) : (
+        <>
+          {/* Milestone 1B & 1C Toolbar with Theme & Settings Hooks */}
+          <KeyboardToolbar
+            listener={listener}
+            aiNoticeVisible={aiNoticeVisible}
+            theme={theme}
+            keyAnimationEnabled={keyAnimationEnabled}
+          />
 
-      {/* Milestone 1B & 1C Toolbar with Theme & Settings Hooks */}
-      <KeyboardToolbar
-        listener={listener}
-        aiNoticeVisible={aiNoticeVisible}
-        theme={theme}
-        keyAnimationEnabled={keyAnimationEnabled}
-      />
+          {/* M1D Anchored Key Press Enlarged Character Popup Preview */}
+          {activePopup && keyAnimationEnabled && (
+            <div
+              style={{
+                position: 'absolute',
+                left: `${activePopup.left}px`,
+                top: `${activePopup.top}px`,
+                width: `${activePopup.width}px`,
+                height: `${activePopup.height}px`,
+              }}
+              className={`pointer-events-none z-50 rounded-t-xl rounded-b-md shadow-2xl flex items-center justify-center border transition-all duration-75 ${
+                isLight
+                  ? 'bg-white text-slate-900 border-blue-500 shadow-blue-500/25 ring-1 ring-blue-400/30'
+                  : 'bg-[#1E283D] text-white border-indigo-400 shadow-black/80 ring-1 ring-indigo-400/30'
+              }`}
+            >
+              <span className="text-2xl font-bold">{activePopup.char}</span>
+            </div>
+          )}
 
-      {/* M1D Anchored Key Press Enlarged Character Popup Preview */}
-      {activePopup && keyAnimationEnabled && (
-        <div
-          style={{
-            position: 'absolute',
-            left: `${activePopup.left}px`,
-            top: `${activePopup.top}px`,
-            width: `${activePopup.width}px`,
-            height: `${activePopup.height}px`,
-          }}
-          className={`pointer-events-none z-50 rounded-t-xl rounded-b-md shadow-2xl flex items-center justify-center border transition-all duration-75 ${
-            isLight
-              ? 'bg-white text-slate-900 border-blue-500 shadow-blue-500/25 ring-1 ring-blue-400/30'
-              : 'bg-[#1E283D] text-white border-indigo-400 shadow-black/80 ring-1 ring-indigo-400/30'
-          }`}
-        >
-          <span className="text-2xl font-bold">{activePopup.char}</span>
-        </div>
-      )}
-
-      {/* Main Keys Container */}
-      <div className="p-1.5 pb-2.5 flex flex-col gap-1.5">
+          {/* Main Keys Container */}
+          <div className="p-1.5 pb-2.5 flex flex-col gap-1.5">
         {/* ============================================================== */}
         {/* MODE: Alpha QWERTY                                             */}
         {/* ============================================================== */}
         {mode === 'ALPHA' && (
           <>
+            {/* Permanent Number Row: 1 2 3 4 5 6 7 8 9 0 */}
+            <div className="flex w-full gap-1 justify-center">
+              {numberRow.map((num) => {
+                const isPressed = activeKey === num;
+                return (
+                  <div key={num} className="flex-1">
+                    <button
+                      id={`key-num-${num}`}
+                      onPointerDown={(e) => handleKeyPointerDown(e, num)}
+                      onClick={(e) => handleKeyPress(num, () => effectiveListener.onTextInput(num), e)}
+                      className={`w-full ${numberHeightClass} rounded-[9px] flex items-center justify-center font-medium transition-all duration-100 border ${getStandardKeyStyle(
+                        isPressed
+                      )}`}
+                    >
+                      {num}
+                    </button>
+                  </div>
+                );
+              })}
+            </div>
+
             {/* Row 1 */}
             <div className="flex w-full gap-1 justify-center">
               {alphaRow1.map((char) => {
@@ -1168,6 +1201,8 @@ export const VirtualKeyboard: React.FC<VirtualKeyboardProps> = ({
           </div>
         )}
       </div>
-    </div>
-  );
+    </>
+  )}
+</div>
+);
 };

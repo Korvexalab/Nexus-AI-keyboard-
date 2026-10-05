@@ -245,11 +245,11 @@ export const AppSimulators: React.FC<AppSimulatorsProps> = ({
               <div className="flex items-center gap-2">
                 <Settings className="w-4 h-4 text-indigo-400" />
                 <h3 className="text-xs font-bold text-slate-200 uppercase tracking-wider">
-                  AI Keyboard Settings &amp; Setup
+                  Nexora AI Keyboard Settings &amp; Setup
                 </h3>
               </div>
               <span className="text-[10px] bg-indigo-950 border border-indigo-700/50 text-indigo-300 px-2 py-0.5 rounded-full font-semibold">
-                Milestone 1C
+                Milestone 2
               </span>
             </div>
 
@@ -453,7 +453,7 @@ export const AppSimulators: React.FC<AppSimulatorsProps> = ({
             <div className="p-2.5 bg-slate-900/50 border border-slate-800/80 rounded-xl flex items-start gap-2 text-[10px] text-slate-400">
               <Lock className="w-3.5 h-3.5 text-emerald-400 shrink-0 mt-0.5" />
               <span>
-                <strong>100% On-Device &amp; Private:</strong> AI Keyboard strictly runs locally. No keystrokes, messages, passwords, or personal data are collected, stored remotely, or transmitted.
+                <strong>100% On-Device &amp; Private:</strong> Nexora AI Keyboard strictly runs locally. No keystrokes, messages, passwords, or personal data are collected, stored remotely, or transmitted.
               </span>
             </div>
           </div>

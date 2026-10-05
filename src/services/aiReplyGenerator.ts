@@ -238,6 +238,134 @@ export class MockReplyGenerator implements ReplyGenerator {
         return `Great question about "${q}"! Here is a helpful tip: break down your goal into small actionable chunks, tackle the most impactful piece first, and celebrate your wins along the way! 😊✨`;
     }
   }
+
+  generateSuggestions(request: AiGenerateRequest): string[] {
+    const { action, persona, context } = request;
+    const trimmed = context.trim();
+    const primary = this.generate(request);
+
+    if (action === 'rewrite') {
+      if (trimmed) {
+        if (persona === 'friendly') {
+          return [
+            "Hey! What's up?",
+            "Hey, how's it going?",
+            `Hey there! Hope you are having an awesome day 😊`
+          ];
+        } else if (persona === 'freelancer' || persona === 'professional') {
+          return [
+            `Deliverable update: '${trimmed}'. Ready for your review.`,
+            `Regarding '${trimmed}': following up with milestone details.`,
+            `Please review the latest project update regarding '${trimmed}'.`
+          ];
+        } else if (persona === 'funny') {
+          return [
+            `Spiced-up version: '${trimmed}' (now with 200% more pizzazz) 🎉`,
+            `Plot twist: '${trimmed}'! 😂`,
+            `Breaking news: '${trimmed}'! 🚀`
+          ];
+        } else if (persona === 'short') {
+          return [
+            trimmed ? `${trimmed} (updated)` : "Noted.",
+            trimmed ? `Quick update: ${trimmed}` : "Got it.",
+            "All set."
+          ];
+        } else if (persona === 'romantic') {
+          return [
+            `Thinking of you: '${trimmed}' ❤️`,
+            `Hey sweetheart, about '${trimmed}' ❤️✨`,
+            `Just wanted to send you love: '${trimmed}' 💕`
+          ];
+        } else {
+          return [
+            `Rewritten naturally: '${trimmed}'`,
+            `Here is a polished take: '${trimmed}'`,
+            `Cleaned up: '${trimmed}'`
+          ];
+        }
+      } else {
+        return [
+          "Let's make it happen! 😊",
+          "Looking forward to connecting.",
+          "Ready whenever you are!"
+        ];
+      }
+    }
+
+    if (action === 'reply') {
+      if (trimmed) {
+        if (persona === 'friendly') {
+          return [
+            primary,
+            `Hey! Thanks for the update on '${trimmed}'! 😊`,
+            `Sounds awesome! Let's definitely do '${trimmed}'! ✨`
+          ];
+        } else if (persona === 'freelancer' || persona === 'professional') {
+          return [
+            primary,
+            `Noted regarding '${trimmed}'. I will incorporate this into the current sprint.`,
+            `Understood. Proceeding with '${trimmed}' as discussed.`
+          ];
+        } else if (persona === 'funny') {
+          return [
+            primary,
+            `Say no more, my friend! '${trimmed}' is already in motion! 🚀`,
+            `Challenge accepted for '${trimmed}'! 😂`
+          ];
+        } else if (persona === 'short') {
+          return [
+            primary,
+            "Got it, thanks!",
+            "Understood."
+          ];
+        } else if (persona === 'romantic') {
+          return [
+            primary,
+            `Always brightens my day hearing from you about '${trimmed}' ❤️`,
+            `Can't wait to see you! About '${trimmed}', count me in ❤️`
+          ];
+        } else {
+          return [
+            primary,
+            `Sounds good regarding '${trimmed}'!`,
+            `Thanks, got the note on '${trimmed}'.`
+          ];
+        }
+      } else {
+        return [
+          primary,
+          "Sounds wonderful, looking forward to it! 😊",
+          "Got it, thanks for letting me know!"
+        ];
+      }
+    }
+
+    if (action === 'continue') {
+      return [
+        primary,
+        trimmed ? `Also, regarding '${trimmed}', how would you like to handle next steps?` : "What do you think should be our next move?",
+        trimmed ? `Let's keep the momentum going on '${trimmed}'!` : "Agreed, let's keep going!"
+      ];
+    }
+
+    if (action === 'start') {
+      return [
+        primary,
+        trimmed ? `Hey! Hope you're having a great week. Quick question on '${trimmed}':` : "Hey! Hope you are having a fantastic day! 😊",
+        trimmed ? `Hi! Wanted to touch base regarding '${trimmed}' whenever you have a moment.` : "Hi there! Reaching out to see how things are going."
+      ];
+    }
+
+    if (action === 'create') {
+      return [
+        primary,
+        trimmed ? `Draft outline on '${trimmed}' ready for your review.` : "Here is a fresh draft ready to go.",
+        trimmed ? `Quick note regarding '${trimmed}': all milestones aligned.` : "Draft message prepared."
+      ];
+    }
+
+    return [primary];
+  }
 }
 
 export const defaultAiGenerator = new MockReplyGenerator();

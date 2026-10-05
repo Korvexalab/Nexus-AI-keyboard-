@@ -91,11 +91,11 @@ fun AiReplyPanelView(
     onClearPrompt: () -> Unit = {},
     inputTarget: InputTarget = InputTarget.HOST,
     onSetInputTarget: (InputTarget) -> Unit = {},
-    isContextExpanded: Boolean = false,
-    onToggleContextExpanded: (Boolean) -> Unit = {},
     isMoreExpanded: Boolean = false,
     onToggleMoreExpanded: (Boolean) -> Unit = {},
-    onGenerate: (AiAction, AiPersona, String) -> Unit,
+    hostText: String = "",
+    onReplace: ((String) -> Unit)? = null,
+    onGenerate: (AiAction, AiPersona, String) -> Unit = { _, _, _ -> },
     onInsertAskAiResult: ((String) -> Unit)? = null,
     onClose: () -> Unit,
     tokens: KeyboardColorTokens,
@@ -339,7 +339,7 @@ fun AiReplyPanelView(
             // ==========================================
             // MODE A: ACTION BOARD (DEFAULT)
             // ==========================================
-            // 1. Header: ✨ ai command center + Close (×)
+            // 1. Header: ← ✨ AI + Close (×)
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
@@ -349,6 +349,26 @@ fun AiReplyPanelView(
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(6.dp)
                 ) {
+                    Box(
+                        modifier = Modifier
+                            .size(24.dp)
+                            .clip(CircleShape)
+                            .background(if (tokens.isDark) Color(0xFF1E283D) else Color(0xFFE2E8F0))
+                            .clickable {
+                                if (hapticEnabled) haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                onSetInputTarget(InputTarget.HOST)
+                                onClose()
+                            },
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Icon(
+                            imageVector = Icons.Filled.ArrowBack,
+                            contentDescription = "Back to normal keyboard",
+                            tint = tokens.textSecondary,
+                            modifier = Modifier.size(14.dp)
+                        )
+                    }
+
                     Icon(
                         imageVector = Icons.Filled.AutoAwesome,
                         contentDescription = null,
@@ -356,7 +376,7 @@ fun AiReplyPanelView(
                         modifier = Modifier.size(15.dp)
                     )
                     Text(
-                        text = "ai command center",
+                        text = "AI",
                         fontSize = 13.sp,
                         fontWeight = FontWeight.Bold,
                         color = tokens.textPrimary
@@ -384,126 +404,150 @@ fun AiReplyPanelView(
                 }
             }
 
-            // 2. Primary Actions: 2x2 Grid
-            // [ reply ]       [ ask ai ]
-            // [ continue ]    [ start ]
-            Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(6.dp)
-                ) {
-                    ActionChip(
-                        action = AiAction.REPLY,
-                        isSelected = selectedAction == AiAction.REPLY,
-                        onClick = {
-                            onSetInputTarget(InputTarget.HOST)
-                            onSelectAction(AiAction.REPLY)
-                        },
-                        tokens = tokens,
-                        keyAnimationEnabled = keyAnimationEnabled,
-                        hapticEnabled = hapticEnabled,
-                        modifier = Modifier.weight(1f)
-                    )
-                    ActionChip(
-                        action = AiAction.ASK_AI,
-                        isSelected = selectedAction == AiAction.ASK_AI,
-                        onClick = {
-                            onSetInputTarget(InputTarget.HOST)
-                            onSetPanelMode(AiPanelMode.ASK_AI)
-                        },
-                        tokens = tokens,
-                        keyAnimationEnabled = keyAnimationEnabled,
-                        hapticEnabled = hapticEnabled,
-                        modifier = Modifier.weight(1f)
-                    )
-                }
-
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(6.dp)
-                ) {
-                    ActionChip(
-                        action = AiAction.CONTINUE,
-                        isSelected = selectedAction == AiAction.CONTINUE,
-                        onClick = {
-                            onSetInputTarget(InputTarget.HOST)
-                            onSelectAction(AiAction.CONTINUE)
-                        },
-                        tokens = tokens,
-                        keyAnimationEnabled = keyAnimationEnabled,
-                        hapticEnabled = hapticEnabled,
-                        modifier = Modifier.weight(1f)
-                    )
-                    ActionChip(
-                        action = AiAction.START,
-                        isSelected = selectedAction == AiAction.START,
-                        onClick = {
-                            onSetInputTarget(InputTarget.HOST)
-                            onSelectAction(AiAction.START)
-                        },
-                        tokens = tokens,
-                        keyAnimationEnabled = keyAnimationEnabled,
-                        hapticEnabled = hapticEnabled,
-                        modifier = Modifier.weight(1f)
-                    )
-                }
-            }
-
-            // 3. More Actions (Collapsible)
+            // 2. Actions Row: [ Reply ] [ Rewrite ] [ More ]
             Row(
-                modifier = Modifier
-                    .clickable {
-                        if (hapticEnabled) haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                        onSetInputTarget(InputTarget.HOST)
-                        onToggleMoreExpanded(!isMoreExpanded)
-                    }
-                    .padding(vertical = 1.dp),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(3.dp)
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(6.dp)
             ) {
-                Text(
-                    text = "more",
-                    fontSize = 11.sp,
-                    color = tokens.textSecondary,
-                    fontWeight = FontWeight.Medium
+                ActionChip(
+                    action = AiAction.REPLY,
+                    isSelected = selectedAction == AiAction.REPLY,
+                    onClick = {
+                        onSetInputTarget(InputTarget.HOST)
+                        onSelectAction(AiAction.REPLY)
+                    },
+                    tokens = tokens,
+                    keyAnimationEnabled = keyAnimationEnabled,
+                    hapticEnabled = hapticEnabled,
+                    modifier = Modifier.weight(1f)
                 )
-                Icon(
-                    imageVector = if (isMoreExpanded) Icons.Filled.ExpandLess else Icons.Filled.ExpandMore,
-                    contentDescription = null,
-                    tint = tokens.textSecondary,
-                    modifier = Modifier.size(14.dp)
+
+                ActionChip(
+                    action = AiAction.REWRITE,
+                    isSelected = selectedAction == AiAction.REWRITE,
+                    onClick = {
+                        onSetInputTarget(InputTarget.HOST)
+                        onSelectAction(AiAction.REWRITE)
+                    },
+                    tokens = tokens,
+                    keyAnimationEnabled = keyAnimationEnabled,
+                    hapticEnabled = hapticEnabled,
+                    modifier = Modifier.weight(1f)
                 )
+
+                // More toggle chip
+                val moreSelected = isMoreExpanded || (selectedAction != AiAction.REPLY && selectedAction != AiAction.REWRITE)
+                val moreBg = if (moreSelected) {
+                    if (tokens.isDark) Color(0xFF261D52) else Color(0xFFDBEAFE)
+                } else {
+                    if (tokens.isDark) Color(0xFF1E283D) else Color(0xFFF1F5F9)
+                }
+                val moreBorder = if (moreSelected) {
+                    if (tokens.isDark) Color(0xFF818CF8) else Color(0xFF3B82F6)
+                } else {
+                    tokens.borderRim
+                }
+                val moreText = if (moreSelected) {
+                    if (tokens.isDark) Color(0xFFC7D2FE) else Color(0xFF1D4ED8)
+                } else {
+                    tokens.textPrimary
+                }
+
+                Box(
+                    modifier = Modifier
+                        .height(30.dp)
+                        .weight(1f)
+                        .clip(RoundedCornerShape(8.dp))
+                        .background(moreBg)
+                        .border(1.dp, moreBorder, RoundedCornerShape(8.dp))
+                        .clickable {
+                            if (hapticEnabled) haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                            onSetInputTarget(InputTarget.HOST)
+                            onToggleMoreExpanded(!isMoreExpanded)
+                        },
+                    contentAlignment = Alignment.Center
+                ) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(3.dp)
+                    ) {
+                        Text(
+                            text = "More",
+                            fontSize = 11.sp,
+                            fontWeight = if (moreSelected) FontWeight.SemiBold else FontWeight.Normal,
+                            color = moreText
+                        )
+                        Icon(
+                            imageVector = if (isMoreExpanded) Icons.Filled.ExpandLess else Icons.Filled.ExpandMore,
+                            contentDescription = null,
+                            tint = moreText,
+                            modifier = Modifier.size(13.dp)
+                        )
+                    }
+                }
             }
 
+            // 3. Secondary Actions Collapsible: Continue, Start, Ask AI, Create
             if (isMoreExpanded) {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(6.dp)
-                ) {
-                    ActionChip(
-                        action = AiAction.REWRITE,
-                        isSelected = selectedAction == AiAction.REWRITE,
-                        onClick = {
-                            onSetInputTarget(InputTarget.HOST)
-                            onSelectAction(AiAction.REWRITE)
-                        },
-                        tokens = tokens,
-                        keyAnimationEnabled = keyAnimationEnabled,
-                        hapticEnabled = hapticEnabled,
-                        modifier = Modifier.weight(1f)
-                    )
-                    ActionChip(
-                        action = AiAction.CREATE,
-                        isSelected = selectedAction == AiAction.CREATE,
-                        onClick = {
-                            onSetInputTarget(InputTarget.HOST)
-                            onSelectAction(AiAction.CREATE)
-                        },
-                        tokens = tokens,
-                        keyAnimationEnabled = keyAnimationEnabled,
-                        hapticEnabled = hapticEnabled,
-                        modifier = Modifier.weight(1f)
-                    )
+                Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        ActionChip(
+                            action = AiAction.CONTINUE,
+                            isSelected = selectedAction == AiAction.CONTINUE,
+                            onClick = {
+                                onSetInputTarget(InputTarget.HOST)
+                                onSelectAction(AiAction.CONTINUE)
+                            },
+                            tokens = tokens,
+                            keyAnimationEnabled = keyAnimationEnabled,
+                            hapticEnabled = hapticEnabled,
+                            modifier = Modifier.weight(1f)
+                        )
+                        ActionChip(
+                            action = AiAction.START,
+                            isSelected = selectedAction == AiAction.START,
+                            onClick = {
+                                onSetInputTarget(InputTarget.HOST)
+                                onSelectAction(AiAction.START)
+                            },
+                            tokens = tokens,
+                            keyAnimationEnabled = keyAnimationEnabled,
+                            hapticEnabled = hapticEnabled,
+                            modifier = Modifier.weight(1f)
+                        )
+                    }
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        ActionChip(
+                            action = AiAction.ASK_AI,
+                            isSelected = selectedAction == AiAction.ASK_AI,
+                            onClick = {
+                                onSetInputTarget(InputTarget.HOST)
+                                onSetPanelMode(AiPanelMode.ASK_AI)
+                            },
+                            tokens = tokens,
+                            keyAnimationEnabled = keyAnimationEnabled,
+                            hapticEnabled = hapticEnabled,
+                            modifier = Modifier.weight(1f)
+                        )
+                        ActionChip(
+                            action = AiAction.CREATE,
+                            isSelected = selectedAction == AiAction.CREATE,
+                            onClick = {
+                                onSetInputTarget(InputTarget.HOST)
+                                onSelectAction(AiAction.CREATE)
+                            },
+                            tokens = tokens,
+                            keyAnimationEnabled = keyAnimationEnabled,
+                            hapticEnabled = hapticEnabled,
+                            modifier = Modifier.weight(1f)
+                        )
+                    }
                 }
             }
 
@@ -566,160 +610,81 @@ fun AiReplyPanelView(
                 }
             }
 
-            // 5. Context / Instruction (Collapsible by default)
-            if (!isContextExpanded && contextText.isEmpty()) {
-                Box(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(30.dp)
-                        .clip(RoundedCornerShape(6.dp))
-                        .background(if (tokens.isDark) Color(0xFF131D31) else Color(0xFFF1F5F9))
-                        .border(
-                            1.dp,
-                            if (tokens.isDark) Color(0x40818CF8) else Color(0x40CBD5E1),
-                            RoundedCornerShape(6.dp)
-                        )
-                        .clickable {
-                            if (hapticEnabled) haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                            onToggleContextExpanded(true)
-                            onSetInputTarget(InputTarget.AI_CONTEXT)
-                        }
-                        .padding(horizontal = 8.dp),
-                    contentAlignment = Alignment.CenterStart
+            // 5. AI RESULTS SECTION
+            // Displays selectable result cards based on the host chat bar text.
+            val suggestions = remember(selectedAction, selectedPersona, hostText) {
+                AiReplyGenerator.generateSuggestions(selectedAction, selectedPersona, hostText)
+            }
+            var replacedIdx by remember { mutableStateOf<Int?>(null) }
+
+            Column(
+                modifier = Modifier.fillMaxWidth(),
+                verticalArrangement = Arrangement.spacedBy(4.dp)
+            ) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
                 ) {
                     Text(
-                        text = "+ add context or instruction...",
-                        fontSize = 11.sp,
-                        color = tokens.textSecondary,
-                        fontWeight = FontWeight.Medium
+                        text = if (hostText.isNotBlank()) "AI RESULTS • CONTEXT: \"${hostText.take(20)}\"" else "AI RESULTS",
+                        fontSize = 10.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = tokens.textSecondary
+                    )
+                    Text(
+                        text = "${suggestions.size} suggestions",
+                        fontSize = 10.sp,
+                        color = if (tokens.isDark) Color(0xFF818CF8) else Color(0xFF4F46E5)
                     )
                 }
-            } else {
-                Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Text(
-                            text = "what should ai work with?",
-                            fontSize = 11.sp,
-                            fontWeight = FontWeight.Medium,
-                            color = tokens.textSecondary
-                        )
-                        if (isContextFocused) {
-                            Text(
-                                text = "Keyboard typing active",
-                                fontSize = 10.sp,
-                                fontWeight = FontWeight.SemiBold,
-                                color = if (tokens.isDark) Color(0xFF818CF8) else Color(0xFF4F46E5)
-                            )
-                        }
-                    }
 
-                    val promptFieldShape = RoundedCornerShape(8.dp)
-                    val promptBorderColor = if (isContextFocused) {
-                        if (tokens.isDark) Color(0xFF818CF8) else Color(0xFF4F46E5)
-                    } else {
-                        tokens.borderRim
-                    }
-                    val promptBg = if (tokens.isDark) Color(0xFF1E283D) else Color(0xFFFFFFFF)
-
+                suggestions.forEachIndexed { idx, suggestion ->
+                    val isReplaced = replacedIdx == idx
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .height(34.dp)
-                            .clip(promptFieldShape)
-                            .background(promptBg)
-                            .border(if (isContextFocused) 1.5.dp else 1.dp, promptBorderColor, promptFieldShape)
-                            .clickable {
-                                if (hapticEnabled) haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                                onSetInputTarget(InputTarget.AI_CONTEXT)
-                            }
-                            .padding(horizontal = 10.dp),
+                            .clip(RoundedCornerShape(8.dp))
+                            .background(if (tokens.isDark) Color(0xFF141E30) else Color(0xFFFFFFFF))
+                            .border(
+                                1.dp,
+                                if (isReplaced) Color(0xFF10B981) else if (tokens.isDark) Color(0x33818CF8) else Color(0x40CBD5E1),
+                                RoundedCornerShape(8.dp)
+                            )
+                            .padding(8.dp),
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.SpaceBetween
                     ) {
-                        Box(
-                            modifier = Modifier.weight(1f),
-                            contentAlignment = Alignment.CenterStart
-                        ) {
-                            if (contextText.isEmpty()) {
-                                Text(
-                                    text = "type or paste context here...",
-                                    fontSize = 11.sp,
-                                    color = tokens.textSecondary.copy(alpha = 0.7f),
-                                    maxLines = 1,
-                                    overflow = TextOverflow.Ellipsis
-                                )
-                            } else {
-                                Text(
-                                    text = contextText,
-                                    fontSize = 11.sp,
-                                    fontWeight = FontWeight.Normal,
-                                    color = tokens.textPrimary,
-                                    maxLines = 1,
-                                    overflow = TextOverflow.Ellipsis
-                                )
-                            }
-                        }
+                        Text(
+                            text = suggestion,
+                            fontSize = 11.sp,
+                            color = tokens.textPrimary,
+                            modifier = Modifier.weight(1f).padding(end = 8.dp)
+                        )
 
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            if (contextText.isNotEmpty()) {
-                                Box(
-                                    modifier = Modifier
-                                        .size(18.dp)
-                                        .clip(CircleShape)
-                                        .background(if (tokens.isDark) Color(0xFF2E3D5B) else Color(0xFFE2E8F0))
-                                        .clickable {
-                                            if (hapticEnabled) haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                                            onClearPrompt()
-                                        },
-                                    contentAlignment = Alignment.Center
-                                ) {
-                                    Icon(
-                                        imageVector = Icons.Filled.Clear,
-                                        contentDescription = "Clear Prompt",
-                                        tint = tokens.textSecondary,
-                                        modifier = Modifier.size(10.dp)
-                                    )
+                        Box(
+                            modifier = Modifier
+                                .clip(RoundedCornerShape(6.dp))
+                                .background(if (isReplaced) Color(0xFF059669) else Color(0xFF4F46E5))
+                                .clickable {
+                                    if (hapticEnabled) haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                    onSetInputTarget(InputTarget.HOST)
+                                    replacedIdx = idx
+                                    onReplace?.invoke(suggestion)
                                 }
-                            }
-                            if (contextText.isEmpty()) {
-                                Box(
-                                    modifier = Modifier
-                                        .size(18.dp)
-                                        .clip(CircleShape)
-                                        .clickable {
-                                            onToggleContextExpanded(false)
-                                            onSetInputTarget(InputTarget.HOST)
-                                        },
-                                    contentAlignment = Alignment.Center
-                                ) {
-                                    Icon(
-                                        imageVector = Icons.Filled.KeyboardArrowUp,
-                                        contentDescription = "Collapse",
-                                        tint = tokens.textSecondary,
-                                        modifier = Modifier.size(12.dp)
-                                    )
-                                }
-                            }
+                                .padding(horizontal = 8.dp, vertical = 4.dp),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Text(
+                                text = if (isReplaced) "Replaced" else "Replace",
+                                fontSize = 10.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = Color.White
+                            )
                         }
                     }
                 }
             }
-
-            // 6. Generate Button: generate ✨
-            ActionPrimaryButton(
-                label = "generate",
-                onClick = {
-                    onSetInputTarget(InputTarget.HOST)
-                    onGenerate(selectedAction, selectedPersona, contextText)
-                },
-                tokens = tokens,
-                hapticEnabled = hapticEnabled,
-                keyAnimationEnabled = keyAnimationEnabled
-            )
         }
     }
 }

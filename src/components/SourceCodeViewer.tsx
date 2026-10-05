@@ -36,7 +36,7 @@ export const SourceCodeViewer: React.FC = () => {
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
-      a.download = 'AIKeyboard-Android-Milestone1A.zip';
+      a.download = 'Nexora-AI-Keyboard-Android.zip';
       document.body.appendChild(a);
       a.click();
       document.body.removeChild(a);

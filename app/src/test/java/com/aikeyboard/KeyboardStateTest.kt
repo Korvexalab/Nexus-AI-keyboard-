@@ -401,4 +401,146 @@ class KeyboardStateTest {
         type(" done")
         assertTrue(hostBuffer.endsWith(" done"))
     }
+
+    @Test
+    fun testPermanentNumberRowAndInputConnectionRouting() {
+        val numberRow = listOf("1", "2", "3", "4", "5", "6", "7", "8", "9", "0")
+        var hostBuffer = ""
+        var contextText = ""
+        var inputTarget = "host"
+        var aiPanelVisible = false
+        var currentMode = KeyboardMode.ALPHA
+        var shift = ShiftState.OFF
+
+        fun onTextInput(text: String) {
+            if (aiPanelVisible && inputTarget == "ai_context") {
+                contextText += text
+            } else {
+                hostBuffer += text
+            }
+        }
+
+        fun onBackspace() {
+            if (aiPanelVisible && inputTarget == "ai_context") {
+                if (contextText.isNotEmpty()) contextText = contextText.dropLast(1)
+            } else {
+                if (hostBuffer.isNotEmpty()) hostBuffer = hostBuffer.dropLast(1)
+            }
+        }
+
+        fun onSpace() = onTextInput(" ")
+        fun onPeriod() = onTextInput(".")
+        fun onComma() = onTextInput(",")
+
+        // 1. Verify all 10 digits are directly tappable in normal alphabet mode
+        assertEquals(KeyboardMode.ALPHA, currentMode)
+        numberRow.forEach { digit ->
+            onTextInput(digit)
+        }
+        assertEquals("1234567890", hostBuffer)
+
+        // 2. Test typing numbers in Chrome / messaging context
+        hostBuffer = "https://example.com/item/"
+        listOf("4", "2").forEach { onTextInput(it) }
+        assertEquals("https://example.com/item/42", hostBuffer)
+
+        // 3. Test backspace removes digits properly
+        onBackspace()
+        assertEquals("https://example.com/item/4", hostBuffer)
+
+        // 4. Test comma, period, space alongside numbers
+        onComma()
+        onSpace()
+        onTextInput("9")
+        onPeriod()
+        assertEquals("https://example.com/item/4, 9.", hostBuffer)
+
+        // 5. Test shift does not break number row
+        shift = ShiftState.SHIFTED
+        onTextInput("1")
+        assertEquals("https://example.com/item/4, 9.1", hostBuffer)
+
+        // 6. Test with AI panel open and context focused vs host focused
+        aiPanelVisible = true
+        inputTarget = "ai_context"
+        contextText = "prompt"
+        listOf("1", "2", "3").forEach { onTextInput(it) }
+        assertEquals("prompt123", contextText)
+        assertEquals("https://example.com/item/4, 9.1", hostBuffer) // host untouched
+
+        // When switching input target to host
+        inputTarget = "host"
+        onTextInput("5")
+        assertEquals("https://example.com/item/4, 9.15", hostBuffer)
+        assertEquals("prompt123", contextText) // context untouched
+
+        // 7. Verify ?123 still switches to SYMBOLS mode and returns to ALPHA
+        currentMode = KeyboardMode.SYMBOLS
+        assertEquals(KeyboardMode.SYMBOLS, currentMode)
+        currentMode = KeyboardMode.ALPHA
+        assertEquals(KeyboardMode.ALPHA, currentMode)
+
+        // Close AI panel
+        aiPanelVisible = false
+        inputTarget = "host"
+        onTextInput("0")
+        assertEquals("https://example.com/item/4, 9.150", hostBuffer)
+    }
+
+    @Test
+    fun testM21AiBoardReplacesKeyboardAndUsesHostContext() {
+        var hostBuffer = ""
+        var keyboardKeysVisible = true
+        var aiBoardVisible = false
+        var selectedAction = com.aikeyboard.ime.ai.AiAction.REPLY
+        var selectedPersona = com.aikeyboard.ime.ai.AiPersona.FRIENDLY
+
+        // 1. Host application's chat bar is the primary writing context
+        fun typeInHost(text: String) {
+            hostBuffer += text
+        }
+        fun replaceHostText(replacement: String) {
+            hostBuffer = replacement
+        }
+
+        typeInHost("whatup")
+        assertEquals("whatup", hostBuffer)
+        assertTrue("Normal keyboard keys visible initially", keyboardKeysVisible)
+        assertFalse("AI board not visible initially", aiBoardVisible)
+
+        // 2. User taps AI button: AI board replaces keyboard board
+        aiBoardVisible = true
+        keyboardKeysVisible = false // Keys disappear, AI board occupies board area
+
+        assertTrue("AI board replaces keyboard board", aiBoardVisible)
+        assertFalse("Keyboard keys are replaced by AI board", keyboardKeysVisible)
+        assertEquals("Host chat bar remains visible and unchanged", "whatup", hostBuffer)
+
+        // 3. User taps Rewrite action and Friendly persona
+        selectedAction = com.aikeyboard.ime.ai.AiAction.REWRITE
+        selectedPersona = com.aikeyboard.ime.ai.AiPersona.FRIENDLY
+
+        // 4. Suggestions generated directly from host chat bar context ("whatup")
+        val suggestions = com.aikeyboard.ime.ai.AiReplyGenerator.generateSuggestions(
+            action = selectedAction,
+            persona = selectedPersona,
+            context = hostBuffer
+        )
+
+        assertTrue("Generates multiple suggestions based on host chat bar", suggestions.size >= 2)
+        assertTrue("Contains 'Hey! What's up?'", suggestions.contains("Hey! What's up?"))
+        assertTrue("Contains 'Hey, how's it going?'", suggestions.contains("Hey, how's it going?"))
+
+        // 5. User taps [Replace] on suggestion card
+        replaceHostText(suggestions[0])
+        assertEquals("Hey! What's up?", hostBuffer)
+
+        // 6. User taps back arrow to return to normal keyboard
+        aiBoardVisible = false
+        keyboardKeysVisible = true
+
+        assertFalse("AI board dismissed", aiBoardVisible)
+        assertTrue("Keyboard keys restored", keyboardKeysVisible)
+        assertEquals("Host chat bar retains replaced content", "Hey! What's up?", hostBuffer)
+    }
 }

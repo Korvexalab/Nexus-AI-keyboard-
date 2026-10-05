@@ -333,14 +333,27 @@ export default function App() {
     },
 
     onCloseAiPanel: () => {
+      playClickSound();
       setAiPanelVisible(false);
       setAiPromptFocused(false);
-      addLog('AI Reply', 'Closed AI Reply panel', 'state');
+      addLog('AI Board', 'Closed AI Board — Restored normal keyboard', 'state');
     },
 
     onSetAiPromptFocused: (focused: boolean) => {
       setAiPromptFocused(focused);
       addLog('AI Prompt', `Custom prompt focus: ${focused ? 'ACTIVE' : 'RELEASED'}`, 'state');
+    },
+
+    onAiReplace: (replacement: string) => {
+      playClickSound();
+      if (appTarget === 'gmail' && activeField === 'subject') {
+        setEmailSubject(replacement);
+        addLog('ic.commitText()', `commitText("${replacement}", 1) [AI Replace in Subject]`, 'commit');
+      } else {
+        setText(replacement);
+        setCursorPos(replacement.length);
+        addLog('ic.commitText()', `commitText("${replacement}", 1) [AI Replace in host chat bar]`, 'commit');
+      }
     },
 
     onAiGenerate: (action: string, persona: string, context: string) => {
@@ -390,7 +403,7 @@ export default function App() {
     onSettingsClicked: () => {
       playClickSound();
       setAppTarget('settings');
-      addLog('Toolbar: Settings', 'Navigated to AI Keyboard Settings & Onboarding', 'state');
+      addLog('Toolbar: Settings', 'Navigated to Nexora AI Keyboard Settings & Onboarding', 'state');
     }
   };
 
@@ -414,7 +427,7 @@ export default function App() {
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
-      a.download = 'AIKeyboard-Android-Milestone1C.zip';
+      a.download = 'Nexora-AI-Keyboard-Android.zip';
       document.body.appendChild(a);
       a.click();
       document.body.removeChild(a);
@@ -435,16 +448,16 @@ export default function App() {
             </div>
             <div>
               <div className="flex items-center gap-2">
-                <h1 className="text-base font-bold text-slate-100 tracking-tight">AI Keyboard</h1>
+                <h1 className="text-base font-bold text-slate-100 tracking-tight">Nexora AI Keyboard</h1>
                 <span className="px-2 py-0.5 rounded-full bg-indigo-500/10 text-indigo-400 text-xs font-semibold border border-indigo-500/20">
-                  Milestone 1C
+                  Milestone 2
                 </span>
                 <span className="px-2 py-0.5 rounded-full bg-emerald-500/10 text-emerald-400 text-xs font-semibold border border-emerald-500/20 hidden sm:inline-flex items-center gap-1">
-                  <CheckCircle2 className="w-3 h-3" /> Themes + Settings + Onboarding
+                  <CheckCircle2 className="w-3 h-3" /> Command Center + Number Row
                 </span>
               </div>
               <p className="text-xs text-slate-400">
-                Midnight &amp; Light Themes • On-Device Settings • Onboarding Setup • 100% Private
+                Midnight &amp; Light Themes • Permanent Number Row • AI Command Center • 100% Private
               </p>
             </div>
           </div>
@@ -534,22 +547,22 @@ export default function App() {
               <Sparkles className="w-4 h-4" />
             </div>
             <div>
-              <h2 className="text-sm font-semibold text-slate-100">Milestone 2 Deliverables — Fast AI Reply</h2>
+              <h2 className="text-sm font-semibold text-slate-100">Milestone 2 Deliverables — AI Command Center &amp; Number Row</h2>
               <p className="text-xs text-slate-400">
-                Compact AI reply panel, 5 tone styles, custom prompt typing with IME, and direct InputConnection insertion.
+                Compact AI Command Center, permanent number row, personas, and direct InputConnection insertion.
               </p>
             </div>
           </div>
 
           <div className="flex flex-wrap items-center gap-2 text-xs">
             <span className="px-2.5 py-1 rounded-lg bg-slate-800/80 text-amber-300 border border-amber-500/20 flex items-center gap-1 font-medium">
-              <Sparkles className="w-3 h-3 text-amber-400" /> ✨ AI Reply Panel
+              <Sparkles className="w-3 h-3 text-amber-400" /> ✨ AI Command Center
             </span>
             <span className="px-2.5 py-1 rounded-lg bg-slate-800/80 text-indigo-400 border border-indigo-500/20 flex items-center gap-1">
-              <CheckCircle2 className="w-3 h-3 text-emerald-400" /> 5 Reply Tones
+              <CheckCircle2 className="w-3 h-3 text-emerald-400" /> Permanent Number Row
             </span>
             <span className="px-2.5 py-1 rounded-lg bg-slate-800/80 text-slate-300 border border-slate-700/60 flex items-center gap-1">
-              <CheckCircle2 className="w-3 h-3 text-emerald-400" /> Custom Prompt Input
+              <CheckCircle2 className="w-3 h-3 text-emerald-400" /> Horizontal Personas
             </span>
             <span className="px-2.5 py-1 rounded-lg bg-slate-800/80 text-slate-300 border border-slate-700/60 flex items-center gap-1">
               <CheckCircle2 className="w-3 h-3 text-emerald-400" /> Direct ic.commitText()
@@ -609,12 +622,12 @@ export default function App() {
                   const next = !isImeEnabledInSettings;
                   setIsImeEnabledInSettings(next);
                   if (!next) setIsImeSelected(false);
-                  addLog('Settings.Secure', `AI Keyboard IME status changed to: ${next ? 'ENABLED' : 'DISABLED'}`, 'state');
+                  addLog('Settings.Secure', `Nexora AI Keyboard IME status changed to: ${next ? 'ENABLED' : 'DISABLED'}`, 'state');
                 }}
                 isImeSelected={isImeSelected}
                 onSelectIme={() => {
                   setIsImeSelected(true);
-                  addLog('InputMethodManager', 'showInputMethodPicker() -> Selected AI Keyboard as active IME', 'state');
+                  addLog('InputMethodManager', 'showInputMethodPicker() -> Selected Nexora AI Keyboard as active IME', 'state');
                 }}
                 chatMessages={chatMessages}
                 onSendMessage={handleSendMessage}
@@ -649,7 +662,7 @@ export default function App() {
 
       {/* Footer */}
       <footer className="border-t border-slate-800/80 bg-slate-950 py-4 px-4 text-center text-xs text-slate-500">
-        AI Keyboard Project • Milestone 1C: Themes &amp; Settings • Ready for physical device verification before Milestone 2
+        Nexora AI Keyboard Project • Milestone 2: AI Command Center + Permanent Number Row • Android 14 (API 34)
       </footer>
     </div>
   );

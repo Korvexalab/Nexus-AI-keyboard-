@@ -43,8 +43,9 @@ interface KeyboardActionListener {
     fun onThemeClicked()
     fun onSettingsClicked()
 
-    // Milestone 2: AI Reply Panel Actions
+    // Milestone 2 & M2.1: AI Actions & Replace
     fun onAiGenerate(style: String, customPrompt: String) {}
+    fun onAiReplace(replacement: String) {}
     fun onCloseAiPanel() {}
     fun onSetAiPromptFocused(focused: Boolean) {}
     fun onClearAiPrompt() {}

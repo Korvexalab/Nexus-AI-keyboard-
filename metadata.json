@@ -1,6 +1,6 @@
 {
-  "name": "AI Keyboard",
-  "description": "Android InputMethodService QWERTY keyboard with premium Play Store design, Jetpack Compose Material 3, AI toolbar, and InputConnection integration.",
+  "name": "Nexora AI Keyboard",
+  "description": "Nexora AI Keyboard — Android InputMethodService QWERTY keyboard with premium Play Store design, Jetpack Compose Material 3, AI toolbar, and InputConnection integration.",
   "requestFramePermissions": [],
   "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
 }

@@ -183,6 +183,7 @@ export const AndroidDeviceFrame: React.FC<AndroidDeviceFrameProps> = ({
             height={settings.height}
             keyAnimationEnabled={settings.keyAnimationEnabled}
             hapticEnabled={settings.hapticEnabled}
+            hostText={appTarget === 'gmail' && activeField === 'subject' ? emailSubject : text}
           />
 
           {/* Android Gesture Navigation Pill */}

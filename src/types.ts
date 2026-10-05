@@ -51,6 +51,7 @@ export interface KeyboardActionListener {
 
   // Milestone 2: AI Command Center Panel Actions
   onAiGenerate?: (action: string, persona: string, context: string) => void;
+  onAiReplace?: (replacement: string) => void;
   onCloseAiPanel?: () => void;
   onSetAiPromptFocused?: (focused: boolean) => void;
   onClearAiPrompt?: () => void;

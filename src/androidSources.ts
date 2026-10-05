@@ -1714,11 +1714,32 @@ private fun AlphaKeyboardLayout(
     hapticEnabled: Boolean,
     onKeyBoundsChanged: (Boolean, String, LayoutCoordinates?) -> Unit
 ) {
+    val numberRow = listOf("1", "2", "3", "4", "5", "6", "7", "8", "9", "0")
     val row1 = listOf("q", "w", "e", "r", "t", "y", "u", "i", "o", "p")
     val row2 = listOf("a", "s", "d", "f", "g", "h", "j", "k", "l")
     val row3 = listOf("z", "x", "c", "v", "b", "n", "m")
 
     val isUppercase = shiftState != ShiftState.OFF
+    val numberKeyHeightDp = (keyHeightDp * 0.8f).toInt().coerceAtLeast(36)
+
+    // Permanent Number Row: 1 2 3 4 5 6 7 8 9 0
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.spacedBy(4.dp)
+    ) {
+        numberRow.forEach { num ->
+            KeyboardKey(
+                text = num,
+                modifier = Modifier.weight(1f),
+                tokens = tokens,
+                keyHeightDp = numberKeyHeightDp,
+                keyAnimationEnabled = keyAnimationEnabled,
+                hapticEnabled = hapticEnabled,
+                onKeyBoundsChanged = onKeyBoundsChanged,
+                onClick = { listener.onTextInput(num) }
+            )
+        }
+    }
 
     // Row 1
     Row(
@@ -3903,6 +3924,272 @@ class KeyboardStateTest {
         assertEquals("hello world", hostBuffer)
         handleBackspace()
         assertEquals("hello worl", hostBuffer)
+    }
+
+    @Test
+    fun testExactM2Scenarios() {
+        var hostBuffer = ""
+        var contextText = ""
+        var aiPanelVisible = false
+        var panelMode = "action_board"
+        var inputTarget = "host"
+        var selectedAction = "reply"
+        var selectedPersona = "friendly"
+        var keyboardVisible = true // IME should stay visible throughout!
+
+        fun type(text: String) {
+            assertTrue("Keyboard must remain visible while typing", keyboardVisible)
+            if (aiPanelVisible && inputTarget == "ai_context") {
+                contextText += text
+            } else {
+                hostBuffer += text
+            }
+        }
+
+        fun backspace() {
+            assertTrue("Keyboard must remain visible while backspacing", keyboardVisible)
+            if (aiPanelVisible && inputTarget == "ai_context") {
+                if (contextText.isNotEmpty()) contextText = contextText.dropLast(1)
+            } else {
+                if (hostBuffer.isNotEmpty()) hostBuffer = hostBuffer.dropLast(1)
+            }
+        }
+
+        // Test A — Context Focus
+        // 1. open ai
+        aiPanelVisible = true
+        assertTrue(keyboardVisible)
+
+        // 2. tap "+ add context"
+        inputTarget = "ai_context"
+        assertTrue(keyboardVisible)
+
+        // 3. type text
+        type("project brief")
+
+        // 4. confirm text goes into ai context
+        assertEquals("project brief", contextText)
+        assertEquals("", hostBuffer)
+
+        // 5. tap reply
+        selectedAction = "reply"
+        inputTarget = "host" // Non-text control transfers target to host
+
+        // 6. confirm ai context loses keyboard-input ownership
+        assertEquals("host", inputTarget)
+
+        // 7. confirm keyboard stays visible
+        assertTrue(keyboardVisible)
+
+        // 8. type
+        type("Hello team")
+
+        // 9. confirm typing now goes to host chat field
+        assertEquals("Hello team", hostBuffer)
+        assertEquals("project brief", contextText) // context unchanged
+
+        // Test B — Persona
+        // 1. open ai (already open)
+        // 2. swipe persona row / select another persona
+        selectedPersona = "freelancer"
+        inputTarget = "host"
+        assertTrue("Keyboard never disappears during persona selection", keyboardVisible)
+
+        // 3. select another persona again
+        selectedPersona = "funny"
+        inputTarget = "host"
+        assertTrue("Keyboard remains stable during persona re-selection", keyboardVisible)
+
+        // Test C — Ask AI
+        // 1. tap ask ai
+        selectedAction = "ask_ai"
+        panelMode = "ask_ai"
+        inputTarget = "host"
+        assertTrue(keyboardVisible)
+
+        // 2. confirm ask ai mode appears
+        assertEquals("ask_ai", panelMode)
+
+        // 3. tap question field and type a question
+        inputTarget = "ai_context"
+        contextText = ""
+        type("how to scale?")
+        assertEquals("how to scale?", contextText)
+
+        // 4. generate/ask
+        val mockAnswer = com.aikeyboard.ime.ai.AiReplyGenerator.generateMockAskAiResponse(
+            contextText,
+            com.aikeyboard.ime.ai.AiPersona.fromId(selectedPersona)
+        )
+        inputTarget = "host"
+        assertTrue(mockAnswer.isNotEmpty())
+
+        // 5. tap insert
+        // confirm response goes into host chat field via InputConnection
+        hostBuffer += mockAnswer
+        assertTrue(hostBuffer.contains("how to scale?"))
+
+        // 6. tap ← writing actions
+        panelMode = "action_board"
+        inputTarget = "host"
+        assertEquals("action_board", panelMode)
+        assertTrue("Keyboard never disappeared navigating back from Ask AI", keyboardVisible)
+
+        // Test D — Back vs Close
+        // ← writing actions returned to action board while panel is still visible
+        assertTrue(aiPanelVisible)
+        assertEquals("action_board", panelMode)
+
+        // × closes the entire AI panel
+        aiPanelVisible = false
+        inputTarget = "host"
+        assertFalse(aiPanelVisible)
+        assertTrue("Keyboard still active and visible for normal typing after closing panel", keyboardVisible)
+
+        type(" done")
+        assertTrue(hostBuffer.endsWith(" done"))
+    }
+
+    @Test
+    fun testPermanentNumberRowAndInputConnectionRouting() {
+        val numberRow = listOf("1", "2", "3", "4", "5", "6", "7", "8", "9", "0")
+        var hostBuffer = ""
+        var contextText = ""
+        var inputTarget = "host"
+        var aiPanelVisible = false
+        var currentMode = KeyboardMode.ALPHA
+        var shift = ShiftState.OFF
+
+        fun onTextInput(text: String) {
+            if (aiPanelVisible && inputTarget == "ai_context") {
+                contextText += text
+            } else {
+                hostBuffer += text
+            }
+        }
+
+        fun onBackspace() {
+            if (aiPanelVisible && inputTarget == "ai_context") {
+                if (contextText.isNotEmpty()) contextText = contextText.dropLast(1)
+            } else {
+                if (hostBuffer.isNotEmpty()) hostBuffer = hostBuffer.dropLast(1)
+            }
+        }
+
+        fun onSpace() = onTextInput(" ")
+        fun onPeriod() = onTextInput(".")
+        fun onComma() = onTextInput(",")
+
+        // 1. Verify all 10 digits are directly tappable in normal alphabet mode
+        assertEquals(KeyboardMode.ALPHA, currentMode)
+        numberRow.forEach { digit ->
+            onTextInput(digit)
+        }
+        assertEquals("1234567890", hostBuffer)
+
+        // 2. Test typing numbers in Chrome / messaging context
+        hostBuffer = "https://example.com/item/"
+        listOf("4", "2").forEach { onTextInput(it) }
+        assertEquals("https://example.com/item/42", hostBuffer)
+
+        // 3. Test backspace removes digits properly
+        onBackspace()
+        assertEquals("https://example.com/item/4", hostBuffer)
+
+        // 4. Test comma, period, space alongside numbers
+        onComma()
+        onSpace()
+        onTextInput("9")
+        onPeriod()
+        assertEquals("https://example.com/item/4, 9.", hostBuffer)
+
+        // 5. Test shift does not break number row
+        shift = ShiftState.SHIFTED
+        onTextInput("1")
+        assertEquals("https://example.com/item/4, 9.1", hostBuffer)
+
+        // 6. Test with AI panel open and context focused vs host focused
+        aiPanelVisible = true
+        inputTarget = "ai_context"
+        contextText = "prompt"
+        listOf("1", "2", "3").forEach { onTextInput(it) }
+        assertEquals("prompt123", contextText)
+        assertEquals("https://example.com/item/4, 9.1", hostBuffer) // host untouched
+
+        // When switching input target to host
+        inputTarget = "host"
+        onTextInput("5")
+        assertEquals("https://example.com/item/4, 9.15", hostBuffer)
+        assertEquals("prompt123", contextText) // context untouched
+
+        // 7. Verify ?123 still switches to SYMBOLS mode and returns to ALPHA
+        currentMode = KeyboardMode.SYMBOLS
+        assertEquals(KeyboardMode.SYMBOLS, currentMode)
+        currentMode = KeyboardMode.ALPHA
+        assertEquals(KeyboardMode.ALPHA, currentMode)
+
+        // Close AI panel
+        aiPanelVisible = false
+        inputTarget = "host"
+        onTextInput("0")
+        assertEquals("https://example.com/item/4, 9.150", hostBuffer)
+    }
+
+    @Test
+    fun testM21AiBoardReplacesKeyboardAndUsesHostContext() {
+        var hostBuffer = ""
+        var keyboardKeysVisible = true
+        var aiBoardVisible = false
+        var selectedAction = com.aikeyboard.ime.ai.AiAction.REPLY
+        var selectedPersona = com.aikeyboard.ime.ai.AiPersona.FRIENDLY
+
+        // 1. Host application's chat bar is the primary writing context
+        fun typeInHost(text: String) {
+            hostBuffer += text
+        }
+        fun replaceHostText(replacement: String) {
+            hostBuffer = replacement
+        }
+
+        typeInHost("whatup")
+        assertEquals("whatup", hostBuffer)
+        assertTrue("Normal keyboard keys visible initially", keyboardKeysVisible)
+        assertFalse("AI board not visible initially", aiBoardVisible)
+
+        // 2. User taps AI button: AI board replaces keyboard board
+        aiBoardVisible = true
+        keyboardKeysVisible = false // Keys disappear, AI board occupies board area
+
+        assertTrue("AI board replaces keyboard board", aiBoardVisible)
+        assertFalse("Keyboard keys are replaced by AI board", keyboardKeysVisible)
+        assertEquals("Host chat bar remains visible and unchanged", "whatup", hostBuffer)
+
+        // 3. User taps Rewrite action and Friendly persona
+        selectedAction = com.aikeyboard.ime.ai.AiAction.REWRITE
+        selectedPersona = com.aikeyboard.ime.ai.AiPersona.FRIENDLY
+
+        // 4. Suggestions generated directly from host chat bar context ("whatup")
+        val suggestions = com.aikeyboard.ime.ai.AiReplyGenerator.generateSuggestions(
+            action = selectedAction,
+            persona = selectedPersona,
+            context = hostBuffer
+        )
+
+        assertTrue("Generates multiple suggestions based on host chat bar", suggestions.size >= 2)
+        assertTrue("Contains 'Hey! What's up?'", suggestions.contains("Hey! What's up?"))
+        assertTrue("Contains 'Hey, how's it going?'", suggestions.contains("Hey, how's it going?"))
+
+        // 5. User taps [Replace] on suggestion card
+        replaceHostText(suggestions[0])
+        assertEquals("Hey! What's up?", hostBuffer)
+
+        // 6. User taps back arrow to return to normal keyboard
+        aiBoardVisible = false
+        keyboardKeysVisible = true
+
+        assertFalse("AI board dismissed", aiBoardVisible)
+        assertTrue("Keyboard keys restored", keyboardKeysVisible)
+        assertEquals("Host chat bar retains replaced content", "Hey! What's up?", hostBuffer)
     }
 }
 `

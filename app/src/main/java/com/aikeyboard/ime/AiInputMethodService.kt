@@ -269,6 +269,14 @@ class AiInputMethodService : ComposeLifecycleInputMethodService(), KeyboardActio
         customPromptTextState.value = ""
     }
 
+    override fun onAiReplace(replacement: String) {
+        val ic = currentInputConnection ?: return
+        val before = ic.getTextBeforeCursor(1000, 0) ?: ""
+        val after = ic.getTextAfterCursor(1000, 0) ?: ""
+        ic.deleteSurroundingText(before.length, after.length)
+        ic.commitText(replacement, 1)
+    }
+
     override fun onAiGenerate(style: String, customPrompt: String) {
         val replyStyle = AiReplyStyle.fromString(style)
         val mockReply = AiReplyGenerator.generateMockReply(replyStyle, customPrompt)
