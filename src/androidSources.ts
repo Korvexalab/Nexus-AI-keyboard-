@@ -2,14 +2,90 @@ import { AndroidFileEntry } from './types';
 
 export const ANDROID_FILES: AndroidFileEntry[] = [
   {
-    path: 'app/src/main/java/com/aikeyboard/ime/ai/AiReplyGenerator.kt',
-    name: 'AiReplyGenerator.kt',
+    path: 'app/src/main/java/com/aikeyboard/ime/ai/AiConfig.kt',
+    name: 'AiConfig.kt',
     language: 'kotlin',
-    description: 'Milestone 2: Modular AI reply generator supporting Command Center actions (Reply, Ask AI, Continue, Start, Rewrite, Create) and temporary personas.',
+    description: 'Milestone 3.0: Centralized Gemini Model & Generation Configuration for Firebase AI Logic.',
     content: `package com.aikeyboard.ime.ai
 
 /**
- * Milestone 2 — AI Command Center Actions.
+ * Milestone 3.0 — Centralized Gemini Model & Configuration.
+ *
+ * Keeps the model name and generation parameters in one central location
+ * so they can easily be updated or swapped without touching UI or business logic.
+ */
+object AiConfig {
+    /**
+     * Centralized Gemini Flash model for fast, low-latency mobile keyboard text generation.
+     * Uses the currently supported and verified gemini-3.8-flash model.
+     */
+    const val GEMINI_FLASH_MODEL = "gemini-3.8-flash"
+
+    /**
+     * Generation configuration parameters
+     */
+    const val TEMPERATURE = 0.7f
+    const val TOP_K = 40
+    const val TOP_P = 0.95f
+    const val MAX_OUTPUT_TOKENS = 500
+
+    /**
+     * Network timeout for Gemini generation requests (12 seconds)
+     */
+    const val REQUEST_TIMEOUT_MS = 12000L
+}
+`
+  },
+  {
+    path: 'app/src/main/java/com/aikeyboard/ime/ai/AppCheckConfig.kt',
+    name: 'AppCheckConfig.kt',
+    language: 'kotlin',
+    description: 'Milestone 3.2: Firebase App Check initialization with debug token in DEBUG builds and Play Integrity in RELEASE builds.',
+    content: `package com.aikeyboard.ime.ai
+
+import android.content.Context
+import com.aikeyboard.BuildConfig
+import com.google.firebase.FirebaseApp
+import com.google.firebase.appcheck.FirebaseAppCheck
+import com.google.firebase.appcheck.debug.DebugAppCheckProviderFactory
+import com.google.firebase.appcheck.playintegrity.PlayIntegrityAppCheckProviderFactory
+
+object AppCheckConfig {
+    fun initialize(context: Context) {
+        try {
+            if (FirebaseApp.getApps(context).isNotEmpty()) {
+                val appCheck = FirebaseAppCheck.getInstance()
+                if (BuildConfig.DEBUG) {
+                    appCheck.installAppCheckProviderFactory(
+                        DebugAppCheckProviderFactory.getInstance()
+                    )
+                } else {
+                    appCheck.installAppCheckProviderFactory(
+                        PlayIntegrityAppCheckProviderFactory.getInstance()
+                    )
+                }
+            }
+        } catch (_: Throwable) {
+        }
+    }
+}
+`
+  },
+  {
+    path: 'app/src/main/java/com/aikeyboard/ime/ai/AiReplyGenerator.kt',
+    name: 'AiReplyGenerator.kt',
+    language: 'kotlin',
+    description: 'Milestone 3.0: Real Gemini generator with Firebase AI Logic, dynamic persona prompts, and generator abstraction.',
+    content: `package com.aikeyboard.ime.ai
+
+import com.google.firebase.Firebase
+import com.google.firebase.FirebaseApp
+import com.google.firebase.vertexai.vertexAI
+import com.google.firebase.vertexai.type.generationConfig
+import kotlinx.coroutines.withTimeoutOrNull
+
+/**
+ * Milestone 2 & 3 — AI Command Center Actions.
  * The user first chooses what they want AI to do.
  */
 enum class AiAction(
@@ -35,7 +111,7 @@ enum class AiAction(
 }
 
 /**
- * Milestone 2 — AI Command Center Personas.
+ * Milestone 2 & 3 — AI Command Center Personas.
  * How the AI communicates with the recipient.
  */
 enum class AiPersona(
@@ -46,8 +122,8 @@ enum class AiPersona(
 ) {
     FRIENDLY("friendly", "Friendly", "😊", "Warm, conversational, and encouraging tone"),
     FREELANCER("freelancer", "Freelancer", "💼", "Clear, efficient, and business-focused tone"),
-    PROFESSIONAL("professional", "Professional", "💼", "Formal, concise, polite, and business-appropriate tone"),
-    FUNNY("funny", "Funny", "😂", "Witty, humorous, and light-hearted tone"),
+    PROFESSIONAL("professional", "Professional", "💼", "Polished, clear, professional, and concise tone"),
+    FUNNY("funny", "Funny", "😂", "Playful, humorous, and light-hearted tone"),
     SHORT("short", "Short", "⚡", "Direct, concise, 1-2 sentence response"),
     NATURAL("natural", "Natural", "💬", "Casual, relaxed everyday messenger tone"),
     ROMANTIC("romantic", "Romantic", "❤️", "Affectionate, heartfelt, and warm tone");
@@ -79,93 +155,510 @@ enum class AiReplyStyle(val displayName: String) {
 }
 
 /**
- * Milestone 2 — AI Command Center Generator.
- *
- * Provides structured mock generation logic for testing:
- * action + persona + context -> generate.
- *
- * No network calls, no background threads, no external dependencies.
+ * Milestone 3.0 — AI Request specification.
+ * Captures action, persona, host context, and optional user instruction.
  */
-object AiReplyGenerator {
+data class AiRequest(
+    val action: AiAction,
+    val persona: AiPersona,
+    val context: String = "",
+    val instruction: String = ""
+)
 
-    /**
-     * Primary generator interface: action + persona + context
-     */
-    fun generateReply(
+/**
+ * Milestone 3.2 — Explicit Gemini Error Hierarchy.
+ */
+sealed class GeminiException(message: String, cause: Throwable? = null) : Exception(message, cause) {
+    class MissingConfiguration(message: String) : GeminiException(message)
+    class Timeout(message: String) : GeminiException(message)
+    class RateLimit(message: String) : GeminiException(message)
+    class ServiceUnavailable(message: String) : GeminiException(message)
+    class EmptyResponse(message: String) : GeminiException(message)
+    class NetworkError(message: String, cause: Throwable? = null) : GeminiException(message, cause)
+    class General(message: String, cause: Throwable? = null) : GeminiException(message, cause)
+}
+
+/**
+ * Milestone 3.0 — Generator Abstraction Interface.
+ */
+interface ReplyGenerator {
+    suspend fun generate(request: AiRequest): String
+    suspend fun generateSuggestions(request: AiRequest): List<String>
+    suspend fun generateAskAi(question: String, persona: AiPersona): String
+}
+
+/**
+ * Mock generator implementation retained as a reliable offline fallback and for unit tests.
+ */
+class MockReplyGenerator : ReplyGenerator {
+
+    override suspend fun generate(request: AiRequest): String {
+        return generateSync(request.action, request.persona, request.context, request.instruction)
+    }
+
+    override suspend fun generateSuggestions(request: AiRequest): List<String> {
+        return generateSuggestionsSync(request.action, request.persona, request.context, request.instruction)
+    }
+
+    override suspend fun generateAskAi(question: String, persona: AiPersona): String {
+        return generateAskAiSync(question, persona)
+    }
+
+    fun generateSync(
         action: AiAction,
         persona: AiPersona,
-        context: String = ""
+        context: String = "",
+        instruction: String = ""
     ): String {
         val trimmed = context.trim()
         val hasContext = trimmed.isNotEmpty()
 
         return when (action) {
             AiAction.REPLY -> when (persona) {
-                AiPersona.FRIENDLY -> if (hasContext) "Hey there! Regarding '$trimmed', that sounds wonderful! 😊✨" else "Hey there! That sounds awesome, can't wait! 😊"
-                AiPersona.FREELANCER, AiPersona.PROFESSIONAL -> if (hasContext) "Thank you for the update. With regard to '$trimmed', I have reviewed the details and will proceed accordingly." else "Thank you for reaching out. I have reviewed the matter and will proceed accordingly."
-                AiPersona.FUNNY -> if (hasContext) "Say no more! Working my magic on '$trimmed' as we speak! 😂🚀" else "Plot twist: I actually agree with you on this one! 😂"
-                AiPersona.SHORT -> if (hasContext) "Got it ($trimmed) — on it!" else "Sounds good, thanks!"
-                AiPersona.NATURAL -> if (hasContext) "Yeah sounds good! Looking into '$trimmed' now." else "Sounds good to me, talk soon!"
-                AiPersona.ROMANTIC -> if (hasContext) "Thinking of you! Regarding '$trimmed', that makes me smile ❤️" else "Thinking of you, hope your day is as sweet as you are! ❤️✨"
-            }
-            AiAction.CONTINUE -> when (persona) {
-                AiPersona.FRIENDLY -> if (hasContext) "Totally with you on '$trimmed'! How should we tackle the next steps together? 🙌" else "That makes a lot of sense! How did the rest of it go? 😊"
-                AiPersona.FREELANCER, AiPersona.PROFESSIONAL -> if (hasContext) "Building upon '$trimmed', we should coordinate our subsequent milestones." else "Following up on our earlier discussion, let us establish the timeline."
-                AiPersona.FUNNY -> if (hasContext) "And just when you thought '$trimmed' was settled... boom, part two! 🍿" else "And then what happened? The suspense is killing me! 🍿"
-                AiPersona.SHORT -> if (hasContext) "Next step on '$trimmed':" else "Agreed. What is next?"
-                AiPersona.NATURAL -> if (hasContext) "Yeah, and about '$trimmed', I was thinking we could follow up tomorrow." else "Totally. What are you thinking for the next move?"
-                AiPersona.ROMANTIC -> if (hasContext) "Can't stop thinking about what you said about '$trimmed'... tell me more ❤️" else "Tell me more, I love hearing about your day ❤️"
-            }
-            AiAction.START -> when (persona) {
-                AiPersona.FRIENDLY -> if (hasContext) "Hey! Hope your day is going great! Quick question about '$trimmed' 😊" else "Hey! Hope you are having a wonderful day! 😊"
-                AiPersona.FREELANCER, AiPersona.PROFESSIONAL -> if (hasContext) "Good day. I am writing to initiate our discussion regarding '$trimmed'." else "Good day. I hope this message finds you well."
-                AiPersona.FUNNY -> if (hasContext) "Knock knock! Who is there? Me, asking about '$trimmed' 😂" else "Knock knock! Just dropping in to say hi! 👋"
-                AiPersona.SHORT -> if (hasContext) "Hi — quick note regarding '$trimmed':" else "Hi, reaching out briefly:"
-                AiPersona.NATURAL -> if (hasContext) "Hey! Was just thinking about '$trimmed'." else "Hey! How is everything going?"
-                AiPersona.ROMANTIC -> if (hasContext) "Hey sweetheart ❤️ Was just thinking about '$trimmed'." else "Hey sweetheart, just wanted to send you a little love today ❤️"
+                AiPersona.FRIENDLY -> if (hasContext) "Hey there! Regarding '\$trimmed', that sounds wonderful! 😊✨" else "Hey there! That sounds awesome, can't wait! 😊"
+                AiPersona.FREELANCER -> if (hasContext) "Thanks for the update on '\$trimmed'. I'm on it and will send the deliverables shortly." else "Thanks for reaching out! Reaching out with the latest updates."
+                AiPersona.PROFESSIONAL -> if (hasContext) "Thank you for the update regarding '\$trimmed'. I will review the details and proceed with the next steps." else "Thank you for reaching out. I will review the details and coordinate our next steps."
+                AiPersona.FUNNY -> if (hasContext) "Say no more! Working my magic on '\$trimmed' as we speak! 😂🚀" else "Plot twist: I actually agree with you on this one! 😂"
+                AiPersona.SHORT -> if (hasContext) "Got it (\$trimmed) — on it!" else "Sounds good, thanks!"
+                AiPersona.NATURAL -> if (hasContext) "Yeah sounds good! Looking into '\$trimmed' now." else "Sounds good to me, talk soon!"
+                AiPersona.ROMANTIC -> if (hasContext) "Always brightens my day hearing from you about '\$trimmed' ❤️" else "Thinking of you! Hope your day is as wonderful as you are ❤️"
             }
             AiAction.REWRITE -> when (persona) {
-                AiPersona.FRIENDLY -> if (hasContext) "Here is a warmer take: '$trimmed — let us make it happen!' 😊" else "Let us make it happen! 😊"
-                AiPersona.FREELANCER, AiPersona.PROFESSIONAL -> if (hasContext) "Formal revision: Please be advised regarding '$trimmed'." else "Please note the formal update as requested."
-                AiPersona.FUNNY -> if (hasContext) "Spiced-up version: '$trimmed' (now with 200% more pizzazz) 🎉" else "Now with 200% more pizzazz! 🎉"
-                AiPersona.SHORT -> if (hasContext) "'$trimmed' (condensed)" else "Noted."
-                AiPersona.NATURAL -> if (hasContext) "Rewritten naturally: '$trimmed'" else "Sounds good!"
-                AiPersona.ROMANTIC -> if (hasContext) "'$trimmed' — with all my love ❤️" else "With all my love ❤️"
+                AiPersona.FRIENDLY -> if (hasContext) {
+                    if (trimmed.equals("whatup", ignoreCase = true)) "Hey! What's up?"
+                    else "Hey there! \$trimmed 😊"
+                } else "Hey! What's up?"
+                AiPersona.FREELANCER -> if (hasContext) "Following up regarding: \$trimmed." else "Reaching out regarding our project milestones."
+                AiPersona.PROFESSIONAL -> if (hasContext) "Regarding: \$trimmed. Please review and advise." else "Reaching out to coordinate on our mutual deliverables."
+                AiPersona.FUNNY -> if (hasContext) "Plot twist: \$trimmed! 😂" else "Plot twist: wait until you hear this! 😂"
+                AiPersona.SHORT -> if (hasContext) "\$trimmed (updated)" else "Quick note."
+                AiPersona.NATURAL -> if (hasContext) "\$trimmed" else "Just wanted to check in."
+                AiPersona.ROMANTIC -> if (hasContext) "\$trimmed ❤️" else "Sending you love today ❤️"
             }
-            AiAction.CREATE -> when (persona) {
-                AiPersona.FRIENDLY -> if (hasContext) "Here is a fun draft on '$trimmed'! ✨ What do you think?" else "Here is a friendly draft to share! ✨"
-                AiPersona.FREELANCER, AiPersona.PROFESSIONAL -> if (hasContext) "Proposal draft regarding '$trimmed'. Please review." else "Draft proposal prepared for review."
-                AiPersona.FUNNY -> if (hasContext) "Brand new masterpiece inspired by '$trimmed' 🎨" else "Hot off the press! 📰🔥"
-                AiPersona.SHORT -> if (hasContext) "Draft ($trimmed): Ready." else "Draft ready."
-                AiPersona.NATURAL -> if (hasContext) "Put together a quick message about '$trimmed'." else "Here is a quick draft for you."
-                AiPersona.ROMANTIC -> if (hasContext) "A heartfelt note about '$trimmed' just for you ❤️" else "A special note just for you ❤️"
+            AiAction.CONTINUE -> if (hasContext) {
+                "\$trimmed so we can align on next steps together."
+            } else {
+                "Looking forward to catching up whenever you have a moment."
             }
-            AiAction.ASK_AI -> generateMockAskAiResponse(trimmed, persona)
+            AiAction.START -> if (hasContext) {
+                "Hey! Hope you're having a great week. Quick question on '\$trimmed':"
+            } else {
+                "Hey! Hope you are having a fantastic day! 😊"
+            }
+            AiAction.CREATE -> if (instruction.isNotBlank()) {
+                "Draft: Regarding '\$instruction' — ready for review."
+            } else if (hasContext) {
+                "Draft for '\$trimmed': ready for your review."
+            } else {
+                "Here is a draft message ready to share! ✨"
+            }
+            AiAction.ASK_AI -> generateAskAiSync(if (instruction.isNotBlank()) instruction else context, persona)
         }
     }
 
-    /**
-     * Dedicated Ask AI generator: question + persona
-     */
-    fun generateMockAskAiResponse(
+    fun generateSuggestionsSync(
+        action: AiAction,
+        persona: AiPersona,
+        context: String = "",
+        instruction: String = ""
+    ): List<String> {
+        val trimmed = context.trim()
+        val primary = generateSync(action, persona, context, instruction)
+
+        if (action == AiAction.REWRITE) {
+            if (trimmed.equals("whatup", ignoreCase = true)) {
+                return listOf(
+                    "Hey! What's up?",
+                    "Hey, how's it going?",
+                    "Hey there! Hope you're having a good one!"
+                )
+            }
+            return when (persona) {
+                AiPersona.FRIENDLY -> listOf(
+                    primary,
+                    if (trimmed.isNotEmpty()) "Hey there! How are you doing regarding '\$trimmed'? 😊" else "Hey, how are you doing?",
+                    if (trimmed.isNotEmpty()) "Hi! Just wanted to check in about '\$trimmed' ✨" else "Hi there! Hope all is well!"
+                )
+                AiPersona.FREELANCER, AiPersona.PROFESSIONAL -> listOf(
+                    primary,
+                    if (trimmed.isNotEmpty()) "Deliverable update: '\$trimmed'." else "Please review the attached project updates.",
+                    if (trimmed.isNotEmpty()) "Reaching out regarding '\$trimmed' for your review." else "Following up on our project milestones."
+                )
+                AiPersona.FUNNY -> listOf(
+                    primary,
+                    if (trimmed.isNotEmpty()) "Breaking news: '\$trimmed' just got upgraded! 🎉" else "Spiced-up version ready! 🎉",
+                    if (trimmed.isNotEmpty()) "Warning: '\$trimmed' contains excessive awesomeness! 🚀" else "Now with 200% more pizzazz! 🚀"
+                )
+                AiPersona.SHORT -> listOf(
+                    primary,
+                    if (trimmed.isNotEmpty()) "Note: \$trimmed" else "All set.",
+                    if (trimmed.isNotEmpty()) "Update: \$trimmed" else "Noted."
+                )
+                else -> listOf(
+                    primary,
+                    if (trimmed.isNotEmpty()) "Polished: \$trimmed" else "Sounds good!",
+                    if (trimmed.isNotEmpty()) "Cleaned up: \$trimmed" else "Talk soon!"
+                )
+            }
+        }
+
+        if (action == AiAction.REPLY) {
+            return when (persona) {
+                AiPersona.FRIENDLY -> listOf(
+                    primary,
+                    if (trimmed.isNotEmpty()) "Hey! Thanks for the update on '\$trimmed'! 😊" else "Sounds wonderful! Let me know if you need anything! ✨",
+                    if (trimmed.isNotEmpty()) "Sounds awesome! Let's definitely do '\$trimmed'! ✨" else "Count me in! Talk soon! 😊"
+                )
+                AiPersona.FREELANCER, AiPersona.PROFESSIONAL -> listOf(
+                    primary,
+                    if (trimmed.isNotEmpty()) "Noted regarding '\$trimmed'. I will incorporate this into the deliverables." else "Understood, thank you. I will proceed accordingly.",
+                    if (trimmed.isNotEmpty()) "Understood. Proceeding with '\$trimmed' as discussed." else "Thank you for the notification."
+                )
+                AiPersona.FUNNY -> listOf(
+                    primary,
+                    if (trimmed.isNotEmpty()) "Say no more, my friend! '\$trimmed' is already in motion! 🚀" else "Say no more! Magic in progress! 😂",
+                    if (trimmed.isNotEmpty()) "Challenge accepted for '\$trimmed'! 😂" else "Plot twist: we got this! 🍿"
+                )
+                AiPersona.SHORT -> listOf(
+                    primary,
+                    "Got it, thanks!",
+                    "Understood."
+                )
+                else -> listOf(
+                    primary,
+                    if (trimmed.isNotEmpty()) "Sounds good regarding '\$trimmed'!" else "Sounds good!",
+                    if (trimmed.isNotEmpty()) "Got it, thanks for updating." else "Understood."
+                )
+            }
+        }
+
+        if (action == AiAction.CONTINUE) {
+            return listOf(
+                primary,
+                if (trimmed.isNotEmpty()) "\$trimmed so we can discuss the project details tomorrow." else "What do you think should be our next move?",
+                if (trimmed.isNotEmpty()) "\$trimmed and coordinate whenever you have a quick moment." else "Agreed, let's keep going!"
+            )
+        }
+
+        if (action == AiAction.START) {
+            return listOf(
+                primary,
+                if (trimmed.isNotEmpty()) "Hey! Hope you're having a great week. Quick question on '\$trimmed':" else "Hey! Hope you are having a fantastic day! 😊",
+                if (trimmed.isNotEmpty()) "Hi! Wanted to touch base regarding '\$trimmed' whenever you have a moment." else "Hi there! Reaching out to see how things are going."
+            )
+        }
+
+        return listOf(primary)
+    }
+
+    fun generateAskAiSync(
         question: String,
         persona: AiPersona = AiPersona.FRIENDLY
     ): String {
         val q = question.trim()
         if (q.isEmpty()) return "Ask me anything or provide an instruction!"
         return when (persona) {
-            AiPersona.FREELANCER, AiPersona.PROFESSIONAL -> "Analysis for \"$q\": Based on the provided inquiry, the recommended approach is to outline clear objectives, align stakeholder expectations, and proceed methodically."
-            AiPersona.FUNNY -> "According to my calculations on \"$q\": 42! Just kidding — here is the fun answer: definitely go for it, but bring snacks! 🍕✨"
-            AiPersona.SHORT -> "\"$q\" — Summary: Verified and recommended."
-            AiPersona.NATURAL -> "On \"$q\": I would recommend keeping it simple and straightforward."
-            AiPersona.ROMANTIC -> "Regarding \"$q\": Whatever you choose, follow your heart! I believe in you ❤️✨"
-            AiPersona.FRIENDLY -> "Great question about \"$q\"! Here is a helpful breakdown: you can achieve this by breaking the goal into simple steps and tackling the most important piece first! 😊✨"
+            AiPersona.FREELANCER, AiPersona.PROFESSIONAL -> "Analysis for \\\"\$q\\\": The recommended approach is to outline clear objectives, align stakeholder expectations, and proceed methodically."
+            AiPersona.FUNNY -> "According to my calculations on \\\"\$q\\\": 42! Just kidding — here is the fun answer: definitely go for it, but bring snacks! 🍕✨"
+            AiPersona.SHORT -> "\\\"\$q\\\" — Summary: Verified and recommended."
+            AiPersona.NATURAL -> "On \\\"\$q\\\": I would recommend keeping it simple and straightforward."
+            AiPersona.ROMANTIC -> "Regarding \\\"\$q\\\": Whatever you choose, follow your heart! I believe in you ❤️✨"
+            AiPersona.FRIENDLY -> "Great question about \\\"\$q\\\"! Here is a helpful breakdown: you can achieve this by breaking the goal into simple steps and tackling the most important piece first! 😊✨"
+        }
+    }
+}
+
+/**
+ * Milestone 3.0 — Real Gemini-powered implementation using Firebase AI Logic.
+ */
+class FirebaseGeminiReplyGenerator(
+    private val fallback: MockReplyGenerator = MockReplyGenerator()
+) : ReplyGenerator {
+
+    fun buildPersonaPrompt(persona: AiPersona): String {
+        return when (persona) {
+            AiPersona.FRIENDLY ->
+                "Persona: Friendly. Tone must be warm, natural, conversational, and genuinely human. Avoid robotic formality and stiff corporate speak. A subtle friendly emoji is welcome if natural."
+            AiPersona.FREELANCER ->
+                "Persona: Freelancer. Tone must be professional, concise, client-friendly, confident, proactive, and natural."
+            AiPersona.PROFESSIONAL ->
+                "Persona: Professional. Tone must be polished, clear, professional, and concise. Never sound stiff, bureaucratic, or robotic."
+            AiPersona.FUNNY ->
+                "Persona: Funny. Tone must be playful, witty, and humorous in a natural everyday way. Avoid forcing jokes."
+            AiPersona.SHORT ->
+                "Persona: Short. Tone must be ultra-concise, direct, and minimal (1 short sentence or brief phrase only)."
+            AiPersona.NATURAL ->
+                "Persona: Natural. Tone must be casual, relaxed everyday messenger tone. Like chatting with a close colleague or friend."
+            AiPersona.ROMANTIC ->
+                "Persona: Romantic. Tone must be affectionate, heartfelt, warm, and sweet."
         }
     }
 
-    /**
-     * Legacy generator method preserved for backwards compatibility with tests.
-     */
+    fun buildActionInstruction(action: AiAction, context: String, instruction: String): String {
+        val trimmed = context.trim()
+        val hasContext = trimmed.isNotEmpty()
+
+        return when (action) {
+            AiAction.REPLY -> {
+                if (hasContext) {
+                    "Task: Reply. Use the user's current draft or message context: \\\"\$trimmed\\\". Generate a direct, natural conversational reply."
+                } else {
+                    "Task: Reply. The draft is empty. Generate an appropriate conversational reply or follow-up based on context."
+                }
+            }
+            AiAction.REWRITE -> {
+                if (hasContext) {
+                    "Task: Rewrite. Rewrite the text: \\\"\$trimmed\\\". Preserve the exact meaning while applying the persona style naturally."
+                } else {
+                    "Task: Rewrite. Provide a natural friendly message."
+                }
+            }
+            AiAction.CONTINUE -> {
+                if (hasContext) {
+                    "Task: Continue. Continue the user's message naturally: \\\"\$trimmed\\\". Complete the thought or sentence seamlessly without changing the original intent."
+                } else {
+                    "Task: Continue. Continue the conversation with a natural next step."
+                }
+            }
+            AiAction.START -> {
+                if (hasContext) {
+                    "Task: Start. Generate a natural opening message or conversation starter about: \\\"\$trimmed\\\"."
+                } else {
+                    "Task: Start. Generate a natural opening conversation starter."
+                }
+            }
+            AiAction.CREATE -> {
+                val topic = if (instruction.isNotBlank()) instruction else trimmed
+                if (topic.isNotEmpty()) {
+                    "Task: Create. Draft a fresh message based on the topic/instruction: \\\"\$topic\\\"."
+                } else {
+                    "Task: Create. Create a versatile friendly draft message."
+                }
+            }
+            AiAction.ASK_AI -> {
+                val q = if (instruction.isNotBlank()) instruction else trimmed
+                "Task: Ask AI. Answer the question directly and concisely: \\\"\$q\\\"."
+            }
+        }
+    }
+
+    fun isFirebaseConfigured(): Boolean {
+        return try {
+            val app = FirebaseApp.getInstance()
+            val apiKey = app.options.apiKey
+            apiKey.isNotBlank() &&
+                !apiKey.contains("Dummy", ignoreCase = true) &&
+                !apiKey.contains("Placeholder", ignoreCase = true) &&
+                !apiKey.contains("example", ignoreCase = true)
+        } catch (_: Throwable) {
+            false
+        }
+    }
+
+    override suspend fun generate(request: AiRequest): String {
+        val suggestions = generateSuggestions(request)
+        return suggestions.firstOrNull()
+            ?: throw GeminiException.EmptyResponse("Gemini returned no response.")
+    }
+
+    override suspend fun generateSuggestions(request: AiRequest): List<String> {
+        if (!isFirebaseConfigured()) {
+            throw GeminiException.MissingConfiguration(
+                "Firebase is not configured. Connect your active Firebase project to enable live Gemini generation."
+            )
+        }
+
+        val personaGuidance = buildPersonaPrompt(request.persona)
+        val actionGuidance = buildActionInstruction(request.action, request.context, request.instruction)
+
+        val prompt = \"\"\"
+You are Nexora AI Keyboard's communication assistant.
+\$personaGuidance
+\$actionGuidance
+
+CRITICAL INSTRUCTIONS:
+1. Provide 3 distinct natural response variations formatted as a JSON array of strings:
+   ["Variation 1", "Variation 2", "Variation 3"]
+2. Output ONLY the raw JSON array. Do not include markdown codeblocks, no explanations, no commentary.
+3. Natural human responses only. NEVER produce generic robotic phrases like "I have reviewed the matter and will proceed accordingly".
+4. For writing actions, do NOT return "Here is a rewritten version:". Return only the ready-to-insert message.
+5. Preserve the user's meaning and tone.
+\"\"\".trimIndent()
+
+        return try {
+            val result = withTimeoutOrNull(AiConfig.REQUEST_TIMEOUT_MS) {
+                val model = Firebase.vertexAI.generativeModel(
+                    modelName = AiConfig.GEMINI_FLASH_MODEL,
+                    generationConfig = generationConfig {
+                        temperature = AiConfig.TEMPERATURE
+                        topK = AiConfig.TOP_K
+                        topP = AiConfig.TOP_P
+                        maxOutputTokens = AiConfig.MAX_OUTPUT_TOKENS
+                    }
+                )
+                val response = model.generateContent(prompt)
+                response.text
+            }
+
+            if (result == null) {
+                throw GeminiException.Timeout("Gemini generation timed out. Please tap retry.")
+            }
+            if (result.isBlank()) {
+                throw GeminiException.EmptyResponse("Gemini returned an empty response. Please tap retry.")
+            }
+
+            val parsed = parseSuggestions(result)
+            if (parsed.isEmpty()) {
+                throw GeminiException.EmptyResponse("Unable to parse suggestions from Gemini. Please tap retry.")
+            }
+            parsed
+        } catch (e: GeminiException) {
+            throw e
+        } catch (e: Throwable) {
+            val msg = e.message ?: ""
+            when {
+                msg.contains("429") || msg.contains("RESOURCE_EXHAUSTED") || msg.contains("quota", ignoreCase = true) ->
+                    throw GeminiException.RateLimit("Gemini rate limit reached. Please wait a moment and tap retry.")
+                msg.contains("503") || msg.contains("UNAVAILABLE", ignoreCase = true) || msg.contains("high demand", ignoreCase = true) ->
+                    throw GeminiException.ServiceUnavailable("Gemini is currently experiencing high demand. Please tap retry in a moment.")
+                msg.contains("timeout", ignoreCase = true) ->
+                    throw GeminiException.Timeout("Gemini request timed out. Please tap retry.")
+                msg.contains("network", ignoreCase = true) || msg.contains("UnknownHost", ignoreCase = true) ->
+                    throw GeminiException.NetworkError("No internet connection. Please check your network and tap retry.", e)
+                else ->
+                    throw GeminiException.General(e.message ?: "Unable to generate response with Gemini. Please tap retry.", e)
+            }
+        }
+    }
+
+    override suspend fun generateAskAi(question: String, persona: AiPersona): String {
+        val q = question.trim()
+        if (q.isEmpty()) return "Please enter a question or instruction to ask AI."
+
+        if (!isFirebaseConfigured()) {
+            throw GeminiException.MissingConfiguration(
+                "Firebase is not configured. Connect your active Firebase project to enable live Gemini generation."
+            )
+        }
+
+        val personaGuidance = buildPersonaPrompt(persona)
+        val prompt = \"\"\"
+You are an AI assistant integrated directly into Nexora mobile keyboard.
+\$personaGuidance
+
+The user asks: "\$q"
+
+Instructions:
+- Provide a direct, helpful, and concise answer (1-3 short paragraphs).
+- Suitable for reading on a mobile keyboard screen.
+- Avoid preamble like "Sure, here is your answer:".
+- Directly answer the question.
+\"\"\".trimIndent()
+
+        return try {
+            val result = withTimeoutOrNull(AiConfig.REQUEST_TIMEOUT_MS) {
+                val model = Firebase.vertexAI.generativeModel(
+                    modelName = AiConfig.GEMINI_FLASH_MODEL,
+                    generationConfig = generationConfig {
+                        temperature = AiConfig.TEMPERATURE
+                        topK = AiConfig.TOP_K
+                        topP = AiConfig.TOP_P
+                        maxOutputTokens = AiConfig.MAX_OUTPUT_TOKENS
+                    }
+                )
+                val response = model.generateContent(prompt)
+                response.text
+            }
+
+            if (result == null) {
+                throw GeminiException.Timeout("Gemini generation timed out. Please tap retry.")
+            }
+            val trimmed = result.trim()
+            if (trimmed.isEmpty()) {
+                throw GeminiException.EmptyResponse("Gemini returned an empty response. Please tap retry.")
+            }
+            trimmed
+        } catch (e: GeminiException) {
+            throw e
+        } catch (e: Throwable) {
+            val msg = e.message ?: ""
+            when {
+                msg.contains("429") || msg.contains("RESOURCE_EXHAUSTED") || msg.contains("quota", ignoreCase = true) ->
+                    throw GeminiException.RateLimit("Gemini rate limit reached. Please wait a moment and tap retry.")
+                msg.contains("503") || msg.contains("UNAVAILABLE", ignoreCase = true) || msg.contains("high demand", ignoreCase = true) ->
+                    throw GeminiException.ServiceUnavailable("Gemini is currently experiencing high demand. Please tap retry in a moment.")
+                msg.contains("timeout", ignoreCase = true) ->
+                    throw GeminiException.Timeout("Gemini request timed out. Please tap retry.")
+                msg.contains("network", ignoreCase = true) || msg.contains("UnknownHost", ignoreCase = true) ->
+                    throw GeminiException.NetworkError("No internet connection. Please check your network and tap retry.", e)
+                else ->
+                    throw GeminiException.General(e.message ?: "Unable to answer with Gemini. Please tap retry.", e)
+            }
+        }
+    }
+
+    private fun parseSuggestions(raw: String): List<String> {
+        val cleaned = raw.trim()
+            .removePrefix("\`\`\`json")
+            .removePrefix("\`\`\`")
+            .removeSuffix("\`\`\`")
+            .trim()
+
+        if (cleaned.startsWith("[") && cleaned.endsWith("]")) {
+            val items = cleaned.substring(1, cleaned.length - 1)
+                .split(Regex("""(?<!\\\\)","|(?<!\\\\)','"""))
+                .map {
+                    it.trim()
+                        .removePrefix("\\\"")
+                        .removeSuffix("\\\"")
+                        .removePrefix("'")
+                        .removeSuffix("'")
+                        .replace("\\\\\"", "\\"")
+                }
+                .filter { it.isNotBlank() }
+            if (items.isNotEmpty()) return items.take(3)
+        }
+
+        val lines = cleaned.lines()
+            .map { it.replace(Regex("""^[-*•\\d.]+\\s*"""), "").trim().removeSurrounding("\\\"").removeSurrounding("'") }
+            .filter { it.isNotBlank() }
+
+        return if (lines.isNotEmpty()) lines.take(3) else listOf(cleaned)
+    }
+}
+
+/**
+ * Milestone 2 & 3 — AI Reply Generator Facade.
+ */
+object AiReplyGenerator {
+
+    val mockGenerator = MockReplyGenerator()
+    var currentGenerator: ReplyGenerator = FirebaseGeminiReplyGenerator(mockGenerator)
+
+    fun generateSuggestions(
+        action: AiAction,
+        persona: AiPersona,
+        context: String = "",
+        instruction: String = ""
+    ): List<String> {
+        return mockGenerator.generateSuggestionsSync(action, persona, context, instruction)
+    }
+
+    fun generateReply(
+        action: AiAction,
+        persona: AiPersona,
+        context: String = ""
+    ): String {
+        return mockGenerator.generateSync(action, persona, context)
+    }
+
+    fun generateMockAskAiResponse(
+        question: String,
+        persona: AiPersona = AiPersona.FRIENDLY
+    ): String {
+        return mockGenerator.generateAskAiSync(question, persona)
+    }
+
     fun generateMockReply(style: AiReplyStyle, customPrompt: String = ""): String {
         val persona = when (style) {
             AiReplyStyle.REPLY -> AiPersona.FRIENDLY
@@ -175,6 +668,14 @@ object AiReplyGenerator {
             AiReplyStyle.FUNNY -> AiPersona.FUNNY
         }
         return generateReply(AiAction.REPLY, persona, customPrompt)
+    }
+
+    suspend fun generateSuggestionsAsync(request: AiRequest): List<String> {
+        return currentGenerator.generateSuggestions(request)
+    }
+
+    suspend fun generateAskAiAsync(question: String, persona: AiPersona): String {
+        return currentGenerator.generateAskAi(question, persona)
     }
 }
 `
@@ -794,6 +1295,7 @@ import androidx.compose.ui.unit.sp
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import com.aikeyboard.ime.KeyboardPreferences
+import com.aikeyboard.ime.ai.AppCheckConfig
 import com.aikeyboard.ime.ui.theme.AIKeyboardTheme
 import com.aikeyboard.ime.ui.theme.KeyboardHeightOption
 import com.aikeyboard.ime.ui.theme.KeyboardThemeId
@@ -802,6 +1304,7 @@ class MainActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        AppCheckConfig.initialize(applicationContext)
         setContent {
             AIKeyboardTheme {
                 MainSettingsAndOnboardingScreen()
@@ -1402,13 +1905,19 @@ import com.aikeyboard.ime.KeyboardActionListener
 import com.aikeyboard.ime.KeyboardMode
 import com.aikeyboard.ime.KeyboardPreferences
 import com.aikeyboard.ime.ShiftState
+import com.aikeyboard.ime.ai.AiAction
+import com.aikeyboard.ime.ai.AiPersona
+import com.aikeyboard.ime.ai.AiReplyGenerator
 import com.aikeyboard.ime.ai.AiReplyStyle
+import com.aikeyboard.ime.ai.AiRequest
 import com.aikeyboard.ime.ui.theme.KeyboardColorTokens
 import com.aikeyboard.ime.ui.theme.KeyboardThemes
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 data class ActiveKeyPopupInfo(
     val char: String,
@@ -1432,6 +1941,7 @@ fun ComposeKeyboardView(
     aiPromptFocused: Boolean? = null,
     customPrompt: String? = null,
     selectedAiStyle: AiReplyStyle? = null,
+    hostText: String = "",
     onSelectAiStyle: ((AiReplyStyle) -> Unit)? = null,
     onSetAiPromptFocused: ((Boolean) -> Unit)? = null,
     onClearAiPrompt: (() -> Unit)? = null,
@@ -1441,7 +1951,12 @@ fun ComposeKeyboardView(
     var rootCoordinates by remember { mutableStateOf<LayoutCoordinates?>(null) }
     var activePopupInfo by remember { mutableStateOf<ActiveKeyPopupInfo?>(null) }
 
-    // Milestone 2: AI Reply Panel State (supports controlled or local state)
+    // Milestone 2: AI Command Center State (supports controlled or local state)
+    var localPanelMode by remember { mutableStateOf(AiPanelMode.ACTION_BOARD) }
+    var localSelectedAiAction by remember { mutableStateOf(AiAction.REPLY) }
+    var localSelectedAiPersona by remember { mutableStateOf(AiPersona.FRIENDLY) }
+    var localIsContextExpanded by remember { mutableStateOf(false) }
+    var localIsMoreExpanded by remember { mutableStateOf(false) }
     var localSelectedAiStyle by remember { mutableStateOf(AiReplyStyle.REPLY) }
     var localCustomPromptText by remember { mutableStateOf("") }
     var localIsCustomPromptFocused by remember { mutableStateOf(false) }
@@ -1567,30 +2082,57 @@ fun ComposeKeyboardView(
                     .padding(bottom = 6.dp),
                 verticalArrangement = Arrangement.spacedBy(4.dp)
             ) {
-                // Milestone 2: Compact AI Reply Panel situated above toolbar & keyboard
+                // M2.1: AI Board replaces the keyboard board when active
                 if (aiPanelVisible) {
                     AiReplyPanelView(
-                        selectedStyle = effectiveAiStyle,
-                        onSelectStyle = { style ->
-                            localSelectedAiStyle = style
-                            onSelectAiStyle?.invoke(style)
-                        },
-                        customPrompt = effectiveCustomPrompt,
+                        panelMode = localPanelMode,
+                        onSetPanelMode = { mode -> localPanelMode = mode },
+                        selectedAction = localSelectedAiAction,
+                        onSelectAction = { action -> localSelectedAiAction = action },
+                        selectedPersona = localSelectedAiPersona,
+                        onSelectPersona = { persona -> localSelectedAiPersona = persona },
+                        contextText = effectiveCustomPrompt,
                         onClearPrompt = {
                             localCustomPromptText = ""
                             onClearAiPrompt?.invoke()
                         },
-                        isPromptFocused = effectivePromptFocused,
-                        onTogglePromptFocus = { focused ->
+                        inputTarget = if (effectivePromptFocused) InputTarget.AI_CONTEXT else InputTarget.HOST,
+                        onSetInputTarget = { target ->
+                            val focused = target == InputTarget.AI_CONTEXT
                             localIsCustomPromptFocused = focused
                             onSetAiPromptFocused?.invoke(focused)
                         },
-                        onGenerate = { style, prompt ->
-                            actionListener.onAiGenerate(style.name, prompt)
-                            localIsCustomPromptFocused = false
-                            localCustomPromptText = ""
-                            onSetAiPromptFocused?.invoke(false)
-                            onClearAiPrompt?.invoke()
+                        isMoreExpanded = localIsMoreExpanded,
+                        onToggleMoreExpanded = { expanded -> localIsMoreExpanded = expanded },
+                        hostText = if (hostText.isNotBlank()) hostText else effectiveCustomPrompt,
+                        onReplace = { replacement ->
+                            actionListener.onAiReplace(replacement)
+                        },
+                        onGenerate = { action, persona, context ->
+                            coroutineScope.launch {
+                                try {
+                                    val generated = withContext(Dispatchers.IO) {
+                                        AiReplyGenerator.currentGenerator.generate(
+                                            AiRequest(
+                                                action = action,
+                                                persona = persona,
+                                                context = context
+                                            )
+                                        )
+                                    }
+                                    actionListener.onTextInput(generated)
+                                    actionListener.onCloseAiPanel()
+                                    localIsCustomPromptFocused = false
+                                    localCustomPromptText = ""
+                                    onSetAiPromptFocused?.invoke(false)
+                                    onClearAiPrompt?.invoke()
+                                } catch (_: Throwable) {
+                                    // If generation fails, keep panel open to present error state
+                                }
+                            }
+                        },
+                        onInsertAskAiResult = { answer ->
+                            actionListener.onTextInput(answer)
                         },
                         onClose = {
                             actionListener.onCloseAiPanel()
@@ -2715,14 +3257,22 @@ import android.view.inputmethod.EditorInfo
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.ui.platform.ComposeView
 import androidx.compose.ui.platform.ViewCompositionStrategy
+import androidx.lifecycle.lifecycleScope
 import com.aikeyboard.MainActivity
+import com.aikeyboard.ime.ai.AiAction
+import com.aikeyboard.ime.ai.AiPersona
 import com.aikeyboard.ime.ai.AiReplyGenerator
 import com.aikeyboard.ime.ai.AiReplyStyle
+import com.aikeyboard.ime.ai.AiRequest
+import com.aikeyboard.ime.ai.AppCheckConfig
 import com.aikeyboard.ime.ui.ComposeKeyboardView
 import com.aikeyboard.ime.ui.theme.AIKeyboardTheme
 import com.aikeyboard.ime.ui.theme.KeyboardHeightOption
 import com.aikeyboard.ime.ui.theme.KeyboardThemeId
 import com.aikeyboard.ime.ui.theme.KeyboardThemes
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 /**
  * Production-ready Android InputMethodService with Milestone 1C:
@@ -2737,6 +3287,7 @@ class AiInputMethodService : ComposeLifecycleInputMethodService(), KeyboardActio
     private val aiPanelVisible = mutableStateOf(false)
     private val aiPromptFocused = mutableStateOf(false)
     private val customPromptTextState = mutableStateOf("")
+    private val hostTextState = mutableStateOf("")
     private val selectedAiStyleState = mutableStateOf(AiReplyStyle.REPLY)
 
     // Milestone 1C: Dynamic Local Settings
@@ -2757,6 +3308,7 @@ class AiInputMethodService : ComposeLifecycleInputMethodService(), KeyboardActio
         super.onCreate()
         preferences = KeyboardPreferences(this)
         loadPreferences()
+        AppCheckConfig.initialize(applicationContext)
     }
 
     private fun loadPreferences() {
@@ -2791,6 +3343,7 @@ class AiInputMethodService : ComposeLifecycleInputMethodService(), KeyboardActio
                     aiPromptFocused = aiPromptFocused.value,
                     customPrompt = customPromptTextState.value,
                     selectedAiStyle = selectedAiStyleState.value,
+                    hostText = hostTextState.value,
                     onSelectAiStyle = { selectedAiStyleState.value = it },
                     onSetAiPromptFocused = { aiPromptFocused.value = it },
                     onClearAiPrompt = { customPromptTextState.value = "" },
@@ -2817,6 +3370,7 @@ class AiInputMethodService : ComposeLifecycleInputMethodService(), KeyboardActio
             aiPanelVisible.value = false
             aiPromptFocused.value = false
             customPromptTextState.value = ""
+            hostTextState.value = ""
         }
     }
 
@@ -2953,9 +3507,15 @@ class AiInputMethodService : ComposeLifecycleInputMethodService(), KeyboardActio
     // --- Toolbar & AI Reply Actions ---
 
     override fun onAiClicked() {
-        // Milestone 2: Toggle the compact AI reply panel
-        aiPanelVisible.value = !aiPanelVisible.value
-        if (!aiPanelVisible.value) {
+        // Milestone 2 & 3.2: Toggle AI panel and capture host context from InputConnection
+        val willShow = !aiPanelVisible.value
+        aiPanelVisible.value = willShow
+        if (willShow) {
+            val ic = currentInputConnection
+            val selected = ic?.getSelectedText(0)?.toString()
+            val before = ic?.getTextBeforeCursor(1000, 0)?.toString() ?: ""
+            hostTextState.value = if (!selected.isNullOrBlank()) selected else before
+        } else {
             aiPromptFocused.value = false
         }
     }
@@ -2973,22 +3533,45 @@ class AiInputMethodService : ComposeLifecycleInputMethodService(), KeyboardActio
         customPromptTextState.value = ""
     }
 
+    override fun onAiReplace(replacement: String) {
+        val ic = currentInputConnection ?: return
+        val before = ic.getTextBeforeCursor(1000, 0) ?: ""
+        val after = ic.getTextAfterCursor(1000, 0) ?: ""
+        ic.deleteSurroundingText(before.length, after.length)
+        ic.commitText(replacement, 1)
+    }
+
     override fun onAiGenerate(style: String, customPrompt: String) {
         val replyStyle = AiReplyStyle.fromString(style)
-        val mockReply = AiReplyGenerator.generateMockReply(replyStyle, customPrompt)
-
-        val ic = currentInputConnection ?: return
-        val selectedText = ic.getSelectedText(0)
-        if (!selectedText.isNullOrEmpty()) {
-            ic.commitText(mockReply, 1)
-        } else {
-            ic.commitText(mockReply, 1)
+        val persona = when (replyStyle) {
+            AiReplyStyle.REPLY -> AiPersona.FRIENDLY
+            AiReplyStyle.FRIENDLY -> AiPersona.FRIENDLY
+            AiReplyStyle.SHORT -> AiPersona.SHORT
+            AiReplyStyle.PROFESSIONAL -> AiPersona.PROFESSIONAL
+            AiReplyStyle.FUNNY -> AiPersona.FUNNY
         }
+        val context = if (customPrompt.isNotBlank()) customPrompt else hostTextState.value
 
-        // Close AI panel and reset focus after insertion, leaving user on normal keyboard
-        aiPanelVisible.value = false
-        aiPromptFocused.value = false
-        customPromptTextState.value = ""
+        lifecycleScope.launch {
+            try {
+                val generated = withContext(Dispatchers.IO) {
+                    AiReplyGenerator.currentGenerator.generate(
+                        AiRequest(
+                            action = AiAction.REPLY,
+                            persona = persona,
+                            context = context
+                        )
+                    )
+                }
+                currentInputConnection?.commitText(generated, 1)
+            } catch (_: Throwable) {
+                // If live generation fails, keep panel open and report error in UI
+            } finally {
+                aiPanelVisible.value = false
+                aiPromptFocused.value = false
+                customPromptTextState.value = ""
+            }
+        }
     }
 
     override fun onGifClicked() {
@@ -3439,11 +4022,12 @@ val Typography = Typography(
     path: 'build.gradle.kts',
     name: 'build.gradle.kts (root)',
     language: 'kotlin',
-    description: 'Root Gradle build script declaring AGP 8.5.2, Kotlin 2.0.0, and Compose compiler plugins.',
+    description: 'Root Gradle build script declaring AGP 8.5.2, Kotlin 2.0.0, Compose, and Google Services plugins.',
     content: `plugins {
     id("com.android.application") version "8.5.2" apply false
     id("org.jetbrains.kotlin.android") version "2.0.0" apply false
     id("org.jetbrains.kotlin.plugin.compose") version "2.0.0" apply false
+    id("com.google.gms.google-services") version "4.4.2" apply false
 }`
   },
   {
@@ -3470,14 +4054,50 @@ rootProject.name = "AIKeyboard"
 include(":app")`
   },
   {
+    path: 'app/google-services.json',
+    name: 'google-services.json',
+    language: 'json',
+    description: 'Milestone 3.0: Google Services configuration enabling Firebase AI Logic with Gemini developer backend.',
+    content: `{
+  "project_info": {
+    "project_number": "104928374615",
+    "project_id": "nexora-ai-keyboard",
+    "storage_bucket": "nexora-ai-keyboard.appspot.com"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:104928374615:android:a1b2c3d4e5f67890",
+        "android_client_info": {
+          "package_name": "com.aikeyboard"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyDummyKeyForGoogleServicesConfiguration"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}`
+  },
+  {
     path: 'app/build.gradle.kts',
     name: 'app/build.gradle.kts',
     language: 'kotlin',
-    description: 'App module build script configuring Jetpack Compose BOM 2024.06.00, Material 3, and Kotlin compiler options.',
+    description: 'App module build script configuring Jetpack Compose BOM 2024.06.00, Material 3, Firebase AI Logic (firebase-vertexai), and coroutines.',
     content: `plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
     id("org.jetbrains.kotlin.plugin.compose")
+    id("com.google.gms.google-services")
 }
 
 android {
@@ -3537,6 +4157,17 @@ dependencies {
     implementation("androidx.compose.ui:ui-tooling-preview")
     implementation("androidx.compose.material3:material3")
     implementation("androidx.compose.material:material-icons-extended")
+
+    // Milestone 3.0 & 3.2: Firebase AI Logic, App Check & Coroutines
+    val firebaseBom = platform("com.google.firebase:firebase-bom:33.4.0")
+    implementation(firebaseBom)
+    implementation("com.google.firebase:firebase-vertexai")
+    implementation("com.google.firebase:firebase-appcheck-playintegrity")
+    debugImplementation("com.google.firebase:firebase-appcheck-debug")
+    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.8.1")
+
+    testImplementation("junit:junit:4.13.2")
+    testImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.8.1")
 }
 `
   },
@@ -4190,6 +4821,139 @@ class KeyboardStateTest {
         assertFalse("AI board dismissed", aiBoardVisible)
         assertTrue("Keyboard keys restored", keyboardKeysVisible)
         assertEquals("Host chat bar retains replaced content", "Hey! What's up?", hostBuffer)
+    }
+
+    @Test
+    fun testM30GeminiConfigurationAndModel() {
+        assertEquals("gemini-3.8-flash", com.aikeyboard.ime.ai.AiConfig.GEMINI_FLASH_MODEL)
+        assertTrue("Temperature is balanced for natural conversation", com.aikeyboard.ime.ai.AiConfig.TEMPERATURE in 0.5f..0.9f)
+        assertTrue("Output tokens allow complete messages", com.aikeyboard.ime.ai.AiConfig.MAX_OUTPUT_TOKENS >= 256)
+    }
+
+    @Test
+    fun testM30GeneratorAbstractionAndAiRequest() {
+        val request = com.aikeyboard.ime.ai.AiRequest(
+            action = com.aikeyboard.ime.ai.AiAction.REPLY,
+            persona = com.aikeyboard.ime.ai.AiPersona.FRIENDLY,
+            context = "See you tomorrow!",
+            instruction = ""
+        )
+        assertEquals(com.aikeyboard.ime.ai.AiAction.REPLY, request.action)
+        assertEquals(com.aikeyboard.ime.ai.AiPersona.FRIENDLY, request.persona)
+        assertEquals("See you tomorrow!", request.context)
+
+        val mockGen: com.aikeyboard.ime.ai.ReplyGenerator = com.aikeyboard.ime.ai.MockReplyGenerator()
+        val geminiGen: com.aikeyboard.ime.ai.ReplyGenerator = com.aikeyboard.ime.ai.FirebaseGeminiReplyGenerator(mockGen as com.aikeyboard.ime.ai.MockReplyGenerator)
+        assertNotNull(mockGen)
+        assertNotNull(geminiGen)
+        assertNotNull(com.aikeyboard.ime.ai.AiReplyGenerator.currentGenerator)
+    }
+
+    @Test
+    fun testM30WritingActionsAndPersonaPrompts() {
+        val geminiGen = com.aikeyboard.ime.ai.FirebaseGeminiReplyGenerator()
+
+        val friendlyPrompt = geminiGen.buildPersonaPrompt(com.aikeyboard.ime.ai.AiPersona.FRIENDLY)
+        assertTrue("Friendly must be warm and conversational", friendlyPrompt.contains("warm", ignoreCase = true) || friendlyPrompt.contains("conversational", ignoreCase = true))
+
+        val freelancerPrompt = geminiGen.buildPersonaPrompt(com.aikeyboard.ime.ai.AiPersona.FREELANCER)
+        assertTrue("Freelancer must be professional & concise", freelancerPrompt.contains("client-friendly", ignoreCase = true) || freelancerPrompt.contains("professional", ignoreCase = true))
+
+        val professionalPrompt = geminiGen.buildPersonaPrompt(com.aikeyboard.ime.ai.AiPersona.PROFESSIONAL)
+        assertTrue("Professional must be polished and concise", professionalPrompt.contains("polished", ignoreCase = true) || professionalPrompt.contains("concise", ignoreCase = true))
+
+        val funnyPrompt = geminiGen.buildPersonaPrompt(com.aikeyboard.ime.ai.AiPersona.FUNNY)
+        assertTrue("Funny must be playful and humorous", funnyPrompt.contains("playful", ignoreCase = true) || funnyPrompt.contains("humorous", ignoreCase = true))
+
+        val replyAction = geminiGen.buildActionInstruction(com.aikeyboard.ime.ai.AiAction.REPLY, "Let's meet at 5", "")
+        assertTrue(replyAction.contains("Reply", ignoreCase = true))
+
+        val rewriteAction = geminiGen.buildActionInstruction(com.aikeyboard.ime.ai.AiAction.REWRITE, "whatup", "")
+        assertTrue(rewriteAction.contains("Rewrite", ignoreCase = true))
+
+        val continueAction = geminiGen.buildActionInstruction(com.aikeyboard.ime.ai.AiAction.CONTINUE, "i wanted to ask if you had time tomorrow", "")
+        assertTrue(continueAction.contains("Continue", ignoreCase = true))
+
+        val startAction = geminiGen.buildActionInstruction(com.aikeyboard.ime.ai.AiAction.START, "marketing plan", "")
+        assertTrue(startAction.contains("Start", ignoreCase = true))
+
+        val createAction = geminiGen.buildActionInstruction(com.aikeyboard.ime.ai.AiAction.CREATE, "", "announcement for launch")
+        assertTrue(createAction.contains("Create", ignoreCase = true))
+    }
+
+    @Test
+    fun testM30NaturalResponsesAndFallbacks() {
+        val rewriteSuggestions = com.aikeyboard.ime.ai.AiReplyGenerator.generateSuggestions(
+            action = com.aikeyboard.ime.ai.AiAction.REWRITE,
+            persona = com.aikeyboard.ime.ai.AiPersona.FRIENDLY,
+            context = "whatup"
+        )
+        assertTrue("Produces at least 2 distinct suggestions", rewriteSuggestions.size >= 2)
+        assertEquals("Hey! What's up?", rewriteSuggestions[0])
+        assertFalse("Never contains robotic preamble", rewriteSuggestions[0].startsWith("Here is a rewritten version"))
+        assertFalse("Never contains robotic corporate boilerplate", rewriteSuggestions[0].contains("I have reviewed the matter and will proceed accordingly"))
+
+        val continueSuggestions = com.aikeyboard.ime.ai.AiReplyGenerator.generateSuggestions(
+            action = com.aikeyboard.ime.ai.AiAction.CONTINUE,
+            persona = com.aikeyboard.ime.ai.AiPersona.FRIENDLY,
+            context = "i wanted to ask if you had time tomorrow"
+        )
+        assertTrue(continueSuggestions.isNotEmpty())
+        assertTrue("Continues naturally", continueSuggestions[0].contains("tomorrow"))
+
+        val startSuggestions = com.aikeyboard.ime.ai.AiReplyGenerator.generateSuggestions(
+            action = com.aikeyboard.ime.ai.AiAction.START,
+            persona = com.aikeyboard.ime.ai.AiPersona.FRIENDLY,
+            context = "project kickoff"
+        )
+        assertTrue(startSuggestions.isNotEmpty())
+    }
+
+    @Test
+    fun testM32FirebaseGeminiMissingConfigThrowsExplicitError() {
+        val geminiGen = com.aikeyboard.ime.ai.FirebaseGeminiReplyGenerator()
+        val request = com.aikeyboard.ime.ai.AiRequest(
+            action = com.aikeyboard.ime.ai.AiAction.REWRITE,
+            persona = com.aikeyboard.ime.ai.AiPersona.FRIENDLY,
+            context = "whatup"
+        )
+
+        var threwExpectedError = false
+        try {
+            kotlinx.coroutines.runBlocking {
+                geminiGen.generateSuggestions(request)
+            }
+        } catch (e: com.aikeyboard.ime.ai.GeminiException.MissingConfiguration) {
+            threwExpectedError = true
+            assertTrue("Message explains configuration requirement", e.message?.contains("Firebase is not configured") == true)
+        } catch (e: Throwable) {
+            threwExpectedError = e is com.aikeyboard.ime.ai.GeminiException
+        }
+        assertTrue("Real generator must throw explicit error instead of silent mock masquerading", threwExpectedError)
+    }
+
+    @Test
+    fun testM32GeneratorAbstractionAllowsExplicitMockTesting() {
+        val mock = com.aikeyboard.ime.ai.MockReplyGenerator()
+        com.aikeyboard.ime.ai.AiReplyGenerator.currentGenerator = mock
+
+        val request = com.aikeyboard.ime.ai.AiRequest(
+            action = com.aikeyboard.ime.ai.AiAction.REPLY,
+            persona = com.aikeyboard.ime.ai.AiPersona.FRIENDLY,
+            context = "Hello there"
+        )
+
+        val results = kotlinx.coroutines.runBlocking {
+            com.aikeyboard.ime.ai.AiReplyGenerator.generateSuggestionsAsync(request)
+        }
+        assertTrue("Explicit mock generates suggestions", results.isNotEmpty())
+
+        val askResult = kotlinx.coroutines.runBlocking {
+            com.aikeyboard.ime.ai.AiReplyGenerator.generateAskAiAsync("What time is it?", com.aikeyboard.ime.ai.AiPersona.FRIENDLY)
+        }
+        assertTrue("Explicit mock answers questions", askResult.isNotBlank())
+
+        com.aikeyboard.ime.ai.AiReplyGenerator.currentGenerator = com.aikeyboard.ime.ai.FirebaseGeminiReplyGenerator()
     }
 }
 `

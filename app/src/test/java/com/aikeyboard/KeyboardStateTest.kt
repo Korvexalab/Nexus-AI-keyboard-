@@ -543,4 +543,156 @@ class KeyboardStateTest {
         assertTrue("Keyboard keys restored", keyboardKeysVisible)
         assertEquals("Host chat bar retains replaced content", "Hey! What's up?", hostBuffer)
     }
+
+    @Test
+    fun testM30GeminiConfigurationAndModel() {
+        // Milestone 3.0 Requirement 2: Centralized model configuration
+        assertEquals("gemini-3.8-flash", com.aikeyboard.ime.ai.AiConfig.GEMINI_FLASH_MODEL)
+        assertTrue("Temperature is balanced for natural conversation", com.aikeyboard.ime.ai.AiConfig.TEMPERATURE in 0.5f..0.9f)
+        assertTrue("Output tokens allow complete messages", com.aikeyboard.ime.ai.AiConfig.MAX_OUTPUT_TOKENS >= 256)
+    }
+
+    @Test
+    fun testM30GeneratorAbstractionAndAiRequest() {
+        // Milestone 3.0 Requirement 3: Keep existing architecture & generator abstraction
+        val request = com.aikeyboard.ime.ai.AiRequest(
+            action = com.aikeyboard.ime.ai.AiAction.REPLY,
+            persona = com.aikeyboard.ime.ai.AiPersona.FRIENDLY,
+            context = "See you tomorrow!",
+            instruction = ""
+        )
+        assertEquals(com.aikeyboard.ime.ai.AiAction.REPLY, request.action)
+        assertEquals(com.aikeyboard.ime.ai.AiPersona.FRIENDLY, request.persona)
+        assertEquals("See you tomorrow!", request.context)
+
+        // Verify MockReplyGenerator and FirebaseGeminiReplyGenerator implement ReplyGenerator
+        val mockGen: com.aikeyboard.ime.ai.ReplyGenerator = com.aikeyboard.ime.ai.MockReplyGenerator()
+        val geminiGen: com.aikeyboard.ime.ai.ReplyGenerator = com.aikeyboard.ime.ai.FirebaseGeminiReplyGenerator(mockGen as com.aikeyboard.ime.ai.MockReplyGenerator)
+        assertNotNull(mockGen)
+        assertNotNull(geminiGen)
+        assertNotNull(com.aikeyboard.ime.ai.AiReplyGenerator.currentGenerator)
+    }
+
+    @Test
+    fun testM30WritingActionsAndPersonaPrompts() {
+        val geminiGen = com.aikeyboard.ime.ai.FirebaseGeminiReplyGenerator()
+
+        // Requirement 5: Personas are dynamic prompt variations, not separate models
+        val friendlyPrompt = geminiGen.buildPersonaPrompt(com.aikeyboard.ime.ai.AiPersona.FRIENDLY)
+        assertTrue("Friendly must be warm and conversational", friendlyPrompt.contains("warm", ignoreCase = true) || friendlyPrompt.contains("conversational", ignoreCase = true))
+        assertFalse("Must not encourage robotic formality", friendlyPrompt.contains("robotic", ignoreCase = true) && !friendlyPrompt.contains("Avoid robotic", ignoreCase = true))
+
+        val freelancerPrompt = geminiGen.buildPersonaPrompt(com.aikeyboard.ime.ai.AiPersona.FREELANCER)
+        assertTrue("Freelancer must be professional & concise", freelancerPrompt.contains("client-friendly", ignoreCase = true) || freelancerPrompt.contains("professional", ignoreCase = true))
+
+        val professionalPrompt = geminiGen.buildPersonaPrompt(com.aikeyboard.ime.ai.AiPersona.PROFESSIONAL)
+        assertTrue("Professional must be polished and concise", professionalPrompt.contains("polished", ignoreCase = true) || professionalPrompt.contains("concise", ignoreCase = true))
+
+        val funnyPrompt = geminiGen.buildPersonaPrompt(com.aikeyboard.ime.ai.AiPersona.FUNNY)
+        assertTrue("Funny must be playful and humorous", funnyPrompt.contains("playful", ignoreCase = true) || funnyPrompt.contains("humorous", ignoreCase = true))
+
+        // Requirement 4 & 7-10: Connect all actions: reply, rewrite, continue, start, create
+        val replyAction = geminiGen.buildActionInstruction(com.aikeyboard.ime.ai.AiAction.REPLY, "Let's meet at 5", "")
+        assertTrue(replyAction.contains("Reply", ignoreCase = true))
+        assertTrue(replyAction.contains("Let's meet at 5"))
+
+        val rewriteAction = geminiGen.buildActionInstruction(com.aikeyboard.ime.ai.AiAction.REWRITE, "whatup", "")
+        assertTrue(rewriteAction.contains("Rewrite", ignoreCase = true))
+        assertTrue(rewriteAction.contains("whatup"))
+
+        val continueAction = geminiGen.buildActionInstruction(com.aikeyboard.ime.ai.AiAction.CONTINUE, "i wanted to ask if you had time tomorrow", "")
+        assertTrue(continueAction.contains("Continue", ignoreCase = true))
+        assertTrue(continueAction.contains("i wanted to ask if you had time tomorrow"))
+
+        val startAction = geminiGen.buildActionInstruction(com.aikeyboard.ime.ai.AiAction.START, "marketing plan", "")
+        assertTrue(startAction.contains("Start", ignoreCase = true))
+        assertTrue(startAction.contains("marketing plan"))
+
+        val createAction = geminiGen.buildActionInstruction(com.aikeyboard.ime.ai.AiAction.CREATE, "", "announcement for launch")
+        assertTrue(createAction.contains("Create", ignoreCase = true))
+        assertTrue(createAction.contains("announcement for launch"))
+    }
+
+    @Test
+    fun testM30NaturalResponsesAndFallbacks() {
+        // Requirement 6 & 8: Natural rewrite behavior for "whatup"
+        val rewriteSuggestions = com.aikeyboard.ime.ai.AiReplyGenerator.generateSuggestions(
+            action = com.aikeyboard.ime.ai.AiAction.REWRITE,
+            persona = com.aikeyboard.ime.ai.AiPersona.FRIENDLY,
+            context = "whatup"
+        )
+        assertTrue("Produces at least 2 distinct suggestions", rewriteSuggestions.size >= 2)
+        assertEquals("Hey! What's up?", rewriteSuggestions[0])
+        assertFalse("Never contains robotic preamble", rewriteSuggestions[0].startsWith("Here is a rewritten version"))
+        assertFalse("Never contains robotic corporate boilerplate", rewriteSuggestions[0].contains("I have reviewed the matter and will proceed accordingly"))
+
+        // Requirement 9: Continue naturally extends message
+        val continueSuggestions = com.aikeyboard.ime.ai.AiReplyGenerator.generateSuggestions(
+            action = com.aikeyboard.ime.ai.AiAction.CONTINUE,
+            persona = com.aikeyboard.ime.ai.AiPersona.FRIENDLY,
+            context = "i wanted to ask if you had time tomorrow"
+        )
+        assertTrue(continueSuggestions.isNotEmpty())
+        assertTrue("Continues naturally", continueSuggestions[0].contains("tomorrow"))
+
+        // Requirement 10: Start creates conversation opener
+        val startSuggestions = com.aikeyboard.ime.ai.AiReplyGenerator.generateSuggestions(
+            action = com.aikeyboard.ime.ai.AiAction.START,
+            persona = com.aikeyboard.ime.ai.AiPersona.FRIENDLY,
+            context = "project kickoff"
+        )
+        assertTrue(startSuggestions.isNotEmpty())
+        assertTrue(startSuggestions[0].contains("project kickoff", ignoreCase = true) || startSuggestions[0].contains("Hey!"))
+    }
+
+    @Test
+    fun testM32FirebaseGeminiMissingConfigThrowsExplicitError() {
+        // Milestone 3.2: Verify real generator does NOT silently return mock output when Firebase is not configured
+        val geminiGen = com.aikeyboard.ime.ai.FirebaseGeminiReplyGenerator()
+        val request = com.aikeyboard.ime.ai.AiRequest(
+            action = com.aikeyboard.ime.ai.AiAction.REWRITE,
+            persona = com.aikeyboard.ime.ai.AiPersona.FRIENDLY,
+            context = "whatup"
+        )
+
+        var threwExpectedError = false
+        try {
+            kotlinx.coroutines.runBlocking {
+                geminiGen.generateSuggestions(request)
+            }
+        } catch (e: com.aikeyboard.ime.ai.GeminiException.MissingConfiguration) {
+            threwExpectedError = true
+            assertTrue("Message explains configuration requirement", e.message?.contains("Firebase is not configured") == true)
+        } catch (e: Throwable) {
+            // In unit test environment without Android Context/FirebaseApp, should catch MissingConfiguration or GeminiException
+            threwExpectedError = e is com.aikeyboard.ime.ai.GeminiException
+        }
+        assertTrue("Real generator must throw explicit error instead of silent mock masquerading", threwExpectedError)
+    }
+
+    @Test
+    fun testM32GeneratorAbstractionAllowsExplicitMockTesting() {
+        // Milestone 3.2: Verify MockReplyGenerator is preserved as an explicit offline/test fallback
+        val mock = com.aikeyboard.ime.ai.MockReplyGenerator()
+        com.aikeyboard.ime.ai.AiReplyGenerator.currentGenerator = mock
+
+        val request = com.aikeyboard.ime.ai.AiRequest(
+            action = com.aikeyboard.ime.ai.AiAction.REPLY,
+            persona = com.aikeyboard.ime.ai.AiPersona.FRIENDLY,
+            context = "Hello there"
+        )
+
+        val results = kotlinx.coroutines.runBlocking {
+            com.aikeyboard.ime.ai.AiReplyGenerator.generateSuggestionsAsync(request)
+        }
+        assertTrue("Explicit mock generates suggestions", results.isNotEmpty())
+
+        val askResult = kotlinx.coroutines.runBlocking {
+            com.aikeyboard.ime.ai.AiReplyGenerator.generateAskAiAsync("What time is it?", com.aikeyboard.ime.ai.AiPersona.FRIENDLY)
+        }
+        assertTrue("Explicit mock answers questions", askResult.isNotBlank())
+
+        // Restore default generator
+        com.aikeyboard.ime.ai.AiReplyGenerator.currentGenerator = com.aikeyboard.ime.ai.FirebaseGeminiReplyGenerator()
+    }
 }

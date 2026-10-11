@@ -16,7 +16,6 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
@@ -28,13 +27,14 @@ import androidx.compose.material.icons.filled.Clear
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.ExpandLess
 import androidx.compose.material.icons.filled.ExpandMore
-import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -45,6 +45,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -52,9 +53,14 @@ import com.aikeyboard.ime.ai.AiAction
 import com.aikeyboard.ime.ai.AiPersona
 import com.aikeyboard.ime.ai.AiReplyGenerator
 import com.aikeyboard.ime.ai.AiReplyStyle
+import com.aikeyboard.ime.ai.AiRequest
+import com.aikeyboard.ime.ai.GeminiException
 import com.aikeyboard.ime.ui.theme.AiPillGradientEnd
 import com.aikeyboard.ime.ui.theme.AiPillGradientStart
 import com.aikeyboard.ime.ui.theme.KeyboardColorTokens
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 enum class AiPanelMode {
     ACTION_BOARD,
@@ -67,17 +73,31 @@ enum class InputTarget {
 }
 
 /**
- * Milestone 2: AI Command Center Panel
+ * Milestone 3.2 — Explicit UI state for Writing Action suggestions.
+ */
+sealed interface AiGenerationState {
+    object Idle : AiGenerationState
+    object Loading : AiGenerationState
+    data class Success(val suggestions: List<String>) : AiGenerationState
+    data class Error(val message: String, val isConfigError: Boolean = false) : AiGenerationState
+}
+
+/**
+ * Milestone 3.2 — Explicit UI state for Ask AI queries.
+ */
+sealed interface AskAiState {
+    object Idle : AskAiState
+    object Loading : AskAiState
+    data class Success(val answer: String) : AskAiState
+    data class Error(val message: String, val isConfigError: Boolean = false) : AskAiState
+}
+
+/**
+ * Milestone 2 & 3.2: AI Command Center Panel
  *
- * Two main UI modes:
- * Mode A: AI Action Board
- * Mode B: Ask AI
- *
- * Explicit InputTarget architecture:
- * - When context/question field is tapped: inputTarget = AI_CONTEXT
- * - When non-text controls (actions, persona, more, generate, back, close) are tapped: inputTarget = HOST
- * - The IME keyboard remains completely stable and never hides/reopens.
- * - In-panel horizontal scrolling for persona selector (NO dropdowns).
+ * Fully connected to real Gemini via the ReplyGenerator abstraction (AiReplyGenerator.currentGenerator).
+ * Uses Kotlin coroutines and explicit UI states (Idle, Loading, Success, Error).
+ * Never blocks the main/rendering thread and avoids accidental duplicate requests.
  */
 @Composable
 fun AiReplyPanelView(
@@ -104,13 +124,53 @@ fun AiReplyPanelView(
     modifier: Modifier = Modifier
 ) {
     val haptic = LocalHapticFeedback.current
+    val coroutineScope = rememberCoroutineScope()
 
     val panelShape = RoundedCornerShape(topStart = 16.dp, topEnd = 16.dp, bottomStart = 8.dp, bottomEnd = 8.dp)
     val panelBg = if (tokens.isDark) Color(0xFF0F172A) else Color(0xFFF8FAFC)
     val panelBorder = if (tokens.isDark) Color(0x33818CF8) else Color(0x40CBD5E1)
 
-    var askAiResponse by remember { mutableStateOf<String?>(null) }
+    // State management for M3.2 real async generation
+    var actionGenerationState by remember { mutableStateOf<AiGenerationState>(AiGenerationState.Idle) }
+    var askAiState by remember { mutableStateOf<AskAiState>(AskAiState.Idle) }
+    var retryTrigger by remember { mutableStateOf(0) }
+    var replacedIdx by remember { mutableStateOf<Int?>(null) }
+
     val isContextFocused = inputTarget == InputTarget.AI_CONTEXT
+    val isActionLoading = actionGenerationState is AiGenerationState.Loading
+
+    // Trigger asynchronous generation via ReplyGenerator abstraction when action, persona, host context, or retry changes
+    LaunchedEffect(panelMode, selectedAction, selectedPersona, hostText, retryTrigger) {
+        if (panelMode == AiPanelMode.ACTION_BOARD) {
+            actionGenerationState = AiGenerationState.Loading
+            replacedIdx = null
+            try {
+                val request = AiRequest(
+                    action = selectedAction,
+                    persona = selectedPersona,
+                    context = hostText
+                )
+                val results = withContext(Dispatchers.IO) {
+                    AiReplyGenerator.currentGenerator.generateSuggestions(request)
+                }
+                actionGenerationState = if (results.isNotEmpty()) {
+                    AiGenerationState.Success(results)
+                } else {
+                    AiGenerationState.Error("No suggestions generated. Tap retry to reload.")
+                }
+            } catch (e: GeminiException.MissingConfiguration) {
+                actionGenerationState = AiGenerationState.Error(
+                    message = e.message ?: "Firebase is not configured. Connect your active Firebase project to enable live Gemini generation.",
+                    isConfigError = true
+                )
+            } catch (e: Throwable) {
+                actionGenerationState = AiGenerationState.Error(
+                    message = e.message ?: "Unable to connect to Gemini. Tap retry to reload.",
+                    isConfigError = false
+                )
+            }
+        }
+    }
 
     Column(
         modifier = modifier
@@ -146,7 +206,7 @@ fun AiReplyPanelView(
                 ) {
                     Icon(
                         imageVector = Icons.Filled.ArrowBack,
-                        contentDescription = "Return to action board",
+                        contentDescription = "Back",
                         tint = tokens.textSecondary,
                         modifier = Modifier.size(12.dp)
                     )
@@ -272,67 +332,132 @@ fun AiReplyPanelView(
                 }
             }
 
-            // Ask ✨ Button
+            // Ask ✨ Button (debounced during generation)
+            val isAskLoading = askAiState is AskAiState.Loading
             ActionPrimaryButton(
-                label = "ask",
+                label = if (isAskLoading) "thinking ✨" else "ask",
+                enabled = !isAskLoading && contextText.isNotBlank(),
                 onClick = {
-                    onSetInputTarget(InputTarget.HOST)
-                    val answer = AiReplyGenerator.generateMockAskAiResponse(contextText, selectedPersona)
-                    askAiResponse = answer
+                    val q = contextText.trim()
+                    if (q.isNotEmpty() && !isAskLoading) {
+                        onSetInputTarget(InputTarget.HOST)
+                        askAiState = AskAiState.Loading
+                        coroutineScope.launch {
+                            try {
+                                val answer = withContext(Dispatchers.IO) {
+                                    AiReplyGenerator.currentGenerator.generateAskAi(q, selectedPersona)
+                                }
+                                askAiState = AskAiState.Success(answer)
+                            } catch (e: GeminiException.MissingConfiguration) {
+                                askAiState = AskAiState.Error(
+                                    message = e.message ?: "Firebase is not configured. Connect your active Firebase project to enable live Gemini.",
+                                    isConfigError = true
+                                )
+                            } catch (e: Throwable) {
+                                askAiState = AskAiState.Error(
+                                    message = e.message ?: "Unable to get an answer right now. Please tap retry.",
+                                    isConfigError = false
+                                )
+                            }
+                        }
+                    }
                 },
                 tokens = tokens,
                 hapticEnabled = hapticEnabled,
                 keyAnimationEnabled = keyAnimationEnabled
             )
 
-            // AI Response Card (proper response card/container with insert button)
-            askAiResponse?.let { resp ->
-                Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                    Text(
-                        text = "ai response",
-                        fontSize = 10.sp,
-                        fontWeight = FontWeight.SemiBold,
-                        color = tokens.textSecondary
-                    )
+            // Ask AI Response or Loading / Error Card
+            when (val state = askAiState) {
+                is AskAiState.Loading -> {
                     Box(
                         modifier = Modifier
                             .fillMaxWidth()
                             .clip(RoundedCornerShape(8.dp))
                             .background(if (tokens.isDark) Color(0xFF141E30) else Color(0xFFF1F5F9))
-                            .border(1.dp, if (tokens.isDark) Color(0x33818CF8) else Color(0x40CBD5E1), RoundedCornerShape(8.dp))
+                            .padding(10.dp),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Text(
+                            text = "thinking ✨",
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.SemiBold,
+                            color = if (tokens.isDark) Color(0xFF818CF8) else Color(0xFF4F46E5)
+                        )
+                    }
+                }
+                is AskAiState.Error -> {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(8.dp))
+                            .background(if (tokens.isDark) Color(0xFF261218) else Color(0xFFFEF2F2))
+                            .border(1.dp, Color(0xFFF87171), RoundedCornerShape(8.dp))
                             .padding(8.dp)
                     ) {
-                        Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                        Column(
+                            modifier = Modifier.fillMaxWidth(),
+                            verticalArrangement = Arrangement.spacedBy(4.dp),
+                            horizontalAlignment = Alignment.CenterHorizontally
+                        ) {
                             Text(
-                                text = resp,
-                                fontSize = 11.sp,
-                                color = tokens.textPrimary,
-                                lineHeight = 15.sp
+                                text = state.message,
+                                fontSize = 10.sp,
+                                color = Color(0xFFEF4444),
+                                textAlign = TextAlign.Center
                             )
-                            onInsertAskAiResult?.let { insertFn ->
-                                Box(
-                                    modifier = Modifier
-                                        .align(Alignment.End)
-                                        .clip(RoundedCornerShape(6.dp))
-                                        .background(Color(0xFF4F46E5))
-                                        .clickable {
-                                            if (hapticEnabled) haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                                            onSetInputTarget(InputTarget.HOST)
-                                            insertFn(resp)
-                                        }
-                                        .padding(horizontal = 8.dp, vertical = 3.dp)
-                                ) {
-                                    Text(
-                                        text = "insert",
-                                        fontSize = 10.sp,
-                                        fontWeight = FontWeight.Bold,
-                                        color = Color.White
-                                    )
+                        }
+                    }
+                }
+                is AskAiState.Success -> {
+                    Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                        Text(
+                            text = "ai response",
+                            fontSize = 10.sp,
+                            fontWeight = FontWeight.SemiBold,
+                            color = tokens.textSecondary
+                        )
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clip(RoundedCornerShape(8.dp))
+                                .background(if (tokens.isDark) Color(0xFF141E30) else Color(0xFFF1F5F9))
+                                .border(1.dp, if (tokens.isDark) Color(0x33818CF8) else Color(0x40CBD5E1), RoundedCornerShape(8.dp))
+                                .padding(8.dp)
+                        ) {
+                            Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                                Text(
+                                    text = state.answer,
+                                    fontSize = 11.sp,
+                                    color = tokens.textPrimary,
+                                    lineHeight = 15.sp
+                                )
+                                onInsertAskAiResult?.let { insertFn ->
+                                    Box(
+                                        modifier = Modifier
+                                            .align(Alignment.End)
+                                            .clip(RoundedCornerShape(6.dp))
+                                            .background(Color(0xFF4F46E5))
+                                            .clickable {
+                                                if (hapticEnabled) haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                                onSetInputTarget(InputTarget.HOST)
+                                                insertFn(state.answer)
+                                            }
+                                            .padding(horizontal = 8.dp, vertical = 3.dp)
+                                    ) {
+                                        Text(
+                                            text = "insert",
+                                            fontSize = 10.sp,
+                                            fontWeight = FontWeight.Bold,
+                                            color = Color.White
+                                        )
+                                    }
                                 }
                             }
                         }
                     }
                 }
+                is AskAiState.Idle -> { /* Idle */ }
             }
 
         } else {
@@ -363,21 +488,16 @@ fun AiReplyPanelView(
                     ) {
                         Icon(
                             imageVector = Icons.Filled.ArrowBack,
-                            contentDescription = "Back to normal keyboard",
+                            contentDescription = "Back to Keyboard",
                             tint = tokens.textSecondary,
-                            modifier = Modifier.size(14.dp)
+                            modifier = Modifier.size(13.dp)
                         )
                     }
 
-                    Icon(
-                        imageVector = Icons.Filled.AutoAwesome,
-                        contentDescription = null,
-                        tint = if (tokens.isDark) Color(0xFFFDE047) else Color(0xFFD97706),
-                        modifier = Modifier.size(15.dp)
-                    )
+                    Text(text = "✨", fontSize = 13.sp)
                     Text(
-                        text = "AI",
-                        fontSize = 13.sp,
+                        text = "AI Command Center",
+                        fontSize = 12.sp,
                         fontWeight = FontWeight.Bold,
                         color = tokens.textPrimary
                     )
@@ -404,7 +524,7 @@ fun AiReplyPanelView(
                 }
             }
 
-            // 2. Actions Row: [ Reply ] [ Rewrite ] [ More ]
+            // 2. Primary Actions: Reply, Rewrite + More (collapsible)
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(6.dp)
@@ -412,6 +532,7 @@ fun AiReplyPanelView(
                 ActionChip(
                     action = AiAction.REPLY,
                     isSelected = selectedAction == AiAction.REPLY,
+                    enabled = !isActionLoading,
                     onClick = {
                         onSetInputTarget(InputTarget.HOST)
                         onSelectAction(AiAction.REPLY)
@@ -425,6 +546,7 @@ fun AiReplyPanelView(
                 ActionChip(
                     action = AiAction.REWRITE,
                     isSelected = selectedAction == AiAction.REWRITE,
+                    enabled = !isActionLoading,
                     onClick = {
                         onSetInputTarget(InputTarget.HOST)
                         onSelectAction(AiAction.REWRITE)
@@ -497,6 +619,7 @@ fun AiReplyPanelView(
                         ActionChip(
                             action = AiAction.CONTINUE,
                             isSelected = selectedAction == AiAction.CONTINUE,
+                            enabled = !isActionLoading,
                             onClick = {
                                 onSetInputTarget(InputTarget.HOST)
                                 onSelectAction(AiAction.CONTINUE)
@@ -509,6 +632,7 @@ fun AiReplyPanelView(
                         ActionChip(
                             action = AiAction.START,
                             isSelected = selectedAction == AiAction.START,
+                            enabled = !isActionLoading,
                             onClick = {
                                 onSetInputTarget(InputTarget.HOST)
                                 onSelectAction(AiAction.START)
@@ -526,6 +650,7 @@ fun AiReplyPanelView(
                         ActionChip(
                             action = AiAction.ASK_AI,
                             isSelected = selectedAction == AiAction.ASK_AI,
+                            enabled = !isActionLoading,
                             onClick = {
                                 onSetInputTarget(InputTarget.HOST)
                                 onSetPanelMode(AiPanelMode.ASK_AI)
@@ -538,6 +663,7 @@ fun AiReplyPanelView(
                         ActionChip(
                             action = AiAction.CREATE,
                             isSelected = selectedAction == AiAction.CREATE,
+                            enabled = !isActionLoading,
                             onClick = {
                                 onSetInputTarget(InputTarget.HOST)
                                 onSelectAction(AiAction.CREATE)
@@ -552,8 +678,6 @@ fun AiReplyPanelView(
             }
 
             // 4. In-Panel Horizontal Scrolling Persona Selector (NO DROPDOWN!)
-            // persona
-            // [😊 friendly] [💼 freelancer] [😂 funny] [⚡ short] [💬 natural] [❤️ romantic]
             Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
                 Text(
                     text = "persona",
@@ -589,7 +713,7 @@ fun AiReplyPanelView(
                                 .clip(RoundedCornerShape(6.dp))
                                 .background(chipBg)
                                 .border(1.dp, chipBorder, RoundedCornerShape(6.dp))
-                                .clickable {
+                                .clickable(enabled = !isActionLoading) {
                                     if (hapticEnabled) haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
                                     onSetInputTarget(InputTarget.HOST)
                                     onSelectPersona(persona)
@@ -611,12 +735,7 @@ fun AiReplyPanelView(
             }
 
             // 5. AI RESULTS SECTION
-            // Displays selectable result cards based on the host chat bar text.
-            val suggestions = remember(selectedAction, selectedPersona, hostText) {
-                AiReplyGenerator.generateSuggestions(selectedAction, selectedPersona, hostText)
-            }
-            var replacedIdx by remember { mutableStateOf<Int?>(null) }
-
+            // Explicit states: Loading (generating ✨), Error (retry), Success (result cards)
             Column(
                 modifier = Modifier.fillMaxWidth(),
                 verticalArrangement = Arrangement.spacedBy(4.dp)
@@ -633,56 +752,137 @@ fun AiReplyPanelView(
                         color = tokens.textSecondary
                     )
                     Text(
-                        text = "${suggestions.size} suggestions",
+                        text = when (val state = actionGenerationState) {
+                            is AiGenerationState.Loading -> "generating..."
+                            is AiGenerationState.Success -> "${state.suggestions.size} suggestions"
+                            is AiGenerationState.Error -> "error"
+                            is AiGenerationState.Idle -> ""
+                        },
                         fontSize = 10.sp,
                         color = if (tokens.isDark) Color(0xFF818CF8) else Color(0xFF4F46E5)
                     )
                 }
 
-                suggestions.forEachIndexed { idx, suggestion ->
-                    val isReplaced = replacedIdx == idx
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .clip(RoundedCornerShape(8.dp))
-                            .background(if (tokens.isDark) Color(0xFF141E30) else Color(0xFFFFFFFF))
-                            .border(
-                                1.dp,
-                                if (isReplaced) Color(0xFF10B981) else if (tokens.isDark) Color(0x33818CF8) else Color(0x40CBD5E1),
-                                RoundedCornerShape(8.dp)
-                            )
-                            .padding(8.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.SpaceBetween
-                    ) {
-                        Text(
-                            text = suggestion,
-                            fontSize = 11.sp,
-                            color = tokens.textPrimary,
-                            modifier = Modifier.weight(1f).padding(end = 8.dp)
-                        )
-
+                when (val state = actionGenerationState) {
+                    is AiGenerationState.Loading -> {
                         Box(
                             modifier = Modifier
-                                .clip(RoundedCornerShape(6.dp))
-                                .background(if (isReplaced) Color(0xFF059669) else Color(0xFF4F46E5))
-                                .clickable {
-                                    if (hapticEnabled) haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                                    onSetInputTarget(InputTarget.HOST)
-                                    replacedIdx = idx
-                                    onReplace?.invoke(suggestion)
-                                }
-                                .padding(horizontal = 8.dp, vertical = 4.dp),
+                                .fillMaxWidth()
+                                .clip(RoundedCornerShape(8.dp))
+                                .background(if (tokens.isDark) Color(0xFF141E30) else Color(0xFFF1F5F9))
+                                .padding(vertical = 14.dp),
                             contentAlignment = Alignment.Center
                         ) {
-                            Text(
-                                text = if (isReplaced) "Replaced" else "Replace",
-                                fontSize = 10.sp,
-                                fontWeight = FontWeight.Bold,
-                                color = Color.White
-                            )
+                            Column(
+                                horizontalAlignment = Alignment.CenterHorizontally,
+                                verticalArrangement = Arrangement.spacedBy(2.dp)
+                            ) {
+                                Text(
+                                    text = "generating ✨",
+                                    fontSize = 12.sp,
+                                    fontWeight = FontWeight.SemiBold,
+                                    color = if (tokens.isDark) Color(0xFF818CF8) else Color(0xFF4F46E5)
+                                )
+                                Text(
+                                    text = "crafting natural responses with gemini flash...",
+                                    fontSize = 10.sp,
+                                    color = tokens.textSecondary
+                                )
+                            }
                         }
                     }
+
+                    is AiGenerationState.Error -> {
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clip(RoundedCornerShape(8.dp))
+                                .background(if (tokens.isDark) Color(0xFF261218) else Color(0xFFFEF2F2))
+                                .border(1.dp, Color(0xFFF87171), RoundedCornerShape(8.dp))
+                                .padding(10.dp)
+                        ) {
+                            Column(
+                                modifier = Modifier.fillMaxWidth(),
+                                verticalArrangement = Arrangement.spacedBy(6.dp),
+                                horizontalAlignment = Alignment.CenterHorizontally
+                            ) {
+                                Text(
+                                    text = state.message,
+                                    fontSize = 10.sp,
+                                    color = Color(0xFFEF4444),
+                                    textAlign = TextAlign.Center
+                                )
+                                if (!state.isConfigError) {
+                                    Box(
+                                        modifier = Modifier
+                                            .clip(RoundedCornerShape(6.dp))
+                                            .background(Color(0xFFDC2626))
+                                            .clickable {
+                                                retryTrigger++
+                                            }
+                                            .padding(horizontal = 10.dp, vertical = 4.dp)
+                                    ) {
+                                        Text(
+                                            text = "retry",
+                                            fontSize = 10.sp,
+                                            fontWeight = FontWeight.Bold,
+                                            color = Color.White
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    is AiGenerationState.Success -> {
+                        state.suggestions.forEachIndexed { idx, suggestion ->
+                            val isReplaced = replacedIdx == idx
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clip(RoundedCornerShape(8.dp))
+                                    .background(if (tokens.isDark) Color(0xFF141E30) else Color(0xFFFFFFFF))
+                                    .border(
+                                        1.dp,
+                                        if (isReplaced) Color(0xFF10B981) else if (tokens.isDark) Color(0x33818CF8) else Color(0x40CBD5E1),
+                                        RoundedCornerShape(8.dp)
+                                    )
+                                    .padding(8.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.SpaceBetween
+                            ) {
+                                Text(
+                                    text = suggestion,
+                                    fontSize = 11.sp,
+                                    color = tokens.textPrimary,
+                                    modifier = Modifier.weight(1f).padding(end = 8.dp)
+                                )
+
+                                Box(
+                                    modifier = Modifier
+                                        .clip(RoundedCornerShape(6.dp))
+                                        .background(if (isReplaced) Color(0xFF059669) else Color(0xFF4F46E5))
+                                        .clickable {
+                                            if (hapticEnabled) haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                            onSetInputTarget(InputTarget.HOST)
+                                            replacedIdx = idx
+                                            onReplace?.invoke(suggestion)
+                                        }
+                                        .padding(horizontal = 8.dp, vertical = 4.dp),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Text(
+                                        text = if (isReplaced) "Replaced" else "Replace",
+                                        fontSize = 10.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        color = Color.White
+                                    )
+                                }
+                            }
+                        }
+                    }
+
+                    is AiGenerationState.Idle -> { /* Idle */ }
                 }
             }
         }
@@ -690,12 +890,13 @@ fun AiReplyPanelView(
 }
 
 /**
- * Action button chip with highlighted selection state
+ * Action button chip with highlighted selection state and disable support during generation
  */
 @Composable
 private fun ActionChip(
     action: AiAction,
     isSelected: Boolean,
+    enabled: Boolean = true,
     onClick: () -> Unit,
     tokens: KeyboardColorTokens,
     keyAnimationEnabled: Boolean,
@@ -706,7 +907,7 @@ private fun ActionChip(
     val interactionSource = remember { MutableInteractionSource() }
     val isPressed by interactionSource.collectIsPressedAsState()
     val scale by animateFloatAsState(
-        targetValue = if (isPressed && keyAnimationEnabled) 0.95f else 1.0f,
+        targetValue = if (isPressed && keyAnimationEnabled && enabled) 0.95f else 1.0f,
         animationSpec = tween(80),
         label = "action_chip_scale"
     )
@@ -736,6 +937,7 @@ private fun ActionChip(
             .background(bg)
             .border(1.dp, border, chipShape)
             .clickable(
+                enabled = enabled,
                 interactionSource = interactionSource,
                 indication = null
             ) {
@@ -763,11 +965,12 @@ private fun ActionChip(
 }
 
 /**
- * Gradient Action Button for generate / ask
+ * Gradient Action Button for generate / ask with disabled/loading state
  */
 @Composable
 private fun ActionPrimaryButton(
     label: String,
+    enabled: Boolean = true,
     onClick: () -> Unit,
     tokens: KeyboardColorTokens,
     hapticEnabled: Boolean,
@@ -777,7 +980,7 @@ private fun ActionPrimaryButton(
     val interactionSource = remember { MutableInteractionSource() }
     val isPressed by interactionSource.collectIsPressedAsState()
     val scale by animateFloatAsState(
-        targetValue = if (isPressed && keyAnimationEnabled) 0.96f else 1.0f,
+        targetValue = if (isPressed && keyAnimationEnabled && enabled) 0.96f else 1.0f,
         animationSpec = tween(100),
         label = "btn_scale"
     )
@@ -790,11 +993,18 @@ private fun ActionPrimaryButton(
             .scale(scale)
             .clip(btnShape)
             .background(
-                Brush.horizontalGradient(
-                    listOf(AiPillGradientStart, AiPillGradientEnd)
-                )
+                if (enabled) {
+                    Brush.horizontalGradient(
+                        listOf(AiPillGradientStart, AiPillGradientEnd)
+                    )
+                } else {
+                    Brush.horizontalGradient(
+                        listOf(AiPillGradientStart.copy(alpha = 0.5f), AiPillGradientEnd.copy(alpha = 0.5f))
+                    )
+                }
             )
             .clickable(
+                enabled = enabled,
                 interactionSource = interactionSource,
                 indication = null
             ) {

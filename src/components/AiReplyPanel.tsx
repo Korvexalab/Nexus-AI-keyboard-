@@ -1,4 +1,4 @@
-import React, { useRef, useState, useMemo } from 'react';
+import React, { useRef, useState, useEffect, useCallback } from 'react';
 import {
   Sparkles,
   X,
@@ -9,7 +9,9 @@ import {
   ChevronRight,
   CornerDownLeft,
   Check,
-  RotateCcw
+  RotateCcw,
+  Loader2,
+  AlertCircle
 } from 'lucide-react';
 import {
   AiActionId,
@@ -73,8 +75,18 @@ export const AiReplyPanel: React.FC<AiReplyPanelProps> = ({
   // Track which suggestion was replaced for visual feedback
   const [replacedIndex, setReplacedIndex] = useState<number | null>(null);
 
-  // Ask AI local response state
+  // Ask AI local response state & loading
   const [askAiAnswer, setAskAiAnswer] = useState<string | null>(null);
+  const [isAskAiLoading, setIsAskAiLoading] = useState<boolean>(false);
+  const [askAiError, setAskAiError] = useState<string | null>(null);
+
+  // Writing actions state (Real Gemini integration)
+  const [suggestions, setSuggestions] = useState<string[]>([]);
+  const [isLoading, setIsLoading] = useState<boolean>(false);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
+
+  // Generation requestId to handle debouncing and in-flight cancellation
+  const currentRequestIdRef = useRef<number>(0);
 
   // Current active persona object
   const activePersona =
@@ -104,14 +116,37 @@ export const AiReplyPanel: React.FC<AiReplyPanelProps> = ({
     }
   };
 
-  // Generate multiple AI suggestions based on the host chat bar text
-  const suggestions = useMemo(() => {
-    return defaultAiGenerator.generateSuggestions({
-      action: selectedAction,
-      persona: selectedPersona,
-      context: hostText
-    });
-  }, [selectedAction, selectedPersona, hostText]);
+  // Fetch real Gemini suggestions with debouncing and error handling
+  const fetchSuggestions = useCallback(async () => {
+    if (panelMode !== 'action_board') return;
+
+    const requestId = ++currentRequestIdRef.current;
+    setIsLoading(true);
+    setErrorMessage(null);
+
+    try {
+      const results = await defaultAiGenerator.generateSuggestions({
+        action: selectedAction,
+        persona: selectedPersona,
+        context: hostText
+      });
+
+      if (requestId === currentRequestIdRef.current) {
+        setSuggestions(results);
+        setIsLoading(false);
+      }
+    } catch (err: any) {
+      if (requestId === currentRequestIdRef.current) {
+        console.error('Failed to fetch Gemini suggestions:', err);
+        setErrorMessage('Unable to connect to Gemini. Tap retry to reload.');
+        setIsLoading(false);
+      }
+    }
+  }, [panelMode, selectedAction, selectedPersona, hostText]);
+
+  useEffect(() => {
+    fetchSuggestions();
+  }, [fetchSuggestions]);
 
   // Handle Replace click
   const handleReplace = (suggestionText: string, index: number) => {
@@ -122,12 +157,23 @@ export const AiReplyPanel: React.FC<AiReplyPanelProps> = ({
     }, 1500);
   };
 
-  // Ask AI submission
-  const handleAskAiSubmit = (e?: React.MouseEvent) => {
+  // Ask AI submission with real Gemini
+  const handleAskAiSubmit = async (e?: React.MouseEvent) => {
     if (e) e.stopPropagation();
     onSetInputTarget('host');
-    const answer = defaultAiGenerator.generateAskAi(contextText, selectedPersona);
-    setAskAiAnswer(answer);
+    if (!contextText.trim()) return;
+
+    setIsAskAiLoading(true);
+    setAskAiError(null);
+    try {
+      const answer = await defaultAiGenerator.generateAskAi(contextText, selectedPersona);
+      setAskAiAnswer(answer);
+    } catch (err) {
+      console.error('Ask AI error:', err);
+      setAskAiError('Unable to get an answer right now. Please try again.');
+    } finally {
+      setIsAskAiLoading(false);
+    }
   };
 
   // Height container mapping
@@ -250,13 +296,37 @@ export const AiReplyPanel: React.FC<AiReplyPanelProps> = ({
           <button
             id="btn-ai-ask-submit"
             onClick={handleAskAiSubmit}
-            className={`w-full h-8.5 rounded-xl bg-gradient-to-r from-indigo-600 via-indigo-500 to-purple-600 hover:brightness-110 active:scale-98 text-white font-bold text-xs shadow-md shadow-indigo-900/30 flex items-center justify-center gap-1.5 transition-all duration-100 ${
+            disabled={isAskAiLoading || !contextText.trim()}
+            className={`w-full h-8.5 rounded-xl bg-gradient-to-r from-indigo-600 via-indigo-500 to-purple-600 hover:brightness-110 active:scale-98 disabled:opacity-50 disabled:pointer-events-none text-white font-bold text-xs shadow-md shadow-indigo-900/30 flex items-center justify-center gap-1.5 transition-all duration-100 ${
               keyAnimationEnabled ? 'active:scale-98' : ''
             }`}
           >
-            <span>Ask AI</span>
-            <Sparkles className="w-3.5 h-3.5 text-amber-200" />
+            {isAskAiLoading ? (
+              <>
+                <Loader2 className="w-3.5 h-3.5 animate-spin text-amber-200" />
+                <span>Generating ✨</span>
+              </>
+            ) : (
+              <>
+                <span>Ask AI</span>
+                <Sparkles className="w-3.5 h-3.5 text-amber-200" />
+              </>
+            )}
           </button>
+
+          {/* Ask AI Error Banner */}
+          {askAiError && (
+            <div className="flex items-center gap-2 p-2 rounded-lg bg-rose-500/10 border border-rose-500/20 text-rose-300 text-xs">
+              <AlertCircle className="w-3.5 h-3.5 shrink-0" />
+              <span className="flex-1">{askAiError}</span>
+              <button
+                onClick={handleAskAiSubmit}
+                className="text-[11px] underline hover:text-white"
+              >
+                Retry
+              </button>
+            </div>
+          )}
 
           {/* Ask AI Response Card */}
           {askAiAnswer && (
@@ -351,6 +421,7 @@ export const AiReplyPanel: React.FC<AiReplyPanelProps> = ({
           {/* Reply */}
           <button
             id="ai-action-reply"
+            disabled={isLoading}
             onClick={(e) => {
               e.stopPropagation();
               onSetInputTarget('host');
@@ -358,7 +429,7 @@ export const AiReplyPanel: React.FC<AiReplyPanelProps> = ({
             }}
             className={`flex-1 h-7.5 px-2.5 rounded-lg text-xs font-medium transition-all duration-100 border flex items-center justify-center gap-1.5 ${
               selectedAction === 'reply' ? chipBgSelected : chipBgDefault
-            } ${keyAnimationEnabled ? 'active:scale-95' : ''}`}
+            } ${keyAnimationEnabled ? 'active:scale-95' : ''} ${isLoading ? 'opacity-60 cursor-not-allowed' : ''}`}
           >
             <span>💬</span>
             <span>Reply</span>
@@ -367,6 +438,7 @@ export const AiReplyPanel: React.FC<AiReplyPanelProps> = ({
           {/* Rewrite */}
           <button
             id="ai-action-rewrite"
+            disabled={isLoading}
             onClick={(e) => {
               e.stopPropagation();
               onSetInputTarget('host');
@@ -374,7 +446,7 @@ export const AiReplyPanel: React.FC<AiReplyPanelProps> = ({
             }}
             className={`flex-1 h-7.5 px-2.5 rounded-lg text-xs font-medium transition-all duration-100 border flex items-center justify-center gap-1.5 ${
               selectedAction === 'rewrite' ? chipBgSelected : chipBgDefault
-            } ${keyAnimationEnabled ? 'active:scale-95' : ''}`}
+            } ${keyAnimationEnabled ? 'active:scale-95' : ''} ${isLoading ? 'opacity-60 cursor-not-allowed' : ''}`}
           >
             <span>✏️</span>
             <span>Rewrite</span>
@@ -383,6 +455,7 @@ export const AiReplyPanel: React.FC<AiReplyPanelProps> = ({
           {/* More Actions Toggle */}
           <button
             id="btn-more-actions"
+            disabled={isLoading}
             onClick={(e) => {
               e.stopPropagation();
               onSetInputTarget('host');
@@ -392,7 +465,7 @@ export const AiReplyPanel: React.FC<AiReplyPanelProps> = ({
               isMoreExpanded || (selectedAction !== 'reply' && selectedAction !== 'rewrite')
                 ? chipBgSelected
                 : chipBgDefault
-            }`}
+            } ${isLoading ? 'opacity-60 cursor-not-allowed' : ''}`}
           >
             <span>More</span>
             {isMoreExpanded ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
@@ -405,6 +478,7 @@ export const AiReplyPanel: React.FC<AiReplyPanelProps> = ({
             {/* Continue */}
             <button
               id="ai-action-continue"
+              disabled={isLoading}
               onClick={(e) => {
                 e.stopPropagation();
                 onSetInputTarget('host');
@@ -412,7 +486,7 @@ export const AiReplyPanel: React.FC<AiReplyPanelProps> = ({
               }}
               className={`h-7 px-2.5 rounded-lg text-xs font-medium transition-all duration-100 border flex items-center gap-1 shrink-0 ${
                 selectedAction === 'continue' ? chipBgSelected : chipBgDefault
-              } ${keyAnimationEnabled ? 'active:scale-95' : ''}`}
+              } ${keyAnimationEnabled ? 'active:scale-95' : ''} ${isLoading ? 'opacity-60 cursor-not-allowed' : ''}`}
             >
               <span>🔄</span>
               <span>Continue</span>
@@ -421,6 +495,7 @@ export const AiReplyPanel: React.FC<AiReplyPanelProps> = ({
             {/* Start */}
             <button
               id="ai-action-start"
+              disabled={isLoading}
               onClick={(e) => {
                 e.stopPropagation();
                 onSetInputTarget('host');
@@ -428,7 +503,7 @@ export const AiReplyPanel: React.FC<AiReplyPanelProps> = ({
               }}
               className={`h-7 px-2.5 rounded-lg text-xs font-medium transition-all duration-100 border flex items-center gap-1 shrink-0 ${
                 selectedAction === 'start' ? chipBgSelected : chipBgDefault
-              } ${keyAnimationEnabled ? 'active:scale-95' : ''}`}
+              } ${keyAnimationEnabled ? 'active:scale-95' : ''} ${isLoading ? 'opacity-60 cursor-not-allowed' : ''}`}
             >
               <span>✨</span>
               <span>Start</span>
@@ -437,6 +512,7 @@ export const AiReplyPanel: React.FC<AiReplyPanelProps> = ({
             {/* Ask AI */}
             <button
               id="ai-action-ask-ai"
+              disabled={isLoading}
               onClick={(e) => {
                 e.stopPropagation();
                 onSetInputTarget('ai_context');
@@ -445,7 +521,7 @@ export const AiReplyPanel: React.FC<AiReplyPanelProps> = ({
               }}
               className={`h-7 px-2.5 rounded-lg text-xs font-medium transition-all duration-100 border flex items-center gap-1 shrink-0 ${
                 selectedAction === 'ask_ai' ? chipBgSelected : chipBgDefault
-              } ${keyAnimationEnabled ? 'active:scale-95' : ''}`}
+              } ${keyAnimationEnabled ? 'active:scale-95' : ''} ${isLoading ? 'opacity-60 cursor-not-allowed' : ''}`}
             >
               <span>🧠</span>
               <span>Ask AI</span>
@@ -454,6 +530,7 @@ export const AiReplyPanel: React.FC<AiReplyPanelProps> = ({
             {/* Create */}
             <button
               id="ai-action-create"
+              disabled={isLoading}
               onClick={(e) => {
                 e.stopPropagation();
                 onSetInputTarget('host');
@@ -461,7 +538,7 @@ export const AiReplyPanel: React.FC<AiReplyPanelProps> = ({
               }}
               className={`h-7 px-2.5 rounded-lg text-xs font-medium transition-all duration-100 border flex items-center gap-1 shrink-0 ${
                 selectedAction === 'create' ? chipBgSelected : chipBgDefault
-              } ${keyAnimationEnabled ? 'active:scale-95' : ''}`}
+              } ${keyAnimationEnabled ? 'active:scale-95' : ''} ${isLoading ? 'opacity-60 cursor-not-allowed' : ''}`}
             >
               <span>➕</span>
               <span>Create</span>
@@ -543,56 +620,87 @@ export const AiReplyPanel: React.FC<AiReplyPanelProps> = ({
             AI Results {hostText.trim() ? `• Context: "${hostText.trim().slice(0, 22)}${hostText.trim().length > 22 ? '...' : ''}"` : ''}
           </span>
           <span className="text-indigo-400 text-[10px]">
-            {suggestions.length} {suggestions.length === 1 ? 'suggestion' : 'suggestions'}
+            {isLoading ? 'Generating...' : `${suggestions.length} ${suggestions.length === 1 ? 'suggestion' : 'suggestions'}`}
           </span>
         </div>
 
-        {/* Suggestion Cards */}
-        {suggestions.map((suggestion, idx) => {
-          const isReplaced = replacedIndex === idx;
-          return (
-            <div
-              key={idx}
-              id={`ai-suggestion-card-${idx}`}
-              className={`p-2.5 rounded-xl border flex flex-col justify-between gap-2 transition-all duration-150 ${cardBg} ${
-                isReplaced ? (isLight ? 'ring-2 ring-emerald-500/50 border-emerald-400' : 'ring-2 ring-emerald-400/50 border-emerald-500') : ''
-              }`}
-            >
-              <p className={`text-xs leading-relaxed font-sans select-text ${isLight ? 'text-slate-800' : 'text-slate-100'}`}>
-                {suggestion}
-              </p>
-
-              <div className="flex items-center justify-end">
-                <button
-                  id={`btn-replace-suggestion-${idx}`}
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    onSetInputTarget('host');
-                    handleReplace(suggestion, idx);
-                  }}
-                  className={`px-3 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-all shadow-sm ${
-                    isReplaced
-                      ? 'bg-emerald-600 text-white shadow-emerald-600/30'
-                      : 'bg-indigo-600 hover:bg-indigo-500 active:scale-95 text-white shadow-indigo-600/25'
-                  }`}
-                  title="Replace message text with this result"
-                >
-                  {isReplaced ? (
-                    <>
-                      <Check className="w-3.5 h-3.5" />
-                      <span>Replaced</span>
-                    </>
-                  ) : (
-                    <>
-                      <RotateCcw className="w-3.5 h-3.5" />
-                      <span>Replace</span>
-                    </>
-                  )}
-                </button>
-              </div>
+        {/* Loading State: Generating ✨ (M3.0 Requirement 13) */}
+        {isLoading ? (
+          <div className="flex-1 flex flex-col items-center justify-center gap-2.5 p-6 text-center animate-fadeIn">
+            <div className="flex items-center gap-2 text-indigo-400 font-semibold text-xs">
+              <Loader2 className="w-4 h-4 text-amber-300 animate-spin" />
+              <span>Generating ✨</span>
             </div>
-          );
-        })}
+            <p className="text-[11px] text-slate-400">Crafting natural responses with Gemini Flash...</p>
+          </div>
+        ) : errorMessage ? (
+          /* Error State with User-Friendly Message and Retry (M3.0 Requirement 14) */
+          <div className="flex-1 flex flex-col items-center justify-center gap-2.5 p-4 text-center animate-fadeIn">
+            <div className="flex items-center gap-1.5 text-rose-400 text-xs font-medium">
+              <AlertCircle className="w-4 h-4 shrink-0" />
+              <span>{errorMessage}</span>
+            </div>
+            <button
+              id="btn-retry-generation"
+              onClick={() => fetchSuggestions()}
+              className="px-3 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-semibold flex items-center gap-1.5 shadow-sm transition-all"
+            >
+              <RotateCcw className="w-3.5 h-3.5" />
+              <span>Retry</span>
+            </button>
+          </div>
+        ) : suggestions.length === 0 ? (
+          <div className="flex-1 flex flex-col items-center justify-center p-4 text-center text-xs text-slate-400">
+            <span>No suggestions generated yet. Tap an action above to start.</span>
+          </div>
+        ) : (
+          /* Suggestion Cards */
+          suggestions.map((suggestion, idx) => {
+            const isReplaced = replacedIndex === idx;
+            return (
+              <div
+                key={idx}
+                id={`ai-suggestion-card-${idx}`}
+                className={`p-2.5 rounded-xl border flex flex-col justify-between gap-2 transition-all duration-150 ${cardBg} ${
+                  isReplaced ? (isLight ? 'ring-2 ring-emerald-500/50 border-emerald-400' : 'ring-2 ring-emerald-400/50 border-emerald-500') : ''
+                }`}
+              >
+                <p className={`text-xs leading-relaxed font-sans select-text ${isLight ? 'text-slate-800' : 'text-slate-100'}`}>
+                  {suggestion}
+                </p>
+
+                <div className="flex items-center justify-end">
+                  <button
+                    id={`btn-replace-suggestion-${idx}`}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onSetInputTarget('host');
+                      handleReplace(suggestion, idx);
+                    }}
+                    className={`px-3 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-all shadow-sm ${
+                      isReplaced
+                        ? 'bg-emerald-600 text-white shadow-emerald-600/30'
+                        : 'bg-indigo-600 hover:bg-indigo-500 active:scale-95 text-white shadow-indigo-600/25'
+                    }`}
+                    title="Replace message text with this result"
+                  >
+                    {isReplaced ? (
+                      <>
+                        <Check className="w-3.5 h-3.5" />
+                        <span>Replaced</span>
+                      </>
+                    ) : (
+                      <>
+                        <RotateCcw className="w-3.5 h-3.5" />
+                        <span>Replace</span>
+                      </>
+                    )}
+                  </button>
+                </div>
+              </div>
+            );
+          })
+        )}
       </div>
     </div>
   );

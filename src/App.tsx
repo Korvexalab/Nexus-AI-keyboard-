@@ -450,14 +450,14 @@ export default function App() {
               <div className="flex items-center gap-2">
                 <h1 className="text-base font-bold text-slate-100 tracking-tight">Nexora AI Keyboard</h1>
                 <span className="px-2 py-0.5 rounded-full bg-indigo-500/10 text-indigo-400 text-xs font-semibold border border-indigo-500/20">
-                  Milestone 2
+                  Milestone 3.0
                 </span>
                 <span className="px-2 py-0.5 rounded-full bg-emerald-500/10 text-emerald-400 text-xs font-semibold border border-emerald-500/20 hidden sm:inline-flex items-center gap-1">
-                  <CheckCircle2 className="w-3 h-3" /> Command Center + Number Row
+                  <CheckCircle2 className="w-3 h-3" /> Real Gemini Integration
                 </span>
               </div>
               <p className="text-xs text-slate-400">
-                Midnight &amp; Light Themes • Permanent Number Row • AI Command Center • 100% Private
+                Midnight &amp; Light Themes • Gemini Flash • Firebase AI Logic • Replace Action • 100% Private
               </p>
             </div>
           </div>
@@ -547,28 +547,28 @@ export default function App() {
               <Sparkles className="w-4 h-4" />
             </div>
             <div>
-              <h2 className="text-sm font-semibold text-slate-100">Milestone 2 Deliverables — AI Command Center &amp; Number Row</h2>
+              <h2 className="text-sm font-semibold text-slate-100">Milestone 3.0 Deliverables — Real Gemini &amp; Firebase AI Logic</h2>
               <p className="text-xs text-slate-400">
-                Compact AI Command Center, permanent number row, personas, and direct InputConnection insertion.
+                Real Gemini Flash integration, Firebase AI Logic SDK, dynamic persona prompts, writing actions, and host text replacement.
               </p>
             </div>
           </div>
 
           <div className="flex flex-wrap items-center gap-2 text-xs">
             <span className="px-2.5 py-1 rounded-lg bg-slate-800/80 text-amber-300 border border-amber-500/20 flex items-center gap-1 font-medium">
-              <Sparkles className="w-3 h-3 text-amber-400" /> ✨ AI Command Center
+              <Sparkles className="w-3 h-3 text-amber-400" /> ✨ Real Gemini Flash
             </span>
             <span className="px-2.5 py-1 rounded-lg bg-slate-800/80 text-indigo-400 border border-indigo-500/20 flex items-center gap-1">
-              <CheckCircle2 className="w-3 h-3 text-emerald-400" /> Permanent Number Row
+              <CheckCircle2 className="w-3 h-3 text-emerald-400" /> Firebase AI Logic SDK
             </span>
             <span className="px-2.5 py-1 rounded-lg bg-slate-800/80 text-slate-300 border border-slate-700/60 flex items-center gap-1">
-              <CheckCircle2 className="w-3 h-3 text-emerald-400" /> Horizontal Personas
+              <CheckCircle2 className="w-3 h-3 text-emerald-400" /> Dynamic Personas
             </span>
             <span className="px-2.5 py-1 rounded-lg bg-slate-800/80 text-slate-300 border border-slate-700/60 flex items-center gap-1">
-              <CheckCircle2 className="w-3 h-3 text-emerald-400" /> Direct ic.commitText()
+              <CheckCircle2 className="w-3 h-3 text-emerald-400" /> [ Replace ] Action
             </span>
             <span className="px-2.5 py-1 rounded-lg bg-slate-800/80 text-emerald-400 border border-emerald-500/20 flex items-center gap-1">
-              <ShieldCheck className="w-3.5 h-3.5 text-emerald-400" /> Zero Network / Offline Mock
+              <ShieldCheck className="w-3.5 h-3.5 text-emerald-400" /> No Raw Key in App
             </span>
             <button
               onClick={() => setActiveTab('cicd')}

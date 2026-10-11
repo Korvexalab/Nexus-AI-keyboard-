@@ -74,12 +74,15 @@ import com.aikeyboard.ime.ai.AiAction
 import com.aikeyboard.ime.ai.AiPersona
 import com.aikeyboard.ime.ai.AiReplyGenerator
 import com.aikeyboard.ime.ai.AiReplyStyle
+import com.aikeyboard.ime.ai.AiRequest
 import com.aikeyboard.ime.ui.theme.KeyboardColorTokens
 import com.aikeyboard.ime.ui.theme.KeyboardThemes
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 data class ActiveKeyPopupInfo(
     val char: String,
@@ -103,6 +106,7 @@ fun ComposeKeyboardView(
     aiPromptFocused: Boolean? = null,
     customPrompt: String? = null,
     selectedAiStyle: AiReplyStyle? = null,
+    hostText: String = "",
     onSelectAiStyle: ((AiReplyStyle) -> Unit)? = null,
     onSetAiPromptFocused: ((Boolean) -> Unit)? = null,
     onClearAiPrompt: (() -> Unit)? = null,
@@ -265,18 +269,32 @@ fun ComposeKeyboardView(
                         },
                         isMoreExpanded = localIsMoreExpanded,
                         onToggleMoreExpanded = { expanded -> localIsMoreExpanded = expanded },
-                        hostText = effectiveCustomPrompt,
+                        hostText = if (hostText.isNotBlank()) hostText else effectiveCustomPrompt,
                         onReplace = { replacement ->
                             actionListener.onAiReplace(replacement)
                         },
                         onGenerate = { action, persona, context ->
-                            val generated = AiReplyGenerator.generateReply(action, persona, context)
-                            actionListener.onTextInput(generated)
-                            actionListener.onCloseAiPanel()
-                            localIsCustomPromptFocused = false
-                            localCustomPromptText = ""
-                            onSetAiPromptFocused?.invoke(false)
-                            onClearAiPrompt?.invoke()
+                            coroutineScope.launch {
+                                try {
+                                    val generated = withContext(Dispatchers.IO) {
+                                        AiReplyGenerator.currentGenerator.generate(
+                                            AiRequest(
+                                                action = action,
+                                                persona = persona,
+                                                context = context
+                                            )
+                                        )
+                                    }
+                                    actionListener.onTextInput(generated)
+                                    actionListener.onCloseAiPanel()
+                                    localIsCustomPromptFocused = false
+                                    localCustomPromptText = ""
+                                    onSetAiPromptFocused?.invoke(false)
+                                    onClearAiPrompt?.invoke()
+                                } catch (_: Throwable) {
+                                    // If generation fails, keep panel open to present error state
+                                }
+                            }
                         },
                         onInsertAskAiResult = { answer ->
                             actionListener.onTextInput(answer)

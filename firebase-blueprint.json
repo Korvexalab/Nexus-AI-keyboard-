@@ -1,0 +1,33 @@
+{
+  "entities": {
+    "userProfile": {
+      "title": "UserProfile",
+      "description": "User profile and keyboard settings",
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "themeId": {
+          "type": "string"
+        },
+        "selectedPersona": {
+          "type": "string"
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "required": [
+        "id"
+      ]
+    }
+  },
+  "firestore": {
+    "/users/{userId}": {
+      "schema": "userProfile",
+      "description": "User preferences and settings"
+    }
+  }
+}

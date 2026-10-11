@@ -1,0 +1,38 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    function isOwner(userId) {
+      return isAuthenticated() && request.auth.uid == userId;
+    }
+
+    function isValidId(id) {
+      return id is string && id.matches('^[a-zA-Z0-9_\\-]+$') && id.size() <= 128;
+    }
+
+    function isValidUserProfile(data) {
+      return data.keys().hasAll(['id']) &&
+        data.keys().hasOnly(['id', 'themeId', 'selectedPersona', 'updatedAt']) &&
+        data.id is string &&
+        data.id == request.auth.uid &&
+        (!('themeId' in data) || (data.themeId is string && data.themeId.size() <= 50)) &&
+        (!('selectedPersona' in data) || (data.selectedPersona is string && data.selectedPersona.size() <= 50)) &&
+        (!('updatedAt' in data) || data.updatedAt is string);
+    }
+
+    match /users/{userId} {
+      allow get: if isOwner(userId);
+      allow list: if false;
+      allow create: if isOwner(userId) && isValidId(userId) && isValidUserProfile(request.resource.data);
+      allow update: if isOwner(userId) && isValidId(userId) && isValidUserProfile(request.resource.data);
+      allow delete: if isOwner(userId) && isValidId(userId);
+    }
+
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}

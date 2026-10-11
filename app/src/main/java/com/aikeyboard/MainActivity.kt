@@ -37,6 +37,7 @@ import androidx.compose.ui.unit.sp
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import com.aikeyboard.ime.KeyboardPreferences
+import com.aikeyboard.ime.ai.AppCheckConfig
 import com.aikeyboard.ime.ui.theme.AIKeyboardTheme
 import com.aikeyboard.ime.ui.theme.KeyboardHeightOption
 import com.aikeyboard.ime.ui.theme.KeyboardThemeId
@@ -45,6 +46,7 @@ class MainActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        AppCheckConfig.initialize(applicationContext)
         setContent {
             AIKeyboardTheme {
                 MainSettingsAndOnboardingScreen()

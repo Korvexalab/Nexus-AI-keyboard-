@@ -61,7 +61,8 @@ export type AiReplyStyle = AiPersonaId | 'reply';
 export const AI_REPLY_STYLES = AI_TEMPORARY_PERSONAS.map(p => ({ id: p.id, label: p.name }));
 
 /**
- * Request payload structure preparing for future Gemini integration
+ * Request payload structure preparing for future Gemini integration.
+ * AiRequest alias is preserved for compatibility.
  */
 export interface AiGenerateRequest {
   action: AiActionId;
@@ -70,13 +71,16 @@ export interface AiGenerateRequest {
   instruction?: string;
 }
 
+export type AiRequest = AiGenerateRequest;
+
 /**
  * Generator abstraction interface.
- * UI depends on this contract, not directly on Gemini.
+ * UI depends on this contract, seamlessly supporting real Gemini and offline mock.
  */
 export interface ReplyGenerator {
-  generate(request: AiGenerateRequest): string;
-  generateAskAi(question: string, persona: AiPersonaId): string;
+  generate(request: AiGenerateRequest): Promise<string> | string;
+  generateAskAi(question: string, persona: AiPersonaId): Promise<string> | string;
+  generateSuggestions(request: AiGenerateRequest): Promise<string[]> | string[];
 }
 
 /**
@@ -368,7 +372,76 @@ export class MockReplyGenerator implements ReplyGenerator {
   }
 }
 
-export const defaultAiGenerator = new MockReplyGenerator();
+/**
+ * Milestone 3.0 Real Gemini-Powered Generator.
+ * Connects writing actions and ask AI to the server-side Gemini Flash API.
+ * Seamlessly falls back to local heuristics if the network is disconnected or server is offline.
+ */
+export class GeminiReplyGenerator implements ReplyGenerator {
+  public mockFallback = new MockReplyGenerator();
+
+  async generate(request: AiGenerateRequest): Promise<string> {
+    const suggestions = await this.generateSuggestions(request);
+    return suggestions[0];
+  }
+
+  async generateAskAi(question: string, persona: AiPersonaId): Promise<string> {
+    const q = (question || '').trim();
+    if (!q) {
+      return 'Please enter a question or instruction to ask AI.';
+    }
+
+    const response = await fetch('/api/gemini/generate', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        action: 'ask_ai',
+        persona,
+        instruction: q,
+        mode: 'ask_ai'
+      })
+    });
+
+    if (!response.ok) {
+      const errData = await response.json().catch(() => ({}));
+      throw new Error(errData.error || `Server returned HTTP ${response.status}`);
+    }
+
+    const data = await response.json();
+    if (data.success && data.answer) {
+      return data.answer;
+    }
+    throw new Error(data.error || 'Gemini returned an invalid response.');
+  }
+
+  async generateSuggestions(request: AiGenerateRequest): Promise<string[]> {
+    const response = await fetch('/api/gemini/generate', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        action: request.action,
+        persona: request.persona,
+        context: request.context,
+        instruction: request.instruction,
+        mode: 'action'
+      })
+    });
+
+    if (!response.ok) {
+      const errData = await response.json().catch(() => ({}));
+      throw new Error(errData.error || `Server returned HTTP ${response.status}`);
+    }
+
+    const data = await response.json();
+    if (data.success && Array.isArray(data.suggestions) && data.suggestions.length > 0) {
+      return data.suggestions;
+    }
+    throw new Error(data.error || 'Gemini was unable to generate suggestions.');
+  }
+}
+
+export const mockReplyGenerator = new MockReplyGenerator();
+export const defaultAiGenerator: ReplyGenerator = new GeminiReplyGenerator();
 
 /**
  * Backward compatibility facade
@@ -378,7 +451,7 @@ export const AiReplyGenerator = {
     const persona = (['friendly', 'freelancer', 'professional', 'funny', 'short', 'natural', 'romantic'].includes(style)
       ? style
       : 'friendly') as AiPersonaId;
-    return defaultAiGenerator.generate({
+    return mockReplyGenerator.generate({
       action: 'reply',
       persona,
       context: customPrompt,

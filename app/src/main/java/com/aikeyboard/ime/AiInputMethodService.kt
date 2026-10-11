@@ -11,14 +11,22 @@ import android.view.inputmethod.EditorInfo
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.ui.platform.ComposeView
 import androidx.compose.ui.platform.ViewCompositionStrategy
+import androidx.lifecycle.lifecycleScope
 import com.aikeyboard.MainActivity
+import com.aikeyboard.ime.ai.AiAction
+import com.aikeyboard.ime.ai.AiPersona
 import com.aikeyboard.ime.ai.AiReplyGenerator
 import com.aikeyboard.ime.ai.AiReplyStyle
+import com.aikeyboard.ime.ai.AiRequest
+import com.aikeyboard.ime.ai.AppCheckConfig
 import com.aikeyboard.ime.ui.ComposeKeyboardView
 import com.aikeyboard.ime.ui.theme.AIKeyboardTheme
 import com.aikeyboard.ime.ui.theme.KeyboardHeightOption
 import com.aikeyboard.ime.ui.theme.KeyboardThemeId
 import com.aikeyboard.ime.ui.theme.KeyboardThemes
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 /**
  * Production-ready Android InputMethodService with Milestone 1C:
@@ -33,6 +41,7 @@ class AiInputMethodService : ComposeLifecycleInputMethodService(), KeyboardActio
     private val aiPanelVisible = mutableStateOf(false)
     private val aiPromptFocused = mutableStateOf(false)
     private val customPromptTextState = mutableStateOf("")
+    private val hostTextState = mutableStateOf("")
     private val selectedAiStyleState = mutableStateOf(AiReplyStyle.REPLY)
 
     // Milestone 1C: Dynamic Local Settings
@@ -53,6 +62,7 @@ class AiInputMethodService : ComposeLifecycleInputMethodService(), KeyboardActio
         super.onCreate()
         preferences = KeyboardPreferences(this)
         loadPreferences()
+        AppCheckConfig.initialize(applicationContext)
     }
 
     private fun loadPreferences() {
@@ -87,6 +97,7 @@ class AiInputMethodService : ComposeLifecycleInputMethodService(), KeyboardActio
                     aiPromptFocused = aiPromptFocused.value,
                     customPrompt = customPromptTextState.value,
                     selectedAiStyle = selectedAiStyleState.value,
+                    hostText = hostTextState.value,
                     onSelectAiStyle = { selectedAiStyleState.value = it },
                     onSetAiPromptFocused = { aiPromptFocused.value = it },
                     onClearAiPrompt = { customPromptTextState.value = "" },
@@ -113,6 +124,7 @@ class AiInputMethodService : ComposeLifecycleInputMethodService(), KeyboardActio
             aiPanelVisible.value = false
             aiPromptFocused.value = false
             customPromptTextState.value = ""
+            hostTextState.value = ""
         }
     }
 
@@ -249,9 +261,15 @@ class AiInputMethodService : ComposeLifecycleInputMethodService(), KeyboardActio
     // --- Toolbar & AI Reply Actions ---
 
     override fun onAiClicked() {
-        // Milestone 2: Toggle the compact AI reply panel
-        aiPanelVisible.value = !aiPanelVisible.value
-        if (!aiPanelVisible.value) {
+        // Milestone 2 & 3.2: Toggle AI panel and capture host context from InputConnection
+        val willShow = !aiPanelVisible.value
+        aiPanelVisible.value = willShow
+        if (willShow) {
+            val ic = currentInputConnection
+            val selected = ic?.getSelectedText(0)?.toString()
+            val before = ic?.getTextBeforeCursor(1000, 0)?.toString() ?: ""
+            hostTextState.value = if (!selected.isNullOrBlank()) selected else before
+        } else {
             aiPromptFocused.value = false
         }
     }
@@ -279,20 +297,35 @@ class AiInputMethodService : ComposeLifecycleInputMethodService(), KeyboardActio
 
     override fun onAiGenerate(style: String, customPrompt: String) {
         val replyStyle = AiReplyStyle.fromString(style)
-        val mockReply = AiReplyGenerator.generateMockReply(replyStyle, customPrompt)
-
-        val ic = currentInputConnection ?: return
-        val selectedText = ic.getSelectedText(0)
-        if (!selectedText.isNullOrEmpty()) {
-            ic.commitText(mockReply, 1)
-        } else {
-            ic.commitText(mockReply, 1)
+        val persona = when (replyStyle) {
+            AiReplyStyle.REPLY -> AiPersona.FRIENDLY
+            AiReplyStyle.FRIENDLY -> AiPersona.FRIENDLY
+            AiReplyStyle.SHORT -> AiPersona.SHORT
+            AiReplyStyle.PROFESSIONAL -> AiPersona.PROFESSIONAL
+            AiReplyStyle.FUNNY -> AiPersona.FUNNY
         }
+        val context = if (customPrompt.isNotBlank()) customPrompt else hostTextState.value
 
-        // Close AI panel and reset focus after insertion, leaving user on normal keyboard
-        aiPanelVisible.value = false
-        aiPromptFocused.value = false
-        customPromptTextState.value = ""
+        lifecycleScope.launch {
+            try {
+                val generated = withContext(Dispatchers.IO) {
+                    AiReplyGenerator.currentGenerator.generate(
+                        AiRequest(
+                            action = AiAction.REPLY,
+                            persona = persona,
+                            context = context
+                        )
+                    )
+                }
+                currentInputConnection?.commitText(generated, 1)
+            } catch (_: Throwable) {
+                // If live generation fails, keep panel open and report error in UI
+            } finally {
+                aiPanelVisible.value = false
+                aiPromptFocused.value = false
+                customPromptTextState.value = ""
+            }
+        }
     }
 
     override fun onGifClicked() {
