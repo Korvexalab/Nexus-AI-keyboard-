@@ -28,7 +28,9 @@ const ai = new GoogleGenAI({
 });
 
 // Centralized model configuration (M3.0 Requirement 2)
-const GEMINI_MODEL = 'gemini-3.8-flash';
+// Primary fast flash model with active quota, plus automatic fallback models
+const CANDIDATE_MODELS = ['gemini-3.1-flash-lite', 'gemini-3.8-flash', 'gemini-2.5-flash'];
+const GEMINI_MODEL = CANDIDATE_MODELS[0];
 
 /**
  * Builds dynamic persona guidance matching Milestone 3.0 specification.
@@ -104,7 +106,7 @@ function formatGeminiErrorMessage(err: any): string {
     return 'Gemini is currently experiencing high demand. Please tap retry in a few moments.';
   }
   if (msg.includes('429') || msg.includes('RESOURCE_EXHAUSTED') || msg.includes('quota')) {
-    return 'Gemini rate limit reached. Please wait a few moments and tap retry.';
+    return 'Gemini rate limit reached. Please wait a moment and tap retry.';
   }
   if (msg.includes('timed out') || msg.includes('timeout')) {
     return 'Gemini request timed out. Please tap retry.';
@@ -112,19 +114,50 @@ function formatGeminiErrorMessage(err: any): string {
   return 'Unable to generate response with Gemini. Please tap retry.';
 }
 
-async function callGeminiWithTimeout(params: any, timeoutMs = 12000): Promise<any> {
-  let timer: NodeJS.Timeout;
-  const timeoutPromise = new Promise((_, reject) => {
-    timer = setTimeout(() => reject(new Error('Gemini API call timed out')), timeoutMs);
-  });
-  try {
-    const result = await Promise.race([ai.models.generateContent(params), timeoutPromise]);
-    clearTimeout(timer!);
-    return result;
-  } catch (err) {
-    clearTimeout(timer!);
-    throw err;
+async function callGeminiWithTimeout(
+  prompt: string,
+  config: Record<string, any> = {},
+  timeoutMs = 12000
+): Promise<any> {
+  let lastError: any = null;
+
+  for (const modelName of CANDIDATE_MODELS) {
+    let timer: NodeJS.Timeout | undefined;
+    try {
+      const timeoutPromise = new Promise((_, reject) => {
+        timer = setTimeout(() => reject(new Error('Gemini API call timed out')), timeoutMs);
+      });
+
+      const callPromise = ai.models.generateContent({
+        model: modelName,
+        contents: prompt,
+        config,
+      });
+
+      const result = await Promise.race([callPromise, timeoutPromise]);
+      if (timer) clearTimeout(timer);
+      return result;
+    } catch (err: any) {
+      if (timer) clearTimeout(timer);
+      lastError = err;
+      const msg = err?.message || String(err || '');
+      // If 429 quota exhausted or 503 unavailable, try next candidate model
+      if (
+        msg.includes('429') ||
+        msg.includes('RESOURCE_EXHAUSTED') ||
+        msg.includes('quota') ||
+        msg.includes('503') ||
+        msg.includes('not found') ||
+        msg.includes('404')
+      ) {
+        console.warn(`Model ${modelName} encountered: ${msg.slice(0, 120)}. Attempting fallback candidate...`);
+        continue;
+      }
+      throw err;
+    }
   }
+
+  throw lastError || new Error('All candidate Gemini models failed.');
 }
 
 /**
@@ -222,13 +255,7 @@ Instructions:
 - Directly answer the question.`;
 
       try {
-        const response = await callGeminiWithTimeout({
-          model: GEMINI_MODEL,
-          contents: prompt,
-          config: {
-            temperature: 0.7,
-          },
-        }, 12000);
+        const response = await callGeminiWithTimeout(prompt, { temperature: 0.7 }, 12000);
 
         const answer = response.text?.trim() || 'No response generated.';
         return res.json({
@@ -263,13 +290,7 @@ CRITICAL RULES:
 6. Preserve the user's core intent.`;
 
     try {
-      const response = await callGeminiWithTimeout({
-        model: GEMINI_MODEL,
-        contents: prompt,
-        config: {
-          temperature: 0.75,
-        },
-      }, 12000);
+      const response = await callGeminiWithTimeout(prompt, { temperature: 0.75 }, 12000);
 
       const rawText = response.text?.trim() || '';
 

@@ -380,6 +380,31 @@ export class MockReplyGenerator implements ReplyGenerator {
 export class GeminiReplyGenerator implements ReplyGenerator {
   public mockFallback = new MockReplyGenerator();
 
+  private async parseApiResponse(response: Response): Promise<any> {
+    const rawText = await response.text().catch(() => '');
+    let parsed: any = null;
+    try {
+      parsed = rawText ? JSON.parse(rawText) : null;
+    } catch {
+      parsed = null;
+    }
+
+    if (!response.ok) {
+      const errorMsg =
+        parsed?.error ||
+        parsed?.message ||
+        (rawText.startsWith('<') ? 'Server is currently initializing. Please tap retry.' : rawText) ||
+        `Server returned HTTP ${response.status}`;
+      throw new Error(errorMsg);
+    }
+
+    if (!parsed) {
+      throw new Error('Server returned an unexpected response format. Please tap retry.');
+    }
+
+    return parsed;
+  }
+
   async generate(request: AiGenerateRequest): Promise<string> {
     const suggestions = await this.generateSuggestions(request);
     return suggestions[0];
@@ -402,12 +427,7 @@ export class GeminiReplyGenerator implements ReplyGenerator {
       })
     });
 
-    if (!response.ok) {
-      const errData = await response.json().catch(() => ({}));
-      throw new Error(errData.error || `Server returned HTTP ${response.status}`);
-    }
-
-    const data = await response.json();
+    const data = await this.parseApiResponse(response);
     if (data.success && data.answer) {
       return data.answer;
     }
@@ -427,12 +447,7 @@ export class GeminiReplyGenerator implements ReplyGenerator {
       })
     });
 
-    if (!response.ok) {
-      const errData = await response.json().catch(() => ({}));
-      throw new Error(errData.error || `Server returned HTTP ${response.status}`);
-    }
-
-    const data = await response.json();
+    const data = await this.parseApiResponse(response);
     if (data.success && Array.isArray(data.suggestions) && data.suggestions.length > 0) {
       return data.suggestions;
     }

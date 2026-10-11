@@ -116,7 +116,11 @@ export const AiReplyPanel: React.FC<AiReplyPanelProps> = ({
     }
   };
 
-  // Fetch real Gemini suggestions with debouncing and error handling
+  // Keep ref of latest hostText so keystrokes in chat bar don't auto-trigger Gemini
+  const hostTextRef = useRef(hostText);
+  hostTextRef.current = hostText;
+
+  // Fetch real Gemini suggestions on explicit user actions (action change, persona change, panel open, retry)
   const fetchSuggestions = useCallback(async () => {
     if (panelMode !== 'action_board') return;
 
@@ -128,7 +132,7 @@ export const AiReplyPanel: React.FC<AiReplyPanelProps> = ({
       const results = await defaultAiGenerator.generateSuggestions({
         action: selectedAction,
         persona: selectedPersona,
-        context: hostText
+        context: hostTextRef.current
       });
 
       if (requestId === currentRequestIdRef.current) {
@@ -138,11 +142,12 @@ export const AiReplyPanel: React.FC<AiReplyPanelProps> = ({
     } catch (err: any) {
       if (requestId === currentRequestIdRef.current) {
         console.error('Failed to fetch Gemini suggestions:', err);
-        setErrorMessage('Unable to connect to Gemini. Tap retry to reload.');
+        const msg = err?.message || 'Unable to connect to Gemini. Tap retry to reload.';
+        setErrorMessage(msg);
         setIsLoading(false);
       }
     }
-  }, [panelMode, selectedAction, selectedPersona, hostText]);
+  }, [panelMode, selectedAction, selectedPersona]);
 
   useEffect(() => {
     fetchSuggestions();
@@ -168,9 +173,10 @@ export const AiReplyPanel: React.FC<AiReplyPanelProps> = ({
     try {
       const answer = await defaultAiGenerator.generateAskAi(contextText, selectedPersona);
       setAskAiAnswer(answer);
-    } catch (err) {
+    } catch (err: any) {
       console.error('Ask AI error:', err);
-      setAskAiError('Unable to get an answer right now. Please try again.');
+      const msg = err?.message || 'Unable to get an answer right now. Please try again.';
+      setAskAiError(msg);
     } finally {
       setIsAskAiLoading(false);
     }

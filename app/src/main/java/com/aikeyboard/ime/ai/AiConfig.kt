@@ -9,9 +9,10 @@ package com.aikeyboard.ime.ai
 object AiConfig {
     /**
      * Centralized Gemini Flash model for fast, low-latency mobile keyboard text generation.
-     * Uses the currently supported and verified gemini-3.8-flash model.
+     * Uses currently supported models: gemini-3.8-flash and gemini-3.1-flash-lite.
      */
     const val GEMINI_FLASH_MODEL = "gemini-3.8-flash"
+    const val GEMINI_FLASH_LITE_MODEL = "gemini-3.1-flash-lite"
 
     /**
      * Generation configuration parameters
