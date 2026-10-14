@@ -59,44 +59,11 @@ jobs:
             echo "$GOOGLE_SERVICES_JSON_SECRET" > app/google-services.json
           elif [ ! -f "app/google-services.json" ]; then
             echo "Generating google-services.json for Firebase build..."
-            cat << 'EOF' > app/google-services.json
-{
-  "project_info": {
-    "project_number": "382456528361",
-    "project_id": "gen-lang-client-0126286835",
-    "storage_bucket": "gen-lang-client-0126286835.firebasestorage.app"
-  },
-  "client": [
-    {
-      "client_info": {
-        "mobilesdk_app_id": "1:382456528361:android:3d458c0ad6431c41849f78",
-        "android_client_info": {
-          "package_name": "com.aikeyboard"
-        }
-      },
-      "oauth_client": [
-        {
-          "client_id": "382456528361-ut4puvp30vm9c6t9a5sohj1rg1h0jfdi.apps.googleusercontent.com",
-          "client_type": 3
-        }
-      ],
-      "api_key": [
-        {
-          "current_key": "AIzaSyDkDXoDGykjyq8q7foAyb10BbIU54VnfHM"
-        }
-      ],
-      "services": {
-        "appinvite_service": {
-          "other_platform_oauth_client": []
-        }
-      }
-    }
-  ],
-  "configuration_version": "1"
-}
-EOF
+            echo 'ewogICJwcm9qZWN0X2luZm8iOiB7CiAgICAicHJvamVjdF9udW1iZXIiOiAiMzgyNDU2NTI4MzYxIiwKICAgICJwcm9qZWN0X2lkIjogImdlbi1sYW5nLWNsaWVudC0wMTI2Mjg2ODM1IiwKICAgICJzdG9yYWdlX2J1Y2tldCI6ICJnZW4tbGFuZy1jbGllbnQtMDEyNjI4NjgzNS5maXJlYmFzZXN0b3JhZ2UuYXBwIgogIH0sCiAgImNsaWVudCI6IFsKICAgIHsKICAgICAgImNsaWVudF9pbmZvIjogewogICAgICAgICJtb2JpbGVzZGtfYXBwX2lkIjogIjE6MzgyNDU2NTI4MzYxOmFuZHJvaWQ6M2Q0NThjMGFkNjQzMWM0MTg0OWY3OCIsCiAgICAgICAgImFuZHJvaWRfY2xpZW50X2luZm8iOiB7CiAgICAgICAgICAicGFja2FnZV9uYW1lIjogImNvbS5haWtleWJvYXJkIgogICAgICAgIH0KICAgICAgfSwKICAgICAgIm9hdXRoX2NsaWVudCI6IFsKICAgICAgICB7CiAgICAgICAgICAiY2xpZW50X2lkIjogIjM4MjQ1NjUyODM2MS11dDRwdXZwMzB2bTljNnQ5YTVzb2hqMXJnMWgwamZkaS5hcHBzLmdvb2dsZXVzZXJjb250ZW50LmNvbSIsCiAgICAgICAgICAiY2xpZW50X3R5cGUiOiAzCiAgICAgICAgfQogICAgICBdLAogICAgICAiYXBpX2tleSI6IFsKICAgICAgICB7CiAgICAgICAgICAiY3VycmVudF9rZXkiOiAiQUl6YVN5RGtEWG9ER3lranlxOHE3Zm9BeWIxMEJiSVU1NFZuZkhNIgogICAgICAgIH0KICAgICAgXSwKICAgICAgInNlcnZpY2VzIjogewogICAgICAgICJhcHBpbnZpdGVfc2VydmljZSI6IHsKICAgICAgICAgICJvdGhlcl9wbGF0Zm9ybV9vYXV0aF9jbGllbnQiOiBbXQogICAgICAgIH0KICAgICAgfQogICAgfQogIF0sCiAgImNvbmZpZ3VyYXRpb25fdmVyc2lvbiI6ICIxIgp9Cg==' | base64 -d > app/google-services.json
           fi
-          echo "Confirmed app/google-services.json is present."
+          echo "Confirmed app/google-services.json exists:"
+          ls -lh app/google-services.json
+
 
       - name: Run Unit Tests (Optional)
         run: |
