@@ -49,6 +49,55 @@ jobs:
           echo "android.useAndroidX=true" >> ~/.gradle/gradle.properties
           echo "android.nonTransitiveRClass=true" >> ~/.gradle/gradle.properties
 
+      - name: Configure Google Services (google-services.json)
+        env:
+          GOOGLE_SERVICES_JSON_SECRET: ${{ secrets.GOOGLE_SERVICES_JSON }}
+        run: |
+          mkdir -p app
+          if [ -n "$GOOGLE_SERVICES_JSON_SECRET" ]; then
+            echo "Using google-services.json provided via repository secret..."
+            echo "$GOOGLE_SERVICES_JSON_SECRET" > app/google-services.json
+          elif [ ! -f "app/google-services.json" ]; then
+            echo "Generating google-services.json for Firebase build..."
+            cat << 'EOF' > app/google-services.json
+{
+  "project_info": {
+    "project_number": "382456528361",
+    "project_id": "gen-lang-client-0126286835",
+    "storage_bucket": "gen-lang-client-0126286835.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:382456528361:android:3d458c0ad6431c41849f78",
+        "android_client_info": {
+          "package_name": "com.aikeyboard"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "382456528361-ut4puvp30vm9c6t9a5sohj1rg1h0jfdi.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyDkDXoDGykjyq8q7foAyb10BbIU54VnfHM"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
+EOF
+          fi
+          echo "Confirmed app/google-services.json is present."
+
       - name: Run Unit Tests (Optional)
         run: |
           echo "Running unit tests if present..."

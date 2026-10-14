@@ -5,6 +5,49 @@ plugins {
     id("com.google.gms.google-services")
 }
 
+// Self-healing check for google-services.json in CI/CD and clean builds
+val googleServicesFile = file("google-services.json")
+if (!googleServicesFile.exists()) {
+    googleServicesFile.writeText(
+        """
+        {
+          "project_info": {
+            "project_number": "382456528361",
+            "project_id": "gen-lang-client-0126286835",
+            "storage_bucket": "gen-lang-client-0126286835.firebasestorage.app"
+          },
+          "client": [
+            {
+              "client_info": {
+                "mobilesdk_app_id": "1:382456528361:android:3d458c0ad6431c41849f78",
+                "android_client_info": {
+                  "package_name": "com.aikeyboard"
+                }
+              },
+              "oauth_client": [
+                {
+                  "client_id": "382456528361-ut4puvp30vm9c6t9a5sohj1rg1h0jfdi.apps.googleusercontent.com",
+                  "client_type": 3
+                }
+              ],
+              "api_key": [
+                {
+                  "current_key": "AIzaSyDkDXoDGykjyq8q7foAyb10BbIU54VnfHM"
+                }
+              ],
+              "services": {
+                "appinvite_service": {
+                  "other_platform_oauth_client": []
+                }
+              }
+            }
+          ],
+          "configuration_version": "1"
+        }
+        """.trimIndent()
+    )
+}
+
 android {
     namespace = "com.aikeyboard"
     compileSdk = 34
