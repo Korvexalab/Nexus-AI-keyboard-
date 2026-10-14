@@ -4161,7 +4161,7 @@ dependencies {
     // Milestone 3.0 & 3.2: Firebase AI Logic, App Check & Coroutines
     val firebaseBom = platform("com.google.firebase:firebase-bom:33.4.0")
     implementation(firebaseBom)
-    implementation("com.google.firebase:firebase-vertexai")
+    implementation("com.google.firebase:firebase-vertexai:16.2.0")
     implementation("com.google.firebase:firebase-appcheck-playintegrity")
     debugImplementation("com.google.firebase:firebase-appcheck-debug")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.8.1")

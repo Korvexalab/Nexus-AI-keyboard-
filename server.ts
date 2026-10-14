@@ -117,7 +117,7 @@ function formatGeminiErrorMessage(err: any): string {
 async function callGeminiWithTimeout(
   prompt: string,
   config: Record<string, any> = {},
-  timeoutMs = 12000
+  timeoutMs = 20000
 ): Promise<any> {
   let lastError: any = null;
 
@@ -255,7 +255,7 @@ Instructions:
 - Directly answer the question.`;
 
       try {
-        const response = await callGeminiWithTimeout(prompt, { temperature: 0.7 }, 12000);
+        const response = await callGeminiWithTimeout(prompt, { temperature: 0.7 }, 20000);
 
         const answer = response.text?.trim() || 'No response generated.';
         return res.json({
@@ -290,7 +290,7 @@ CRITICAL RULES:
 6. Preserve the user's core intent.`;
 
     try {
-      const response = await callGeminiWithTimeout(prompt, { temperature: 0.75 }, 12000);
+      const response = await callGeminiWithTimeout(prompt, { temperature: 0.75 }, 20000);
 
       const rawText = response.text?.trim() || '';
 
