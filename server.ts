@@ -11,7 +11,8 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 const app = express();
-const PORT = process.env.PORT || 3000;
+// Runtime Environment requires dev server to run on port 3000
+const PORT = 3000;
 const isProduction = process.env.NODE_ENV === 'production';
 
 app.use(express.json());
@@ -354,8 +355,8 @@ async function startServer() {
     });
   }
 
-  app.listen(PORT, () => {
-    console.log(`Nexora AI Keyboard Server listening on http://localhost:${PORT}`);
+  app.listen(PORT, '0.0.0.0', () => {
+    console.log(`Nexora AI Keyboard Server listening on http://0.0.0.0:${PORT}`);
   });
 }
 

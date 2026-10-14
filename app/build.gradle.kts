@@ -72,7 +72,7 @@ dependencies {
     debugImplementation("androidx.compose.ui:ui-test-manifest")
 
     // Milestone 3.0 & 3.2: Firebase AI Logic, App Check & Coroutines
-    val firebaseBom = platform("com.google.firebase:firebase-bom:33.4.0")
+    val firebaseBom = platform("com.google.firebase:firebase-bom:33.10.0")
     implementation(firebaseBom)
     implementation("com.google.firebase:firebase-vertexai:16.2.0")
     implementation("com.google.firebase:firebase-appcheck-playintegrity")
