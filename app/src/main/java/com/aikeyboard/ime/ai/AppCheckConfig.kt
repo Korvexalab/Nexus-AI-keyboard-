@@ -1,6 +1,7 @@
 package com.aikeyboard.ime.ai
 
 import android.content.Context
+import android.content.pm.ApplicationInfo
 import com.aikeyboard.BuildConfig
 import com.google.firebase.FirebaseApp
 import com.google.firebase.appcheck.FirebaseAppCheck
@@ -20,7 +21,12 @@ object AppCheckConfig {
         try {
             if (FirebaseApp.getApps(context).isNotEmpty()) {
                 val appCheck = FirebaseAppCheck.getInstance()
-                if (BuildConfig.DEBUG) {
+                val isDebug = try {
+                    BuildConfig.DEBUG
+                } catch (_: Throwable) {
+                    (context.applicationInfo.flags and ApplicationInfo.FLAG_DEBUGGABLE) != 0
+                }
+                if (isDebug) {
                     appCheck.installAppCheckProviderFactory(
                         DebugAppCheckProviderFactory.getInstance()
                     )
