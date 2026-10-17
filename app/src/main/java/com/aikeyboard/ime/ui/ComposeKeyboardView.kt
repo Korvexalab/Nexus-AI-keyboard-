@@ -109,6 +109,7 @@ fun ComposeKeyboardView(
     hostText: String = "",
     onSelectAiStyle: ((AiReplyStyle) -> Unit)? = null,
     onSetAiPromptFocused: ((Boolean) -> Unit)? = null,
+    onClearAiPrompt: (() -> Unit)? = null,
     suggestions: List<String> = emptyList(),
     autocorrectCandidate: String? = null,
     preferences: KeyboardPreferences? = null,

@@ -183,64 +183,32 @@ fun MainSettingsAndOnboardingScreen() {
                 letterSpacing = 1.sp
             )
 
-            // AI Engine Mode Selection (Offline vs Cloud Gemini)
+            // AI Engine Overview Card (Cloud Gemini)
             Card(
                 modifier = Modifier.fillMaxWidth(),
                 colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
             ) {
                 Column(
                     modifier = Modifier.padding(16.dp),
-                    verticalArrangement = Arrangement.spacedBy(12.dp)
+                    verticalArrangement = Arrangement.spacedBy(10.dp)
                 ) {
                     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         Text("✨", fontSize = 16.sp)
                         Column {
-                            Text("AI Engine Mode", fontWeight = FontWeight.SemiBold)
+                            Text("Cloud AI Generation: Google Gemini", fontWeight = FontWeight.SemiBold)
                             Text(
-                                text = if (isOfflineAiOnly) "Smart Offline AI: 100% on-device & private (no network required)"
-                                else "Cloud Gemini: Live Gemini 2.0 Flash generation via Firebase",
+                                text = "Live Gemini 2.0 Flash generation via Firebase AI Logic",
                                 fontSize = 12.sp,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
                         }
                     }
-
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(8.dp)
-                    ) {
-                        ThemeOptionCard(
-                            title = "⚡ Offline AI",
-                            subtitle = "Private & instant",
-                            isSelected = isOfflineAiOnly,
-                            modifier = Modifier.weight(1f),
-                            onClick = {
-                                isOfflineAiOnly = true
-                                prefs.isOfflineAiOnly = true
-                                com.aikeyboard.ime.ai.AiReplyGenerator.setOfflineMode(true)
-                            }
-                        )
-                        ThemeOptionCard(
-                            title = "✨ Cloud Gemini",
-                            subtitle = "Gemini 2.0 Flash",
-                            isSelected = !isOfflineAiOnly,
-                            modifier = Modifier.weight(1f),
-                            onClick = {
-                                isOfflineAiOnly = false
-                                prefs.isOfflineAiOnly = false
-                                com.aikeyboard.ime.ai.AiReplyGenerator.setOfflineMode(false)
-                            }
-                        )
-                    }
-
-                    if (!isOfflineAiOnly) {
-                        Text(
-                            text = "Note: Cloud Gemini requires firebasevertexai.googleapis.com enabled in your Google Cloud / Firebase console for project gen-lang-client-0126286835.",
-                            fontSize = 11.sp,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.8f),
-                            lineHeight = 15.sp
-                        )
-                    }
+                    Text(
+                        text = "Writing Actions (Reply, Continue, Start, Ask AI, Rewrite, Create) and Personas are powered directly by Cloud Gemini AI for authentic conversational responses without mock templates. On-device autocorrect and word suggestions operate locally with 0ms latency.",
+                        fontSize = 11.sp,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.8f),
+                        lineHeight = 15.sp
+                    )
                 }
             }
 

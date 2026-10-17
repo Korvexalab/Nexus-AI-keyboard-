@@ -172,7 +172,7 @@ fun AiReplyPanelView(
             } catch (e: Throwable) {
                 val isApi = e.message?.contains("firebasevertexai.googleapis.com", ignoreCase = true) == true ||
                             e.message?.contains("has not been used in project", ignoreCase = true) == true ||
-                            e.message?.contains("API has not been enabled", ignoreCase = true)
+                            e.message?.contains("API has not been enabled", ignoreCase = true) == true
                 actionGenerationState = AiGenerationState.Error(
                     message = if (isApi) {
                         "Vertex AI API is not enabled yet in your Firebase project (gen-lang-client-0126286835)."
@@ -376,7 +376,7 @@ fun AiReplyPanelView(
                             } catch (e: Throwable) {
                                 val isApi = e.message?.contains("firebasevertexai.googleapis.com", ignoreCase = true) == true ||
                                             e.message?.contains("has not been used in project", ignoreCase = true) == true ||
-                                            e.message?.contains("API has not been enabled", ignoreCase = true)
+                                            e.message?.contains("API has not been enabled", ignoreCase = true) == true
                                 askAiState = AskAiState.Error(
                                     message = if (isApi) {
                                         "Vertex AI API is not enabled yet in your Firebase project (gen-lang-client-0126286835)."
