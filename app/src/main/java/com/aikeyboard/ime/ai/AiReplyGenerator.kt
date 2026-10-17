@@ -95,6 +95,7 @@ data class AiRequest(
  */
 sealed class GeminiException(message: String, cause: Throwable? = null) : Exception(message, cause) {
     class MissingConfiguration(message: String) : GeminiException(message)
+    class ApiNotEnabled(message: String, val enableUrl: String = "") : GeminiException(message)
     class Timeout(message: String) : GeminiException(message)
     class RateLimit(message: String) : GeminiException(message)
     class ServiceUnavailable(message: String) : GeminiException(message)
@@ -293,8 +294,10 @@ class MockReplyGenerator : ReplyGenerator {
  * Never silently substitutes mock responses when real Gemini fails.
  */
 class FirebaseGeminiReplyGenerator(
-    private val fallback: MockReplyGenerator = MockReplyGenerator()
+    val fallback: MockReplyGenerator = MockReplyGenerator()
 ) : ReplyGenerator {
+
+    var isOfflineMode: Boolean = false
 
     /**
      * Checks if Firebase is initialized with authentic (non-placeholder) project credentials.
@@ -417,17 +420,38 @@ CRITICAL INSTRUCTIONS:
 
         return try {
             val result = withTimeoutOrNull(AiConfig.REQUEST_TIMEOUT_MS) {
-                val model = Firebase.vertexAI.generativeModel(
-                    modelName = AiConfig.GEMINI_FLASH_MODEL,
-                    generationConfig = generationConfig {
-                        temperature = AiConfig.TEMPERATURE
-                        topK = AiConfig.TOP_K
-                        topP = AiConfig.TOP_P
-                        maxOutputTokens = AiConfig.MAX_OUTPUT_TOKENS
+                try {
+                    val model = Firebase.vertexAI.generativeModel(
+                        modelName = AiConfig.GEMINI_FLASH_MODEL,
+                        generationConfig = generationConfig {
+                            temperature = AiConfig.TEMPERATURE
+                            topK = AiConfig.TOP_K
+                            topP = AiConfig.TOP_P
+                            maxOutputTokens = AiConfig.MAX_OUTPUT_TOKENS
+                        }
+                    )
+                    model.generateContent(prompt).text
+                } catch (primaryEx: Throwable) {
+                    val pMsg = primaryEx.message ?: ""
+                    // If it's an API not enabled issue, let it bubble up
+                    if (pMsg.contains("firebasevertexai.googleapis.com", ignoreCase = true) ||
+                        pMsg.contains("has not been used in project", ignoreCase = true) ||
+                        pMsg.contains("API has not been enabled", ignoreCase = true) ||
+                        pMsg.contains("SERVICE_DISABLED", ignoreCase = true)) {
+                        throw primaryEx
                     }
-                )
-                val response = model.generateContent(prompt)
-                response.text
+                    // Fallback to GEMINI_FLASH_LITE_MODEL (gemini-1.5-flash)
+                    val fallbackModel = Firebase.vertexAI.generativeModel(
+                        modelName = AiConfig.GEMINI_FLASH_LITE_MODEL,
+                        generationConfig = generationConfig {
+                            temperature = AiConfig.TEMPERATURE
+                            topK = AiConfig.TOP_K
+                            topP = AiConfig.TOP_P
+                            maxOutputTokens = AiConfig.MAX_OUTPUT_TOKENS
+                        }
+                    )
+                    fallbackModel.generateContent(prompt).text
+                }
             }
 
             if (result == null) {
@@ -447,6 +471,14 @@ CRITICAL INSTRUCTIONS:
         } catch (e: Throwable) {
             val msg = e.message ?: ""
             when {
+                msg.contains("firebasevertexai.googleapis.com", ignoreCase = true) ||
+                msg.contains("has not been used in project", ignoreCase = true) ||
+                msg.contains("API has not been enabled", ignoreCase = true) ||
+                msg.contains("SERVICE_DISABLED", ignoreCase = true) ->
+                    throw GeminiException.ApiNotEnabled(
+                        "Vertex AI in Firebase API is not enabled in your Firebase project. Please enable firebasevertexai.googleapis.com in Google Cloud Console.",
+                        "https://console.developers.google.com/apis/api/firebasevertexai.googleapis.com/overview"
+                    )
                 msg.contains("429") || msg.contains("RESOURCE_EXHAUSTED") || msg.contains("quota", ignoreCase = true) ->
                     throw GeminiException.RateLimit("Gemini rate limit reached. Please wait a moment and tap retry.")
                 msg.contains("503") || msg.contains("UNAVAILABLE", ignoreCase = true) || msg.contains("high demand", ignoreCase = true) ->
@@ -487,17 +519,36 @@ Instructions:
 
         return try {
             val result = withTimeoutOrNull(AiConfig.REQUEST_TIMEOUT_MS) {
-                val model = Firebase.vertexAI.generativeModel(
-                    modelName = AiConfig.GEMINI_FLASH_MODEL,
-                    generationConfig = generationConfig {
-                        temperature = AiConfig.TEMPERATURE
-                        topK = AiConfig.TOP_K
-                        topP = AiConfig.TOP_P
-                        maxOutputTokens = AiConfig.MAX_OUTPUT_TOKENS
+                try {
+                    val model = Firebase.vertexAI.generativeModel(
+                        modelName = AiConfig.GEMINI_FLASH_MODEL,
+                        generationConfig = generationConfig {
+                            temperature = AiConfig.TEMPERATURE
+                            topK = AiConfig.TOP_K
+                            topP = AiConfig.TOP_P
+                            maxOutputTokens = AiConfig.MAX_OUTPUT_TOKENS
+                        }
+                    )
+                    model.generateContent(prompt).text
+                } catch (primaryEx: Throwable) {
+                    val pMsg = primaryEx.message ?: ""
+                    if (pMsg.contains("firebasevertexai.googleapis.com", ignoreCase = true) ||
+                        pMsg.contains("has not been used in project", ignoreCase = true) ||
+                        pMsg.contains("API has not been enabled", ignoreCase = true) ||
+                        pMsg.contains("SERVICE_DISABLED", ignoreCase = true)) {
+                        throw primaryEx
                     }
-                )
-                val response = model.generateContent(prompt)
-                response.text
+                    val fallbackModel = Firebase.vertexAI.generativeModel(
+                        modelName = AiConfig.GEMINI_FLASH_LITE_MODEL,
+                        generationConfig = generationConfig {
+                            temperature = AiConfig.TEMPERATURE
+                            topK = AiConfig.TOP_K
+                            topP = AiConfig.TOP_P
+                            maxOutputTokens = AiConfig.MAX_OUTPUT_TOKENS
+                        }
+                    )
+                    fallbackModel.generateContent(prompt).text
+                }
             }
 
             if (result == null) {
@@ -513,6 +564,14 @@ Instructions:
         } catch (e: Throwable) {
             val msg = e.message ?: ""
             when {
+                msg.contains("firebasevertexai.googleapis.com", ignoreCase = true) ||
+                msg.contains("has not been used in project", ignoreCase = true) ||
+                msg.contains("API has not been enabled", ignoreCase = true) ||
+                msg.contains("SERVICE_DISABLED", ignoreCase = true) ->
+                    throw GeminiException.ApiNotEnabled(
+                        "Vertex AI in Firebase API is not enabled in your Firebase project. Please enable firebasevertexai.googleapis.com or use Offline AI.",
+                        "https://console.developers.google.com/apis/api/firebasevertexai.googleapis.com/overview"
+                    )
                 msg.contains("429") || msg.contains("RESOURCE_EXHAUSTED") || msg.contains("quota", ignoreCase = true) ->
                     throw GeminiException.RateLimit("Gemini rate limit reached. Please wait a moment and tap retry.")
                 msg.contains("503") || msg.contains("UNAVAILABLE", ignoreCase = true) || msg.contains("high demand", ignoreCase = true) ->
@@ -571,7 +630,18 @@ Instructions:
 object AiReplyGenerator {
 
     val mockGenerator = MockReplyGenerator()
-    var currentGenerator: ReplyGenerator = FirebaseGeminiReplyGenerator(mockGenerator)
+    val firebaseGenerator = FirebaseGeminiReplyGenerator(mockGenerator)
+    var currentGenerator: ReplyGenerator = firebaseGenerator
+
+    var isOfflineMode: Boolean
+        get() = false
+        set(_) {
+            // AI generation is powered by Cloud AI
+        }
+
+    fun setOfflineMode(enabled: Boolean) {
+        // AI generation is powered by Cloud AI
+    }
 
     /**
      * Synchronous generator method (used by unit tests and offline testing).

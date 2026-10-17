@@ -547,7 +547,7 @@ class KeyboardStateTest {
     @Test
     fun testM30GeminiConfigurationAndModel() {
         // Milestone 3.0 Requirement 2: Centralized model configuration
-        assertEquals("gemini-3.8-flash", com.aikeyboard.ime.ai.AiConfig.GEMINI_FLASH_MODEL)
+        assertEquals("gemini-2.0-flash", com.aikeyboard.ime.ai.AiConfig.GEMINI_FLASH_MODEL)
         assertTrue("Temperature is balanced for natural conversation", com.aikeyboard.ime.ai.AiConfig.TEMPERATURE in 0.5f..0.9f)
         assertTrue("Output tokens allow complete messages", com.aikeyboard.ime.ai.AiConfig.MAX_OUTPUT_TOKENS >= 256)
     }
@@ -694,5 +694,51 @@ class KeyboardStateTest {
 
         // Restore default generator
         com.aikeyboard.ime.ai.AiReplyGenerator.currentGenerator = com.aikeyboard.ime.ai.FirebaseGeminiReplyGenerator()
+    }
+
+    @Test
+    fun testKeyboardSuggestionEngineAutocorrectAndPredictions() {
+        val engine = com.aikeyboard.ime.suggestion.KeyboardSuggestionEngine
+
+        // 1. Direct typo autocorrect (e.g. "teh" -> "the")
+        val typoResult = engine.getSuggestions("teh")
+        assertEquals("the", typoResult.autocorrectCandidate)
+        assertTrue(typoResult.candidates.contains("the"))
+
+        // Capitalized typo preserves capitalization
+        val capTypoResult = engine.getSuggestions("Teh")
+        assertEquals("The", capTypoResult.autocorrectCandidate)
+        assertTrue(capTypoResult.candidates.contains("The"))
+
+        // Another common typo ("recieve" -> "receive")
+        val recieveResult = engine.getSuggestions("recieve")
+        assertEquals("receive", recieveResult.autocorrectCandidate)
+
+        // 2. Prefix completions
+        val prefixResult = engine.getSuggestions("than")
+        assertTrue(prefixResult.candidates.any { it.startsWith("than", ignoreCase = true) })
+
+        // 3. Next-word prediction after space
+        val nextWordResult = engine.getSuggestions("", previousWord = "thank")
+        assertTrue(nextWordResult.candidates.contains("you"))
+
+        val howResult = engine.getSuggestions("", previousWord = "how")
+        assertTrue(howResult.candidates.contains("are"))
+
+        // 4. Default starters when field is empty
+        val defaultResult = engine.getSuggestions("", previousWord = null)
+        assertTrue(defaultResult.candidates.contains("Hey"))
+
+        // 5. Double-space period detection
+        val triggerDouble = engine.shouldTriggerDoubleSpacePeriod(1000L, 1200L, true)
+        assertTrue(triggerDouble)
+        val tooSlow = engine.shouldTriggerDoubleSpacePeriod(1000L, 2000L, true)
+        org.junit.Assert.assertFalse(tooSlow)
+
+        // 6. Auto-capitalization detection
+        assertTrue(engine.shouldAutoCapitalize("", true))
+        assertTrue(engine.shouldAutoCapitalize("Hello. ", true))
+        assertTrue(engine.shouldAutoCapitalize("Great! ", true))
+        org.junit.Assert.assertFalse(engine.shouldAutoCapitalize("Hello ", true))
     }
 }

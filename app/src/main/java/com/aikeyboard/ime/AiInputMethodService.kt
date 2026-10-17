@@ -19,6 +19,7 @@ import com.aikeyboard.ime.ai.AiReplyGenerator
 import com.aikeyboard.ime.ai.AiReplyStyle
 import com.aikeyboard.ime.ai.AiRequest
 import com.aikeyboard.ime.ai.AppCheckConfig
+import com.aikeyboard.ime.suggestion.KeyboardSuggestionEngine
 import com.aikeyboard.ime.ui.ComposeKeyboardView
 import com.aikeyboard.ime.ui.theme.AIKeyboardTheme
 import com.aikeyboard.ime.ui.theme.KeyboardHeightOption
@@ -29,9 +30,10 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
 /**
- * Production-ready Android InputMethodService with Milestone 1C:
- * Themes (Midnight / Light), local Settings, and haptic feedback controls.
- * Communicates strictly via InputConnection.
+ * Production-ready Android InputMethodService with Gboard-style smart typing:
+ * Autocorrect, word suggestions, next-word prediction, auto-capitalization,
+ * and double-space period.
+ * AI generation is strictly powered by Cloud Gemini AI.
  */
 class AiInputMethodService : ComposeLifecycleInputMethodService(), KeyboardActionListener {
 
@@ -49,6 +51,13 @@ class AiInputMethodService : ComposeLifecycleInputMethodService(), KeyboardActio
     private val heightOptionState = mutableStateOf(KeyboardHeightOption.NORMAL)
     private val hapticEnabledState = mutableStateOf(true)
     private val keyAnimationEnabledState = mutableStateOf(true)
+
+    // Gboard-style On-Device Suggestion & Autocorrect State
+    private val suggestionsState = mutableStateOf<List<String>>(emptyList())
+    private val autocorrectCandidateState = mutableStateOf<String?>(null)
+    private var lastSpaceTimeMs = 0L
+    private var lastAutocorrectOriginal: String? = null
+    private var lastAutocorrectReplacement: String? = null
 
     private var lastShiftClickTime = 0L
     private val mainHandler = Handler(Looper.getMainLooper())
@@ -101,6 +110,8 @@ class AiInputMethodService : ComposeLifecycleInputMethodService(), KeyboardActio
                     onSelectAiStyle = { selectedAiStyleState.value = it },
                     onSetAiPromptFocused = { aiPromptFocused.value = it },
                     onClearAiPrompt = { customPromptTextState.value = "" },
+                    suggestions = suggestionsState.value,
+                    autocorrectCandidate = autocorrectCandidateState.value,
                     preferences = preferences
                 )
             }
@@ -111,6 +122,62 @@ class AiInputMethodService : ComposeLifecycleInputMethodService(), KeyboardActio
     override fun onEvaluateFullscreenMode(): Boolean = false
 
     override fun onEvaluateInputViewShown(): Boolean = true
+
+    private fun getWordsBeforeCursor(): Pair<String, String?> {
+        val ic = currentInputConnection ?: return Pair("", null)
+        val textBefore = ic.getTextBeforeCursor(100, 0)?.toString() ?: ""
+        if (textBefore.isEmpty()) return Pair("", null)
+
+        val lastChar = textBefore.last()
+        return if (lastChar.isWhitespace()) {
+            val trimmed = textBefore.trimEnd()
+            val tokens = trimmed.split(Regex("\\s+"))
+            val prev = tokens.lastOrNull()?.filter { it.isLetterOrDigit() || it == '\'' }
+            Pair("", prev)
+        } else {
+            val lastDelim = textBefore.indexOfLast { it.isWhitespace() || it in ",.!?;:\n" }
+            val curr = if (lastDelim >= 0) {
+                textBefore.substring(lastDelim + 1)
+            } else {
+                textBefore
+            }.filter { it.isLetterOrDigit() || it == '\'' }
+
+            val beforeDelim = if (lastDelim >= 0) {
+                textBefore.substring(0, lastDelim).trimEnd()
+            } else {
+                ""
+            }
+            val prevTokens = beforeDelim.split(Regex("\\s+"))
+            val prev = prevTokens.lastOrNull()?.filter { it.isLetterOrDigit() || it == '\'' }
+
+            Pair(curr, prev)
+        }
+    }
+
+    private fun updateSuggestions() {
+        if (!preferences.wordSuggestionsEnabled) {
+            suggestionsState.value = emptyList()
+            autocorrectCandidateState.value = null
+            return
+        }
+        val (curr, prev) = getWordsBeforeCursor()
+        val result = KeyboardSuggestionEngine.getSuggestions(
+            currentWord = curr,
+            previousWord = prev,
+            suggestionsEnabled = preferences.wordSuggestionsEnabled
+        )
+        suggestionsState.value = result.candidates
+        autocorrectCandidateState.value = if (preferences.autocorrectEnabled) result.autocorrectCandidate else null
+    }
+
+    private fun checkAutoCapitalization() {
+        if (!preferences.autoCapitalizationEnabled) return
+        val ic = currentInputConnection ?: return
+        val textBefore = ic.getTextBeforeCursor(100, 0)
+        if (KeyboardSuggestionEngine.shouldAutoCapitalize(textBefore, true)) {
+            shiftState.value = ShiftState.SHIFTED
+        }
+    }
 
     override fun onStartInputView(info: EditorInfo?, restarting: Boolean) {
         super.onStartInputView(info, restarting)
@@ -125,7 +192,12 @@ class AiInputMethodService : ComposeLifecycleInputMethodService(), KeyboardActio
             aiPromptFocused.value = false
             customPromptTextState.value = ""
             hostTextState.value = ""
+            lastAutocorrectOriginal = null
+            lastAutocorrectReplacement = null
+            lastSpaceTimeMs = 0L
         }
+        checkAutoCapitalization()
+        updateSuggestions()
     }
 
     override fun onFinishInputView(finishingInput: Boolean) {
@@ -157,23 +229,46 @@ class AiInputMethodService : ComposeLifecycleInputMethodService(), KeyboardActio
             if (shiftState.value == ShiftState.SHIFTED) {
                 shiftState.value = ShiftState.OFF
             }
+            lastAutocorrectOriginal = null
+            lastAutocorrectReplacement = null
+            updateSuggestions()
         }
     }
 
     override fun onBackspace() {
         if (aiPanelVisible.value && aiPromptFocused.value) {
-            // Milestone 2 Fix: Route backspace to AI custom prompt state when focused, never touching host InputConnection
+            // Route backspace to AI custom prompt state when focused, never touching host InputConnection
             if (customPromptTextState.value.isNotEmpty()) {
                 customPromptTextState.value = customPromptTextState.value.dropLast(1)
             }
         } else {
             val ic = currentInputConnection ?: return
+
+            // If user backspaces right after an autocorrection, restore original typo (Gboard behavior)
+            val autoOriginal = lastAutocorrectOriginal
+            val autoReplaced = lastAutocorrectReplacement
+            if (autoOriginal != null && autoReplaced != null) {
+                val textBefore = ic.getTextBeforeCursor(autoReplaced.length + 1, 0)?.toString() ?: ""
+                if (textBefore.endsWith("$autoReplaced ")) {
+                    ic.deleteSurroundingText(autoReplaced.length + 1, 0)
+                    ic.commitText(autoOriginal, 1)
+                    lastAutocorrectOriginal = null
+                    lastAutocorrectReplacement = null
+                    updateSuggestions()
+                    return
+                }
+            }
+
             val selectedText = ic.getSelectedText(0)
             if (!selectedText.isNullOrEmpty()) {
                 ic.commitText("", 1)
             } else {
                 ic.deleteSurroundingText(1, 0)
             }
+            lastAutocorrectOriginal = null
+            lastAutocorrectReplacement = null
+            checkAutoCapitalization()
+            updateSuggestions()
         }
     }
 
@@ -181,7 +276,42 @@ class AiInputMethodService : ComposeLifecycleInputMethodService(), KeyboardActio
         if (aiPanelVisible.value && aiPromptFocused.value) {
             customPromptTextState.value += " "
         } else {
-            currentInputConnection?.commitText(" ", 1)
+            val ic = currentInputConnection ?: return
+            val now = System.currentTimeMillis()
+
+            // 1. Double-space period check
+            if (preferences.doubleSpacePeriodEnabled &&
+                KeyboardSuggestionEngine.shouldTriggerDoubleSpacePeriod(lastSpaceTimeMs, now, true)
+            ) {
+                ic.deleteSurroundingText(1, 0)
+                ic.commitText(". ", 1)
+                lastAutocorrectOriginal = null
+                lastAutocorrectReplacement = null
+                if (preferences.autoCapitalizationEnabled) {
+                    shiftState.value = ShiftState.SHIFTED
+                }
+                lastSpaceTimeMs = 0L
+                updateSuggestions()
+                return
+            }
+
+            // 2. Gboard-style autocorrect on space
+            val autocorrect = autocorrectCandidateState.value
+            val (currentWord, _) = getWordsBeforeCursor()
+            if (preferences.autocorrectEnabled && autocorrect != null && currentWord.isNotBlank()) {
+                ic.deleteSurroundingText(currentWord.length, 0)
+                ic.commitText("$autocorrect ", 1)
+                lastAutocorrectOriginal = currentWord
+                lastAutocorrectReplacement = autocorrect
+            } else {
+                ic.commitText(" ", 1)
+                lastAutocorrectOriginal = null
+                lastAutocorrectReplacement = null
+            }
+
+            lastSpaceTimeMs = now
+            checkAutoCapitalization()
+            updateSuggestions()
         }
     }
 
@@ -189,7 +319,12 @@ class AiInputMethodService : ComposeLifecycleInputMethodService(), KeyboardActio
         if (aiPanelVisible.value && aiPromptFocused.value) {
             customPromptTextState.value += "."
         } else {
-            currentInputConnection?.commitText(".", 1)
+            val ic = currentInputConnection ?: return
+            ic.commitText(".", 1)
+            lastAutocorrectOriginal = null
+            lastAutocorrectReplacement = null
+            checkAutoCapitalization()
+            updateSuggestions()
         }
     }
 
@@ -367,6 +502,26 @@ class AiInputMethodService : ComposeLifecycleInputMethodService(), KeyboardActio
             addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
         }
         startActivity(intent)
+    }
+
+    // --- Gboard-style Suggestion Chip Click Action ---
+
+    override fun onSuggestionClicked(suggestion: String) {
+        val ic = currentInputConnection ?: return
+        val (currentWord, _) = getWordsBeforeCursor()
+
+        if (currentWord.isNotEmpty()) {
+            ic.deleteSurroundingText(currentWord.length, 0)
+        }
+        ic.commitText("$suggestion ", 1)
+        lastAutocorrectOriginal = null
+        lastAutocorrectReplacement = null
+
+        if (shiftState.value == ShiftState.SHIFTED) {
+            shiftState.value = ShiftState.OFF
+        }
+        checkAutoCapitalization()
+        updateSuggestions()
     }
 
     override fun onDestroy() {

@@ -78,8 +78,8 @@ enum class InputTarget {
 sealed interface AiGenerationState {
     object Idle : AiGenerationState
     object Loading : AiGenerationState
-    data class Success(val suggestions: List<String>) : AiGenerationState
-    data class Error(val message: String, val isConfigError: Boolean = false) : AiGenerationState
+    data class Success(val suggestions: List<String>, val isOfflineFallback: Boolean = false) : AiGenerationState
+    data class Error(val message: String, val isConfigError: Boolean = false, val isApiDisabled: Boolean = false) : AiGenerationState
 }
 
 /**
@@ -88,8 +88,8 @@ sealed interface AiGenerationState {
 sealed interface AskAiState {
     object Idle : AskAiState
     object Loading : AskAiState
-    data class Success(val answer: String) : AskAiState
-    data class Error(val message: String, val isConfigError: Boolean = false) : AskAiState
+    data class Success(val answer: String, val isOfflineFallback: Boolean = false) : AskAiState
+    data class Error(val message: String, val isConfigError: Boolean = false, val isApiDisabled: Boolean = false) : AskAiState
 }
 
 /**
@@ -163,10 +163,24 @@ fun AiReplyPanelView(
                     message = e.message ?: "Firebase is not configured. Connect your active Firebase project to enable live Gemini generation.",
                     isConfigError = true
                 )
-            } catch (e: Throwable) {
+            } catch (e: GeminiException.ApiNotEnabled) {
                 actionGenerationState = AiGenerationState.Error(
-                    message = e.message ?: "Unable to connect to Gemini. Tap retry to reload.",
-                    isConfigError = false
+                    message = "Vertex AI API is not enabled yet in your Firebase project (gen-lang-client-0126286835).",
+                    isConfigError = false,
+                    isApiDisabled = true
+                )
+            } catch (e: Throwable) {
+                val isApi = e.message?.contains("firebasevertexai.googleapis.com", ignoreCase = true) == true ||
+                            e.message?.contains("has not been used in project", ignoreCase = true) == true ||
+                            e.message?.contains("API has not been enabled", ignoreCase = true)
+                actionGenerationState = AiGenerationState.Error(
+                    message = if (isApi) {
+                        "Vertex AI API is not enabled yet in your Firebase project (gen-lang-client-0126286835)."
+                    } else {
+                        e.message ?: "Unable to connect to Gemini. Tap retry to reload."
+                    },
+                    isConfigError = false,
+                    isApiDisabled = isApi
                 )
             }
         }
@@ -353,10 +367,24 @@ fun AiReplyPanelView(
                                     message = e.message ?: "Firebase is not configured. Connect your active Firebase project to enable live Gemini.",
                                     isConfigError = true
                                 )
-                            } catch (e: Throwable) {
+                            } catch (e: GeminiException.ApiNotEnabled) {
                                 askAiState = AskAiState.Error(
-                                    message = e.message ?: "Unable to get an answer right now. Please tap retry.",
-                                    isConfigError = false
+                                    message = "Vertex AI API is not enabled yet in your Firebase project (gen-lang-client-0126286835).",
+                                    isConfigError = false,
+                                    isApiDisabled = true
+                                )
+                            } catch (e: Throwable) {
+                                val isApi = e.message?.contains("firebasevertexai.googleapis.com", ignoreCase = true) == true ||
+                                            e.message?.contains("has not been used in project", ignoreCase = true) == true ||
+                                            e.message?.contains("API has not been enabled", ignoreCase = true)
+                                askAiState = AskAiState.Error(
+                                    message = if (isApi) {
+                                        "Vertex AI API is not enabled yet in your Firebase project (gen-lang-client-0126286835)."
+                                    } else {
+                                        e.message ?: "Unable to get an answer right now. Please tap retry."
+                                    },
+                                    isConfigError = false,
+                                    isApiDisabled = isApi
                                 )
                             }
                         }
@@ -406,6 +434,46 @@ fun AiReplyPanelView(
                                 color = Color(0xFFEF4444),
                                 textAlign = TextAlign.Center
                             )
+                            if (state.isApiDisabled) {
+                                Text(
+                                    text = "Tip: Enable firebasevertexai.googleapis.com in Google Cloud Console or use Offline AI.",
+                                    fontSize = 9.sp,
+                                    color = tokens.textSecondary,
+                                    textAlign = TextAlign.Center
+                                )
+                            }
+                            Box(
+                                modifier = Modifier
+                                    .clip(RoundedCornerShape(6.dp))
+                                    .background(Color(0xFFDC2626))
+                                    .clickable {
+                                        val q = contextText.trim()
+                                        if (q.isNotEmpty()) {
+                                            askAiState = AskAiState.Loading
+                                            coroutineScope.launch {
+                                                try {
+                                                    val answer = withContext(Dispatchers.IO) {
+                                                        AiReplyGenerator.currentGenerator.generateAskAi(q, selectedPersona)
+                                                    }
+                                                    askAiState = AskAiState.Success(answer)
+                                                } catch (e: Throwable) {
+                                                    askAiState = AskAiState.Error(
+                                                        message = e.message ?: "Unable to get an answer right now. Please tap retry.",
+                                                        isConfigError = false
+                                                    )
+                                                }
+                                            }
+                                        }
+                                    }
+                                    .padding(horizontal = 12.dp, vertical = 4.dp)
+                            ) {
+                                Text(
+                                    text = "Retry Ask AI 🔄",
+                                    fontSize = 10.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = Color.White
+                                )
+                            }
                         }
                     }
                 }
@@ -503,24 +571,45 @@ fun AiReplyPanelView(
                     )
                 }
 
-                Box(
-                    modifier = Modifier
-                        .size(22.dp)
-                        .clip(CircleShape)
-                        .background(if (tokens.isDark) Color(0xFF1E283D) else Color(0xFFE2E8F0))
-                        .clickable {
-                            if (hapticEnabled) haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                            onSetInputTarget(InputTarget.HOST)
-                            onClose()
-                        },
-                    contentAlignment = Alignment.Center
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(6.dp)
                 ) {
-                    Icon(
-                        imageVector = Icons.Filled.Close,
-                        contentDescription = "Close AI Panel",
-                        tint = tokens.textSecondary,
-                        modifier = Modifier.size(12.dp)
-                    )
+                    Box(
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(6.dp))
+                            .background(if (tokens.isDark) Color(0xFF312E81) else Color(0xFFE0E7FF))
+                            .border(1.dp, if (tokens.isDark) Color(0xFF818CF8) else Color(0xFF6366F1), RoundedCornerShape(6.dp))
+                            .padding(horizontal = 7.dp, vertical = 2.dp),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Text(
+                            text = "✨ Cloud Gemini",
+                            fontSize = 10.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = if (tokens.isDark) Color(0xFFC7D2FE) else Color(0xFF4338CA)
+                        )
+                    }
+
+                    Box(
+                        modifier = Modifier
+                            .size(22.dp)
+                            .clip(CircleShape)
+                            .background(if (tokens.isDark) Color(0xFF1E283D) else Color(0xFFE2E8F0))
+                            .clickable {
+                                if (hapticEnabled) haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                onSetInputTarget(InputTarget.HOST)
+                                onClose()
+                            },
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Icon(
+                            imageVector = Icons.Filled.Close,
+                            contentDescription = "Close AI Panel",
+                            tint = tokens.textSecondary,
+                            modifier = Modifier.size(12.dp)
+                        )
+                    }
                 }
             }
 
@@ -812,6 +901,14 @@ fun AiReplyPanelView(
                                     color = Color(0xFFEF4444),
                                     textAlign = TextAlign.Center
                                 )
+                                if (state.isApiDisabled) {
+                                    Text(
+                                        text = "Cloud AI requires the Vertex AI in Firebase API (firebasevertexai.googleapis.com) to be enabled in your Google Cloud Console.",
+                                        fontSize = 9.sp,
+                                        color = tokens.textSecondary,
+                                        textAlign = TextAlign.Center
+                                    )
+                                }
                                 if (!state.isConfigError) {
                                     Box(
                                         modifier = Modifier
@@ -820,11 +917,11 @@ fun AiReplyPanelView(
                                             .clickable {
                                                 retryTrigger++
                                             }
-                                            .padding(horizontal = 10.dp, vertical = 4.dp)
+                                            .padding(horizontal = 14.dp, vertical = 5.dp)
                                     ) {
                                         Text(
-                                            text = "retry",
-                                            fontSize = 10.sp,
+                                            text = "Retry Generation 🔄",
+                                            fontSize = 11.sp,
                                             fontWeight = FontWeight.Bold,
                                             color = Color.White
                                         )

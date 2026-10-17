@@ -39,6 +39,26 @@ class KeyboardPreferences(context: Context) {
         get() = prefs.getBoolean(KEY_ANIMATION, true)
         set(value) = prefs.edit().putBoolean(KEY_ANIMATION, value).apply()
 
+    var autocorrectEnabled: Boolean
+        get() = prefs.getBoolean(KEY_AUTOCORRECT, true)
+        set(value) = prefs.edit().putBoolean(KEY_AUTOCORRECT, value).apply()
+
+    var wordSuggestionsEnabled: Boolean
+        get() = prefs.getBoolean(KEY_WORD_SUGGESTIONS, true)
+        set(value) = prefs.edit().putBoolean(KEY_WORD_SUGGESTIONS, value).apply()
+
+    var nextWordPredictionEnabled: Boolean
+        get() = prefs.getBoolean(KEY_NEXT_WORD_PREDICTION, true)
+        set(value) = prefs.edit().putBoolean(KEY_NEXT_WORD_PREDICTION, value).apply()
+
+    var doubleSpacePeriodEnabled: Boolean
+        get() = prefs.getBoolean(KEY_DOUBLE_SPACE_PERIOD, true)
+        set(value) = prefs.edit().putBoolean(KEY_DOUBLE_SPACE_PERIOD, value).apply()
+
+    var autoCapitalizationEnabled: Boolean
+        get() = prefs.getBoolean(KEY_AUTO_CAPITALIZATION, true)
+        set(value) = prefs.edit().putBoolean(KEY_AUTO_CAPITALIZATION, value).apply()
+
     fun getClipboardHistory(): List<String> {
         val raw = prefs.getString(KEY_CLIPBOARD_HISTORY, null) ?: return emptyList()
         return try {
@@ -78,5 +98,10 @@ class KeyboardPreferences(context: Context) {
         private const val KEY_HEIGHT = "pref_height"
         private const val KEY_ANIMATION = "pref_key_animation"
         private const val KEY_CLIPBOARD_HISTORY = "pref_clipboard_history"
+        private const val KEY_AUTOCORRECT = "pref_autocorrect"
+        private const val KEY_WORD_SUGGESTIONS = "pref_word_suggestions"
+        private const val KEY_NEXT_WORD_PREDICTION = "pref_next_word_prediction"
+        private const val KEY_DOUBLE_SPACE_PERIOD = "pref_double_space_period"
+        private const val KEY_AUTO_CAPITALIZATION = "pref_auto_capitalization"
     }
 }

@@ -404,6 +404,19 @@ export default function App() {
       playClickSound();
       setAppTarget('settings');
       addLog('Toolbar: Settings', 'Navigated to Nexora AI Keyboard Settings & Onboarding', 'state');
+    },
+
+    onSuggestionClicked: (suggestion: string) => {
+      playClickSound();
+      setText((prev) => {
+        const lastSpace = prev.lastIndexOf(' ');
+        if (lastSpace >= 0) {
+          return prev.slice(0, lastSpace + 1) + suggestion + ' ';
+        }
+        return suggestion + ' ';
+      });
+      setCursorPos((prev) => prev + suggestion.length + 1);
+      addLog('ic.commitText()', `commitText("${suggestion} ", 1) [Gboard Suggestion]`, 'commit');
     }
   };
 

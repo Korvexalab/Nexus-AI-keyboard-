@@ -55,4 +55,5 @@ export interface KeyboardActionListener {
   onCloseAiPanel?: () => void;
   onSetAiPromptFocused?: (focused: boolean) => void;
   onClearAiPrompt?: () => void;
+  onSuggestionClicked?: (suggestion: string) => void;
 }

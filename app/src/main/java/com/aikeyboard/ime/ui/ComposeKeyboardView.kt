@@ -109,7 +109,8 @@ fun ComposeKeyboardView(
     hostText: String = "",
     onSelectAiStyle: ((AiReplyStyle) -> Unit)? = null,
     onSetAiPromptFocused: ((Boolean) -> Unit)? = null,
-    onClearAiPrompt: (() -> Unit)? = null,
+    suggestions: List<String> = emptyList(),
+    autocorrectCandidate: String? = null,
     preferences: KeyboardPreferences? = null,
     modifier: Modifier = Modifier
 ) {
@@ -310,10 +311,12 @@ fun ComposeKeyboardView(
                         keyAnimationEnabled = keyAnimationEnabled
                     )
                 } else {
-                    // Keyboard Toolbar with AI button and shortcuts
+                    // Keyboard Toolbar with AI button, Gboard suggestions, and shortcuts
                     KeyboardToolbar(
                         actionListener = actionListener,
                         aiNoticeVisible = aiNoticeVisible,
+                        suggestions = suggestions,
+                        autocorrectCandidate = autocorrectCandidate,
                         tokens = tokens,
                         hapticEnabled = hapticEnabled,
                         keyAnimationEnabled = keyAnimationEnabled

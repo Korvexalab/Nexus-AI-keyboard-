@@ -139,13 +139,68 @@ export const VirtualKeyboard: React.FC<VirtualKeyboardProps> = ({
   const aiPanelVisibleRef = useRef(aiPanelVisible);
   aiPanelVisibleRef.current = aiPanelVisible;
 
-  // When AI panel is closed or dismissed, immediately return logical input target to host
-  useEffect(() => {
-    if (!aiPanelVisible) {
-      setInputTarget('host');
-      setPanelMode('action_board');
+  // Gboard-style word suggestions and autocorrect based on hostText
+  const { suggestions, autocorrectCandidate } = React.useMemo(() => {
+    const text = hostText || '';
+    if (!text.trim()) {
+      return { suggestions: ['Hey', 'Sounds good', 'Thanks!'], autocorrectCandidate: null };
     }
-  }, [aiPanelVisible]);
+
+    const lastChar = text[text.length - 1];
+    if (/\s/.test(lastChar)) {
+      const words = text.trim().split(/\s+/);
+      const lastWord = (words[words.length - 1] || '').toLowerCase().replace(/[^a-z']/g, '');
+      const bigrams: Record<string, string[]> = {
+        thank: ['you', 'you so much', 'for'],
+        thanks: ['for', 'again', 'a lot'],
+        how: ['are', 'is', 'about'],
+        see: ['you', 'what', 'later'],
+        let: ['me', 'us', 'know'],
+        "let's": ['meet', 'do', 'go'],
+        good: ['morning', 'night', 'job'],
+        sounds: ['good', 'great', 'like']
+      };
+      const preds = bigrams[lastWord] || ['and', 'is', 'to'];
+      return { suggestions: preds, autocorrectCandidate: null };
+    }
+
+    const match = text.match(/([a-zA-Z']+)$/);
+    const currWord = match ? match[1] : '';
+    if (!currWord) {
+      return { suggestions: ['Hey', 'Sounds good', 'Thanks!'], autocorrectCandidate: null };
+    }
+
+    const lower = currWord.toLowerCase();
+    const commonTypos: Record<string, string> = {
+      teh: 'the', recieve: 'receive', definately: 'definitely', becuase: 'because',
+      dont: "don't", cant: "can't", wont: "won't", im: "I'm", youre: "youre",
+      idk: "I don't know", omw: "on my way", tbh: 'to be honest'
+    };
+    const typoCorrection = commonTypos[lower];
+
+    const commonWords = [
+      'the', 'that', 'have', 'with', 'this', 'they', 'from', 'what', 'when', 'make',
+      'like', 'time', 'just', 'know', 'take', 'people', 'into', 'year', 'your', 'good',
+      'some', 'could', 'them', 'other', 'than', 'then', 'look', 'only', 'come', 'think',
+      'also', 'back', 'after', 'work', 'first', 'well', 'even', 'want', 'because', 'give',
+      'great', 'hello', 'thanks', 'thank', 'please', 'today', 'tomorrow', 'morning', 'meeting',
+      'update', 'ready', 'perfect', 'awesome', 'sounds'
+    ];
+
+    if (typoCorrection) {
+      return {
+        suggestions: [currWord, typoCorrection, 'and'],
+        autocorrectCandidate: typoCorrection
+      };
+    }
+
+    const matches = commonWords.filter(w => w.startsWith(lower) && w !== lower).slice(0, 3);
+    if (matches.length > 0) {
+      return { suggestions: matches, autocorrectCandidate: null };
+    }
+
+    return { suggestions: [currWord, currWord[0].toUpperCase() + currWord.slice(1)], autocorrectCandidate: null };
+  }, [hostText]);
 
   const handleAiGenerate = () => {
     if (listener.onAiGenerate) {
@@ -546,6 +601,8 @@ export const VirtualKeyboard: React.FC<VirtualKeyboardProps> = ({
             aiNoticeVisible={aiNoticeVisible}
             theme={theme}
             keyAnimationEnabled={keyAnimationEnabled}
+            suggestions={suggestions}
+            autocorrectCandidate={autocorrectCandidate}
           />
 
           {/* M1D Anchored Key Press Enlarged Character Popup Preview */}

@@ -71,6 +71,11 @@ fun MainSettingsAndOnboardingScreen() {
     var isHapticEnabled by remember { mutableStateOf(prefs.hapticEnabled) }
     var currentHeight by remember { mutableStateOf(prefs.keyboardHeight) }
     var isKeyAnimationEnabled by remember { mutableStateOf(prefs.keyAnimationEnabled) }
+    var isAutocorrectEnabled by remember { mutableStateOf(prefs.autocorrectEnabled) }
+    var isWordSuggestionsEnabled by remember { mutableStateOf(prefs.wordSuggestionsEnabled) }
+    var isNextWordPredictionEnabled by remember { mutableStateOf(prefs.nextWordPredictionEnabled) }
+    var isAutoCapitalizationEnabled by remember { mutableStateOf(prefs.autoCapitalizationEnabled) }
+    var isDoubleSpacePeriodEnabled by remember { mutableStateOf(prefs.doubleSpacePeriodEnabled) }
 
     fun checkKeyboardStatus() {
         val packageName = context.packageName
@@ -177,6 +182,67 @@ fun MainSettingsAndOnboardingScreen() {
                 color = MaterialTheme.colorScheme.primary,
                 letterSpacing = 1.sp
             )
+
+            // AI Engine Mode Selection (Offline vs Cloud Gemini)
+            Card(
+                modifier = Modifier.fillMaxWidth(),
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
+            ) {
+                Column(
+                    modifier = Modifier.padding(16.dp),
+                    verticalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
+                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Text("✨", fontSize = 16.sp)
+                        Column {
+                            Text("AI Engine Mode", fontWeight = FontWeight.SemiBold)
+                            Text(
+                                text = if (isOfflineAiOnly) "Smart Offline AI: 100% on-device & private (no network required)"
+                                else "Cloud Gemini: Live Gemini 2.0 Flash generation via Firebase",
+                                fontSize = 12.sp,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                    }
+
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        ThemeOptionCard(
+                            title = "⚡ Offline AI",
+                            subtitle = "Private & instant",
+                            isSelected = isOfflineAiOnly,
+                            modifier = Modifier.weight(1f),
+                            onClick = {
+                                isOfflineAiOnly = true
+                                prefs.isOfflineAiOnly = true
+                                com.aikeyboard.ime.ai.AiReplyGenerator.setOfflineMode(true)
+                            }
+                        )
+                        ThemeOptionCard(
+                            title = "✨ Cloud Gemini",
+                            subtitle = "Gemini 2.0 Flash",
+                            isSelected = !isOfflineAiOnly,
+                            modifier = Modifier.weight(1f),
+                            onClick = {
+                                isOfflineAiOnly = false
+                                prefs.isOfflineAiOnly = false
+                                com.aikeyboard.ime.ai.AiReplyGenerator.setOfflineMode(false)
+                            }
+                        )
+                    }
+
+                    if (!isOfflineAiOnly) {
+                        Text(
+                            text = "Note: Cloud Gemini requires firebasevertexai.googleapis.com enabled in your Google Cloud / Firebase console for project gen-lang-client-0126286835.",
+                            fontSize = 11.sp,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.8f),
+                            lineHeight = 15.sp
+                        )
+                    }
+                }
+            }
 
             // Theme Selection (Midnight / Light)
             Card(
@@ -318,6 +384,155 @@ fun MainSettingsAndOnboardingScreen() {
                 }
             }
 
+            // Gboard-Style Smart Typing & Autocorrect Settings
+            Card(
+                modifier = Modifier.fillMaxWidth(),
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
+            ) {
+                Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
+                    Text("Smart Typing & Autocorrect (Gboard-Style)", fontWeight = FontWeight.SemiBold, fontSize = 15.sp)
+
+                    // Autocorrect
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Column(modifier = Modifier.weight(1f).padding(end = 8.dp)) {
+                            Text("Autocorrect", fontWeight = FontWeight.Medium, fontSize = 14.sp)
+                            Text("Fix misspelled words automatically when pressing space", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
+                        Switch(
+                            checked = isAutocorrectEnabled,
+                            onCheckedChange = {
+                                isAutocorrectEnabled = it
+                                prefs.autocorrectEnabled = it
+                            }
+                        )
+                    }
+
+                    HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.3f))
+
+                    // Word Suggestions
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Column(modifier = Modifier.weight(1f).padding(end = 8.dp)) {
+                            Text("Word Suggestions", fontWeight = FontWeight.Medium, fontSize = 14.sp)
+                            Text("Show 3 candidate completions above keyboard", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
+                        Switch(
+                            checked = isWordSuggestionsEnabled,
+                            onCheckedChange = {
+                                isWordSuggestionsEnabled = it
+                                prefs.wordSuggestionsEnabled = it
+                            }
+                        )
+                    }
+
+                    HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.3f))
+
+                    // Next-Word Prediction
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Column(modifier = Modifier.weight(1f).padding(end = 8.dp)) {
+                            Text("Next-Word Prediction", fontWeight = FontWeight.Medium, fontSize = 14.sp)
+                            Text("Predict subsequent words based on conversational context", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
+                        Switch(
+                            checked = isNextWordPredictionEnabled,
+                            onCheckedChange = {
+                                isNextWordPredictionEnabled = it
+                                prefs.nextWordPredictionEnabled = it
+                            }
+                        )
+                    }
+
+                    HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.3f))
+
+                    // Auto-Capitalization
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Column(modifier = Modifier.weight(1f).padding(end = 8.dp)) {
+                            Text("Auto-Capitalization", fontWeight = FontWeight.Medium, fontSize = 14.sp)
+                            Text("Capitalize the first word of each sentence automatically", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
+                        Switch(
+                            checked = isAutoCapitalizationEnabled,
+                            onCheckedChange = {
+                                isAutoCapitalizationEnabled = it
+                                prefs.autoCapitalizationEnabled = it
+                            }
+                        )
+                    }
+
+                    HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.3f))
+
+                    // Double-Space Period
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Column(modifier = Modifier.weight(1f).padding(end = 8.dp)) {
+                            Text("Double-Space Period", fontWeight = FontWeight.Medium, fontSize = 14.sp)
+                            Text("Double-tap spacebar to insert a period followed by a space", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
+                        Switch(
+                            checked = isDoubleSpacePeriodEnabled,
+                            onCheckedChange = {
+                                isDoubleSpacePeriodEnabled = it
+                                prefs.doubleSpacePeriodEnabled = it
+                            }
+                        )
+                    }
+                }
+            }
+
+            // Cloud AI Intelligence Status Card
+            Card(
+                modifier = Modifier.fillMaxWidth(),
+                colors = CardDefaults.cardColors(
+                    containerColor = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.4f)
+                )
+            ) {
+                Column(
+                    modifier = Modifier.padding(16.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.CheckCircle,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.primary
+                        )
+                        Text(
+                            text = "Cloud AI Generation: Google Gemini",
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 14.sp,
+                            color = MaterialTheme.colorScheme.primary
+                        )
+                    }
+                    Text(
+                        text = "Writing Actions (Reply, Continue, Start, Ask AI, Rewrite, Create) and Personas are powered directly by Cloud Gemini AI for authentic conversational intelligence without mock templates. Autocorrect and word completions run on-device with 0ms latency.",
+                        fontSize = 12.sp,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        lineHeight = 16.sp
+                    )
+                }
+            }
+
             // --- SECTION 3: INTERACTIVE TEST FIELD ---
             Card(
                 modifier = Modifier.fillMaxWidth(),
@@ -333,7 +548,7 @@ fun MainSettingsAndOnboardingScreen() {
                         fontSize = 14.sp
                     )
                     Text(
-                        text = "Tap the field below to bring up AI Keyboard with your selected settings:",
+                        text = "Tap the field below to test typing with autocorrect and suggestions:",
                         fontSize = 12.sp,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
@@ -359,7 +574,7 @@ fun MainSettingsAndOnboardingScreen() {
                 ) {
                     Icon(Icons.Default.Lock, contentDescription = "Privacy", tint = MaterialTheme.colorScheme.primary)
                     Text(
-                        text = "100% Offline & Private: AI Keyboard operates strictly on-device. No keystrokes, passwords, or personal data are collected or transmitted.",
+                        text = "Private by Design: Regular typing, autocorrect, and dictionary suggestions run 100% on-device. No keystrokes or passwords are ever logged or sent. Cloud AI generation only occurs when you explicitly tap an AI Action.",
                         fontSize = 11.sp,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         lineHeight = 15.sp

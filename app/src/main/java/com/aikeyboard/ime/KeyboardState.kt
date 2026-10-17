@@ -49,4 +49,7 @@ interface KeyboardActionListener {
     fun onCloseAiPanel() {}
     fun onSetAiPromptFocused(focused: Boolean) {}
     fun onClearAiPrompt() {}
+
+    // Gboard-style Word Suggestion & Autocorrect Actions
+    fun onSuggestionClicked(suggestion: String) {}
 }

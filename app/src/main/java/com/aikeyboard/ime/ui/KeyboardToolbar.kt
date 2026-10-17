@@ -10,26 +10,21 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsPressedAsState
-import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AutoAwesome
+import androidx.compose.material.icons.filled.ChevronLeft
 import androidx.compose.material.icons.filled.ContentPaste
+import androidx.compose.material.icons.filled.MoreHoriz
 import androidx.compose.material.icons.filled.Palette
 import androidx.compose.material.icons.filled.SentimentSatisfiedAlt
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
-import androidx.compose.runtime.Composable
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.remember
+import androidx.compose.material3.VerticalDivider
+import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -40,6 +35,8 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.aikeyboard.ime.KeyboardActionListener
@@ -48,83 +45,184 @@ import com.aikeyboard.ime.ui.theme.AiPillGradientStart
 import com.aikeyboard.ime.ui.theme.KeyboardColorTokens
 import com.aikeyboard.ime.ui.theme.KeyboardThemes
 
+/**
+ * Gboard-style Combined Suggestion Strip & Quick Action Toolbar.
+ *
+ * Provides:
+ * 1. 3 Candidate Word Suggestion Chips with middle autocorrect emphasis
+ * 2. Instant 1-tap word replacement
+ * 3. Compact AI button for opening Cloud Gemini Command Center
+ * 4. Toggle between Word Suggestions and Quick Tools (Emoji, GIF, Clipboard, Theme, Settings)
+ */
 @Composable
 fun KeyboardToolbar(
     actionListener: KeyboardActionListener,
-    aiNoticeVisible: Boolean,
+    aiNoticeVisible: Boolean = false,
+    suggestions: List<String> = emptyList(),
+    autocorrectCandidate: String? = null,
     tokens: KeyboardColorTokens = KeyboardThemes.Midnight,
     hapticEnabled: Boolean = true,
     keyAnimationEnabled: Boolean = true,
     modifier: Modifier = Modifier
 ) {
+    var showFullTools by remember { mutableStateOf(false) }
+    val haptic = LocalHapticFeedback.current
+
+    val hasSuggestions = suggestions.isNotEmpty()
+    val isShowingSuggestions = hasSuggestions && !showFullTools
+
     Box(
         modifier = modifier
             .fillMaxWidth()
             .height(44.dp)
             .background(tokens.toolbarBackground)
-            .padding(horizontal = 8.dp, vertical = 4.dp),
+            .padding(horizontal = 4.dp, vertical = 4.dp),
         contentAlignment = Alignment.CenterStart
     ) {
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            // ✨ Prominent AI Pill Button
-            AiFeatureButton(
-                onClick = { actionListener.onAiClicked() },
-                hapticEnabled = hapticEnabled,
-                keyAnimationEnabled = keyAnimationEnabled
-            )
-
-            // Secondary Quick Actions
+        if (isShowingSuggestions) {
+            // ========================================================
+            // GBOARD-STYLE WORD SUGGESTION CANDIDATE STRIP
+            // ========================================================
             Row(
-                horizontalArrangement = Arrangement.spacedBy(4.dp),
-                verticalAlignment = Alignment.CenterVertically
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween
             ) {
-                ToolbarIconButton(
-                    icon = Icons.Filled.SentimentSatisfiedAlt,
-                    contentDescription = "Emoji",
-                    tokens = tokens,
-                    onClick = { actionListener.onEmojiClicked() },
+                // Left: Compact AI button
+                CompactAiButton(
+                    onClick = { actionListener.onAiClicked() },
                     hapticEnabled = hapticEnabled,
                     keyAnimationEnabled = keyAnimationEnabled
                 )
-                ToolbarTextButton(
-                    text = "GIF",
-                    tokens = tokens,
-                    onClick = { actionListener.onGifClicked() },
-                    hapticEnabled = hapticEnabled,
-                    keyAnimationEnabled = keyAnimationEnabled
-                )
+
+                // Middle: 3 Word Suggestion Candidates
+                Row(
+                    modifier = Modifier
+                        .weight(1f)
+                        .fillMaxHeight()
+                        .padding(horizontal = 4.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceEvenly
+                ) {
+                    suggestions.take(3).forEachIndexed { index, candidate ->
+                        val isCenterCandidate = index == 1 || (suggestions.size == 1 && index == 0)
+                        val isAutocorrectMatch = autocorrectCandidate != null && candidate.equals(autocorrectCandidate, ignoreCase = true)
+
+                        if (index > 0) {
+                            Box(
+                                modifier = Modifier
+                                    .width(1.dp)
+                                    .height(18.dp)
+                                    .background(tokens.borderRim.copy(alpha = 0.5f))
+                            )
+                        }
+
+                        SuggestionChip(
+                            text = candidate,
+                            isHighlighted = isCenterCandidate || isAutocorrectMatch,
+                            tokens = tokens,
+                            modifier = Modifier
+                                .weight(1f)
+                                .fillMaxHeight(),
+                            onClick = {
+                                if (hapticEnabled) haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                actionListener.onSuggestionClicked(candidate)
+                            }
+                        )
+                    }
+                }
+
+                // Right: Toggle to reveal extra tools
                 ToolbarIconButton(
-                    icon = Icons.Filled.ContentPaste,
-                    contentDescription = "Clipboard",
+                    icon = Icons.Filled.MoreHoriz,
+                    contentDescription = "More Tools",
                     tokens = tokens,
-                    onClick = { actionListener.onClipboardClicked() },
-                    hapticEnabled = hapticEnabled,
-                    keyAnimationEnabled = keyAnimationEnabled
-                )
-                ToolbarIconButton(
-                    icon = Icons.Filled.Palette,
-                    contentDescription = "Theme",
-                    tokens = tokens,
-                    onClick = { actionListener.onThemeClicked() },
-                    hapticEnabled = hapticEnabled,
-                    keyAnimationEnabled = keyAnimationEnabled
-                )
-                ToolbarIconButton(
-                    icon = Icons.Filled.Settings,
-                    contentDescription = "Settings",
-                    tokens = tokens,
-                    onClick = { actionListener.onSettingsClicked() },
+                    onClick = { showFullTools = true },
                     hapticEnabled = hapticEnabled,
                     keyAnimationEnabled = keyAnimationEnabled
                 )
             }
+        } else {
+            // ========================================================
+            // FULL QUICK ACTIONS TOOLBAR
+            // ========================================================
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(4.dp)
+                ) {
+                    if (hasSuggestions) {
+                        ToolbarIconButton(
+                            icon = Icons.Filled.ChevronLeft,
+                            contentDescription = "Back to Suggestions",
+                            tokens = tokens,
+                            onClick = { showFullTools = false },
+                            hapticEnabled = hapticEnabled,
+                            keyAnimationEnabled = keyAnimationEnabled
+                        )
+                    }
+
+                    // ✨ Prominent AI Pill Button
+                    AiFeatureButton(
+                        onClick = { actionListener.onAiClicked() },
+                        hapticEnabled = hapticEnabled,
+                        keyAnimationEnabled = keyAnimationEnabled
+                    )
+                }
+
+                // Secondary Quick Actions
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(4.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    ToolbarIconButton(
+                        icon = Icons.Filled.SentimentSatisfiedAlt,
+                        contentDescription = "Emoji",
+                        tokens = tokens,
+                        onClick = { actionListener.onEmojiClicked() },
+                        hapticEnabled = hapticEnabled,
+                        keyAnimationEnabled = keyAnimationEnabled
+                    )
+                    ToolbarTextButton(
+                        text = "GIF",
+                        tokens = tokens,
+                        onClick = { actionListener.onGifClicked() },
+                        hapticEnabled = hapticEnabled,
+                        keyAnimationEnabled = keyAnimationEnabled
+                    )
+                    ToolbarIconButton(
+                        icon = Icons.Filled.ContentPaste,
+                        contentDescription = "Clipboard",
+                        tokens = tokens,
+                        onClick = { actionListener.onClipboardClicked() },
+                        hapticEnabled = hapticEnabled,
+                        keyAnimationEnabled = keyAnimationEnabled
+                    )
+                    ToolbarIconButton(
+                        icon = Icons.Filled.Palette,
+                        contentDescription = "Theme",
+                        tokens = tokens,
+                        onClick = { actionListener.onThemeClicked() },
+                        hapticEnabled = hapticEnabled,
+                        keyAnimationEnabled = keyAnimationEnabled
+                    )
+                    ToolbarIconButton(
+                        icon = Icons.Filled.Settings,
+                        contentDescription = "Settings",
+                        tokens = tokens,
+                        onClick = { actionListener.onSettingsClicked() },
+                        hapticEnabled = hapticEnabled,
+                        keyAnimationEnabled = keyAnimationEnabled
+                    )
+                }
+            }
         }
 
-        // Temporary "AI Assistant — Coming Soon" Toast Banner
+        // Optional Toast Banner
         AnimatedVisibility(
             visible = aiNoticeVisible,
             enter = fadeIn(tween(150)),
@@ -135,16 +233,16 @@ fun KeyboardToolbar(
                 modifier = Modifier
                     .clip(RoundedCornerShape(20.dp))
                     .background(if (tokens.isDark) Color(0xFF1E1B4B) else Color(0xFFEEF2FF))
-                    .border(
-                        1.dp,
-                        if (tokens.isDark) Color(0xFF818CF8).copy(alpha = 0.6f) else Color(0xFF6366F1).copy(alpha = 0.4f),
-                        RoundedCornerShape(20.dp)
-                    )
-                    .padding(horizontal = 14.dp, vertical = 6.dp),
+                .border(
+                    1.dp,
+                    if (tokens.isDark) Color(0xFF818CF8).copy(alpha = 0.6f) else Color(0xFF6366F1).copy(alpha = 0.4f),
+                    RoundedCornerShape(20.dp)
+                )
+                .padding(horizontal = 14.dp, vertical = 6.dp),
                 contentAlignment = Alignment.Center
             ) {
                 Text(
-                    text = "✨ AI Assistant — Coming Soon",
+                    text = "✨ AI Keyboard",
                     color = if (tokens.isDark) Color(0xFFC7D2FE) else Color(0xFF4338CA),
                     fontSize = 12.sp,
                     fontWeight = FontWeight.SemiBold,
@@ -152,6 +250,94 @@ fun KeyboardToolbar(
                 )
             }
         }
+    }
+}
+
+/**
+ * Gboard-style individual candidate word chip
+ */
+@Composable
+private fun SuggestionChip(
+    text: String,
+    isHighlighted: Boolean,
+    tokens: KeyboardColorTokens,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    val chipShape = RoundedCornerShape(8.dp)
+    val bgColor = if (isHighlighted) {
+        if (tokens.isDark) Color(0xFF2E2A6E).copy(alpha = 0.5f) else Color(0xFFEEF2FF)
+    } else {
+        Color.Transparent
+    }
+
+    Box(
+        modifier = modifier
+            .padding(horizontal = 2.dp, vertical = 2.dp)
+            .clip(chipShape)
+            .background(bgColor)
+            .clickable { onClick() }
+            .padding(horizontal = 4.dp),
+        contentAlignment = Alignment.Center
+    ) {
+        Text(
+            text = text,
+            fontSize = if (isHighlighted) 14.sp else 13.sp,
+            fontWeight = if (isHighlighted) FontWeight.Bold else FontWeight.Normal,
+            color = if (isHighlighted) tokens.keyAccent else tokens.textPrimary,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+            textAlign = TextAlign.Center
+        )
+    }
+}
+
+/**
+ * Compact AI button for candidate strip
+ */
+@Composable
+fun CompactAiButton(
+    onClick: () -> Unit,
+    hapticEnabled: Boolean,
+    keyAnimationEnabled: Boolean,
+    modifier: Modifier = Modifier
+) {
+    val haptic = LocalHapticFeedback.current
+    val interactionSource = remember { MutableInteractionSource() }
+    val isPressed by interactionSource.collectIsPressedAsState()
+
+    val scale by animateFloatAsState(
+        targetValue = if (isPressed && keyAnimationEnabled) 0.90f else 1.0f,
+        animationSpec = tween(durationMillis = 80),
+        label = "compact_ai_scale"
+    )
+
+    val gradient = Brush.horizontalGradient(
+        colors = listOf(AiPillGradientStart, AiPillGradientEnd)
+    )
+
+    Box(
+        modifier = modifier
+            .scale(scale)
+            .size(32.dp)
+            .clip(CircleShape)
+            .background(gradient)
+            .border(1.dp, Color.White.copy(alpha = 0.3f), CircleShape)
+            .clickable(
+                interactionSource = interactionSource,
+                indication = null
+            ) {
+                if (hapticEnabled) haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                onClick()
+            },
+        contentAlignment = Alignment.Center
+    ) {
+        Icon(
+            imageVector = Icons.Filled.AutoAwesome,
+            contentDescription = "AI Assistant",
+            tint = Color.White,
+            modifier = Modifier.size(16.dp)
+        )
     }
 }
 

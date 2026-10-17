@@ -7,15 +7,20 @@ interface KeyboardToolbarProps {
   aiNoticeVisible: boolean;
   theme?: KeyboardThemeId;
   keyAnimationEnabled?: boolean;
+  suggestions?: string[];
+  autocorrectCandidate?: string | null;
 }
 
 export const KeyboardToolbar: React.FC<KeyboardToolbarProps> = ({
   listener,
   aiNoticeVisible,
   theme = 'midnight',
-  keyAnimationEnabled = true
+  keyAnimationEnabled = true,
+  suggestions = [],
+  autocorrectCandidate = null
 }) => {
   const isLight = theme === 'light';
+  const [showFullTools, setShowFullTools] = React.useState(false);
 
   const containerBg = isLight ? 'bg-slate-100/90 border-slate-300' : 'bg-slate-950/80 border-slate-800/80';
   const iconBtnClass = isLight
@@ -26,14 +31,17 @@ export const KeyboardToolbar: React.FC<KeyboardToolbarProps> = ({
     ? `h-8 px-2 rounded-xl bg-white/90 hover:bg-white active:bg-slate-200 ${keyAnimationEnabled ? 'active:scale-90' : ''} text-slate-700 hover:text-slate-950 font-bold text-[10px] tracking-wider flex items-center justify-center transition-all duration-100 border border-slate-300 shadow-xs`
     : `h-8 px-2 rounded-xl bg-slate-900/80 hover:bg-slate-800 active:bg-slate-700 ${keyAnimationEnabled ? 'active:scale-90' : ''} text-slate-300 hover:text-slate-100 font-bold text-[10px] tracking-wider flex items-center justify-center transition-all duration-100 border border-slate-800`;
 
+  const hasSuggestions = suggestions.length > 0;
+  const isShowingSuggestions = hasSuggestions && !showFullTools;
+
   return (
     <div className={`relative w-full px-2 py-1.5 border-b ${containerBg} backdrop-blur flex items-center justify-between gap-1 select-none transition-colors duration-200`}>
       {/* Prominent AI Pill Button */}
       <button
         id="toolbar-btn-ai"
         onClick={listener.onAiClicked}
-        className={`relative group flex items-center gap-1.5 px-3 py-1 rounded-full bg-gradient-to-r from-indigo-600 via-indigo-500 to-purple-600 text-white font-semibold text-xs shadow-md shadow-indigo-900/30 border border-white/20 ${keyAnimationEnabled ? 'active:scale-95' : ''} transition-all duration-100 hover:brightness-110`}
-        title="Fast AI Reply"
+        className={`relative group flex items-center gap-1.5 px-3 py-1 rounded-full bg-gradient-to-r from-indigo-600 via-indigo-500 to-purple-600 text-white font-semibold text-xs shadow-md shadow-indigo-900/30 border border-white/20 ${keyAnimationEnabled ? 'active:scale-95' : ''} transition-all duration-100 hover:brightness-110 shrink-0`}
+        title="Fast AI Reply (Google Gemini)"
       >
         <Sparkles className="w-3.5 h-3.5 text-amber-200 animate-pulse" />
         <span className="tracking-wide text-[11px]">AI</span>
@@ -43,58 +51,110 @@ export const KeyboardToolbar: React.FC<KeyboardToolbarProps> = ({
         </span>
       </button>
 
-      {/* Secondary Quick Action Icons */}
-      <div className="flex items-center gap-1">
-        {/* 😀 Emoji */}
-        <button
-          id="toolbar-btn-emoji"
-          onClick={listener.onEmojiClicked}
-          className={iconBtnClass}
-          title="Emoji Picker"
-        >
-          <Smile className="w-4 h-4" />
-        </button>
+      {/* GBOARD-STYLE 3-CANDIDATE SUGGESTION STRIP */}
+      {isShowingSuggestions ? (
+        <div className="flex-1 flex items-center justify-evenly px-1 h-8 overflow-hidden gap-1">
+          {suggestions.slice(0, 3).map((candidate, idx) => {
+            const isCenter = idx === 1 || (suggestions.length === 1 && idx === 0);
+            const isAutocorrectMatch = autocorrectCandidate && candidate.toLowerCase() === autocorrectCandidate.toLowerCase();
+            const isHighlighted = isCenter || isAutocorrectMatch;
 
-        {/* GIF */}
-        <button
-          id="toolbar-btn-gif"
-          onClick={listener.onGifClicked}
-          className={textBtnClass}
-          title="GIF Search"
-        >
-          GIF
-        </button>
+            return (
+              <React.Fragment key={idx}>
+                {idx > 0 && <div className={`w-[1px] h-4 ${isLight ? 'bg-slate-300' : 'bg-slate-800'}`} />}
+                <button
+                  onClick={() => listener.onSuggestionClicked?.(candidate)}
+                  className={`flex-1 h-full px-1.5 rounded-lg text-xs truncate transition-all duration-100 flex items-center justify-center ${
+                    isHighlighted
+                      ? isLight
+                        ? 'font-bold text-indigo-700 bg-indigo-50 border border-indigo-200 shadow-xs'
+                        : 'font-bold text-indigo-300 bg-indigo-950/60 border border-indigo-700/60 shadow-xs'
+                      : isLight
+                        ? 'text-slate-700 hover:bg-slate-200/60'
+                        : 'text-slate-300 hover:bg-slate-800/60'
+                  }`}
+                  title={`Insert "${candidate}"`}
+                >
+                  <span className="truncate">{candidate}</span>
+                </button>
+              </React.Fragment>
+            );
+          })}
+        </div>
+      ) : null}
 
-        {/* 📋 Clipboard */}
+      {/* Secondary Quick Action Icons or Toggle Button */}
+      {isShowingSuggestions ? (
         <button
-          id="toolbar-btn-clipboard"
-          onClick={listener.onClipboardClicked}
+          onClick={() => setShowFullTools(true)}
           className={iconBtnClass}
-          title="Clipboard"
+          title="More Tools"
         >
-          <Clipboard className="w-4 h-4" />
+          •••
         </button>
+      ) : (
+        <div className="flex items-center gap-1">
+          {hasSuggestions && (
+            <button
+              onClick={() => setShowFullTools(false)}
+              className={textBtnClass}
+              title="Show Suggestions"
+            >
+              Back
+            </button>
+          )}
 
-        {/* 🎨 Theme */}
-        <button
-          id="toolbar-btn-theme"
-          onClick={listener.onThemeClicked}
-          className={iconBtnClass}
-          title={`Switch Theme (Current: ${isLight ? 'Light' : 'Midnight'})`}
-        >
-          <Palette className="w-4 h-4" />
-        </button>
+          {/* 😀 Emoji */}
+          <button
+            id="toolbar-btn-emoji"
+            onClick={listener.onEmojiClicked}
+            className={iconBtnClass}
+            title="Emoji Picker"
+          >
+            <Smile className="w-4 h-4" />
+          </button>
 
-        {/* ⚙ Settings */}
-        <button
-          id="toolbar-btn-settings"
-          onClick={listener.onSettingsClicked}
-          className={iconBtnClass}
-          title="Keyboard Settings"
-        >
-          <Settings className="w-4 h-4" />
-        </button>
-      </div>
+          {/* GIF */}
+          <button
+            id="toolbar-btn-gif"
+            onClick={listener.onGifClicked}
+            className={textBtnClass}
+            title="GIF Search"
+          >
+            GIF
+          </button>
+
+          {/* 📋 Clipboard */}
+          <button
+            id="toolbar-btn-clipboard"
+            onClick={listener.onClipboardClicked}
+            className={iconBtnClass}
+            title="Clipboard"
+          >
+            <Clipboard className="w-4 h-4" />
+          </button>
+
+          {/* 🎨 Theme */}
+          <button
+            id="toolbar-btn-theme"
+            onClick={listener.onThemeClicked}
+            className={iconBtnClass}
+            title={`Switch Theme (Current: ${isLight ? 'Light' : 'Midnight'})`}
+          >
+            <Palette className="w-4 h-4" />
+          </button>
+
+          {/* ⚙ Settings */}
+          <button
+            id="toolbar-btn-settings"
+            onClick={listener.onSettingsClicked}
+            className={iconBtnClass}
+            title="Keyboard Settings"
+          >
+            <Settings className="w-4 h-4" />
+          </button>
+        </div>
+      )}
 
       {/* Temporary "AI Assistant — Coming Soon" Toast Banner */}
       {aiNoticeVisible && (
