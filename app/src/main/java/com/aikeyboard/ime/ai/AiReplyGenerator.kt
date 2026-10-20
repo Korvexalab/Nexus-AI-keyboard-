@@ -639,10 +639,6 @@ object AiReplyGenerator {
             // AI generation is powered by Cloud AI
         }
 
-    fun setOfflineMode(enabled: Boolean) {
-        // AI generation is powered by Cloud AI
-    }
-
     /**
      * Synchronous generator method (used by unit tests and offline testing).
      */
