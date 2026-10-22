@@ -16,10 +16,12 @@ export const ANDROID_FILES: AndroidFileEntry[] = [
  */
 object AiConfig {
     /**
-     * Centralized Gemini Flash model for fast, low-latency mobile keyboard text generation.
-     * Uses the currently supported and verified gemini-3.8-flash model.
+     * Official Vertex AI in Firebase models:
+     * GEMINI_FLASH_MODEL: gemini-2.5-flash (fast, low-latency text generation)
+     * GEMINI_FLASH_LITE_MODEL: gemini-3.8-flash (active high-speed fallback model)
      */
-    const val GEMINI_FLASH_MODEL = "gemini-3.8-flash"
+    const val GEMINI_FLASH_MODEL = "gemini-2.5-flash"
+    const val GEMINI_FLASH_LITE_MODEL = "gemini-3.8-flash"
 
     /**
      * Generation configuration parameters
@@ -4933,7 +4935,7 @@ class KeyboardStateTest {
 
     @Test
     fun testM30GeminiConfigurationAndModel() {
-        assertEquals("gemini-3.8-flash", com.aikeyboard.ime.ai.AiConfig.GEMINI_FLASH_MODEL)
+        assertEquals("gemini-2.5-flash", com.aikeyboard.ime.ai.AiConfig.GEMINI_FLASH_MODEL)
         assertTrue("Temperature is balanced for natural conversation", com.aikeyboard.ime.ai.AiConfig.TEMPERATURE in 0.5f..0.9f)
         assertTrue("Output tokens allow complete messages", com.aikeyboard.ime.ai.AiConfig.MAX_OUTPUT_TOKENS >= 256)
     }

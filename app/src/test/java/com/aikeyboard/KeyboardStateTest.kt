@@ -547,7 +547,7 @@ class KeyboardStateTest {
     @Test
     fun testM30GeminiConfigurationAndModel() {
         // Milestone 3.0 Requirement 2: Centralized model configuration
-        assertEquals("gemini-2.0-flash", com.aikeyboard.ime.ai.AiConfig.GEMINI_FLASH_MODEL)
+        assertEquals("gemini-2.5-flash", com.aikeyboard.ime.ai.AiConfig.GEMINI_FLASH_MODEL)
         assertTrue("Temperature is balanced for natural conversation", com.aikeyboard.ime.ai.AiConfig.TEMPERATURE in 0.5f..0.9f)
         assertTrue("Output tokens allow complete messages", com.aikeyboard.ime.ai.AiConfig.MAX_OUTPUT_TOKENS >= 256)
     }

@@ -440,7 +440,7 @@ CRITICAL INSTRUCTIONS:
                         pMsg.contains("SERVICE_DISABLED", ignoreCase = true)) {
                         throw primaryEx
                     }
-                    // Fallback to GEMINI_FLASH_LITE_MODEL (gemini-1.5-flash)
+                    // Fallback to GEMINI_FLASH_LITE_MODEL (gemini-3.8-flash)
                     val fallbackModel = Firebase.vertexAI.generativeModel(
                         modelName = AiConfig.GEMINI_FLASH_LITE_MODEL,
                         generationConfig = generationConfig {
@@ -479,6 +479,8 @@ CRITICAL INSTRUCTIONS:
                         "Vertex AI in Firebase API is not enabled in your Firebase project. Please enable firebasevertexai.googleapis.com in Google Cloud Console.",
                         "https://console.developers.google.com/apis/api/firebasevertexai.googleapis.com/overview"
                     )
+                msg.contains("retired", ignoreCase = true) || msg.contains("discontinued", ignoreCase = true) ->
+                    throw GeminiException.General("Gemini model retired or discontinued by Google. Using updated Gemini Flash models.", e)
                 msg.contains("429") || msg.contains("RESOURCE_EXHAUSTED") || msg.contains("quota", ignoreCase = true) ->
                     throw GeminiException.RateLimit("Gemini rate limit reached. Please wait a moment and tap retry.")
                 msg.contains("503") || msg.contains("UNAVAILABLE", ignoreCase = true) || msg.contains("high demand", ignoreCase = true) ->
@@ -572,6 +574,8 @@ Instructions:
                         "Vertex AI in Firebase API is not enabled in your Firebase project. Please enable firebasevertexai.googleapis.com or use Offline AI.",
                         "https://console.developers.google.com/apis/api/firebasevertexai.googleapis.com/overview"
                     )
+                msg.contains("retired", ignoreCase = true) || msg.contains("discontinued", ignoreCase = true) ->
+                    throw GeminiException.General("Gemini model retired or discontinued by Google. Using updated Gemini Flash models.", e)
                 msg.contains("429") || msg.contains("RESOURCE_EXHAUSTED") || msg.contains("quota", ignoreCase = true) ->
                     throw GeminiException.RateLimit("Gemini rate limit reached. Please wait a moment and tap retry.")
                 msg.contains("503") || msg.contains("UNAVAILABLE", ignoreCase = true) || msg.contains("high demand", ignoreCase = true) ->
