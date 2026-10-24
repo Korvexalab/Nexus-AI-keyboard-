@@ -96,6 +96,7 @@ data class AiRequest(
 sealed class GeminiException(message: String, cause: Throwable? = null) : Exception(message, cause) {
     class MissingConfiguration(message: String) : GeminiException(message)
     class ApiNotEnabled(message: String, val enableUrl: String = "") : GeminiException(message)
+    class GenAiConfigNotFound(message: String, val setupUrl: String = "") : GeminiException(message)
     class Timeout(message: String) : GeminiException(message)
     class RateLimit(message: String) : GeminiException(message)
     class ServiceUnavailable(message: String) : GeminiException(message)
@@ -389,12 +390,19 @@ class FirebaseGeminiReplyGenerator(
     }
 
     override suspend fun generate(request: AiRequest): String {
+        if (AiReplyGenerator.isOfflineMode) {
+            return fallback.generate(request)
+        }
         val suggestions = generateSuggestions(request)
         return suggestions.firstOrNull()
             ?: throw GeminiException.EmptyResponse("Gemini returned no response.")
     }
 
     override suspend fun generateSuggestions(request: AiRequest): List<String> {
+        if (AiReplyGenerator.isOfflineMode) {
+            return fallback.generateSuggestions(request)
+        }
+
         if (!isFirebaseConfigured()) {
             throw GeminiException.MissingConfiguration(
                 "Firebase is not configured. Connect your active Firebase project to enable live Gemini generation."
@@ -433,8 +441,10 @@ CRITICAL INSTRUCTIONS:
                     model.generateContent(prompt).text
                 } catch (primaryEx: Throwable) {
                     val pMsg = primaryEx.message ?: ""
-                    // If it's an API not enabled issue, let it bubble up
-                    if (pMsg.contains("firebasevertexai.googleapis.com", ignoreCase = true) ||
+                    // If it's a configuration or disabled API issue, let it bubble up immediately
+                    if (pMsg.contains("genai config not found", ignoreCase = true) ||
+                        pMsg.contains("error-genai-config-not-found", ignoreCase = true) ||
+                        pMsg.contains("firebasevertexai.googleapis.com", ignoreCase = true) ||
                         pMsg.contains("has not been used in project", ignoreCase = true) ||
                         pMsg.contains("API has not been enabled", ignoreCase = true) ||
                         pMsg.contains("SERVICE_DISABLED", ignoreCase = true)) {
@@ -471,6 +481,12 @@ CRITICAL INSTRUCTIONS:
         } catch (e: Throwable) {
             val msg = e.message ?: ""
             when {
+                msg.contains("genai config not found", ignoreCase = true) ||
+                msg.contains("error-genai-config-not-found", ignoreCase = true) ->
+                    throw GeminiException.GenAiConfigNotFound(
+                        "Firebase AI Logic genai config not found in project (gen-lang-client-0126286835). Please initialize AI Logic in Firebase Console or switch to On-Device AI.",
+                        "https://firebase.google.com/docs/ai-logic/error-codes#error-genai-config-not-found"
+                    )
                 msg.contains("firebasevertexai.googleapis.com", ignoreCase = true) ||
                 msg.contains("has not been used in project", ignoreCase = true) ||
                 msg.contains("API has not been enabled", ignoreCase = true) ||
@@ -498,6 +514,10 @@ CRITICAL INSTRUCTIONS:
     override suspend fun generateAskAi(question: String, persona: AiPersona): String {
         val q = question.trim()
         if (q.isEmpty()) return "Please enter a question or instruction to ask AI."
+
+        if (AiReplyGenerator.isOfflineMode) {
+            return fallback.generateAskAi(q, persona)
+        }
 
         if (!isFirebaseConfigured()) {
             throw GeminiException.MissingConfiguration(
@@ -534,7 +554,10 @@ Instructions:
                     model.generateContent(prompt).text
                 } catch (primaryEx: Throwable) {
                     val pMsg = primaryEx.message ?: ""
-                    if (pMsg.contains("firebasevertexai.googleapis.com", ignoreCase = true) ||
+                    // If it's a configuration or disabled API issue, let it bubble up immediately
+                    if (pMsg.contains("genai config not found", ignoreCase = true) ||
+                        pMsg.contains("error-genai-config-not-found", ignoreCase = true) ||
+                        pMsg.contains("firebasevertexai.googleapis.com", ignoreCase = true) ||
                         pMsg.contains("has not been used in project", ignoreCase = true) ||
                         pMsg.contains("API has not been enabled", ignoreCase = true) ||
                         pMsg.contains("SERVICE_DISABLED", ignoreCase = true)) {
@@ -566,12 +589,18 @@ Instructions:
         } catch (e: Throwable) {
             val msg = e.message ?: ""
             when {
+                msg.contains("genai config not found", ignoreCase = true) ||
+                msg.contains("error-genai-config-not-found", ignoreCase = true) ->
+                    throw GeminiException.GenAiConfigNotFound(
+                        "Firebase AI Logic genai config not found in project (gen-lang-client-0126286835). Please initialize AI Logic in Firebase Console or switch to On-Device AI.",
+                        "https://firebase.google.com/docs/ai-logic/error-codes#error-genai-config-not-found"
+                    )
                 msg.contains("firebasevertexai.googleapis.com", ignoreCase = true) ||
                 msg.contains("has not been used in project", ignoreCase = true) ||
                 msg.contains("API has not been enabled", ignoreCase = true) ||
                 msg.contains("SERVICE_DISABLED", ignoreCase = true) ->
                     throw GeminiException.ApiNotEnabled(
-                        "Vertex AI in Firebase API is not enabled in your Firebase project. Please enable firebasevertexai.googleapis.com or use Offline AI.",
+                        "Vertex AI in Firebase API is not enabled in your Firebase project. Please enable firebasevertexai.googleapis.com or switch to On-Device AI.",
                         "https://console.developers.google.com/apis/api/firebasevertexai.googleapis.com/overview"
                     )
                 msg.contains("retired", ignoreCase = true) || msg.contains("discontinued", ignoreCase = true) ->
@@ -638,9 +667,9 @@ object AiReplyGenerator {
     var currentGenerator: ReplyGenerator = firebaseGenerator
 
     var isOfflineMode: Boolean
-        get() = false
-        set(_) {
-            // AI generation is powered by Cloud AI
+        get() = currentGenerator === mockGenerator
+        set(value) {
+            currentGenerator = if (value) mockGenerator else firebaseGenerator
         }
 
     /**

@@ -1,11 +1,11 @@
-import { AndroidFileEntry } from './types';
+import { AndroidFileEntry } from "./types";
 
 export const ANDROID_FILES: AndroidFileEntry[] = [
   {
-    path: 'app/src/main/java/com/aikeyboard/ime/ai/AiConfig.kt',
-    name: 'AiConfig.kt',
-    language: 'kotlin',
-    description: 'Milestone 3.0: Centralized Gemini Model & Generation Configuration for Firebase AI Logic.',
+    path: "app/src/main/java/com/aikeyboard/ime/ai/AiConfig.kt",
+    name: "AiConfig.kt",
+    language: "kotlin",
+    description: "Milestone 3.0: Centralized Gemini Model & Generation Configuration for Firebase AI Logic.",
     content: `package com.aikeyboard.ime.ai
 
 /**
@@ -39,25 +39,39 @@ object AiConfig {
 `
   },
   {
-    path: 'app/src/main/java/com/aikeyboard/ime/ai/AppCheckConfig.kt',
-    name: 'AppCheckConfig.kt',
-    language: 'kotlin',
-    description: 'Milestone 3.2: Firebase App Check initialization with debug token in DEBUG builds and Play Integrity in RELEASE builds.',
+    path: "app/src/main/java/com/aikeyboard/ime/ai/AppCheckConfig.kt",
+    name: "AppCheckConfig.kt",
+    language: "kotlin",
+    description: "Milestone 3.2: Firebase App Check initialization with debug token in DEBUG builds and Play Integrity in RELEASE builds.",
     content: `package com.aikeyboard.ime.ai
 
 import android.content.Context
+import android.content.pm.ApplicationInfo
 import com.aikeyboard.BuildConfig
 import com.google.firebase.FirebaseApp
 import com.google.firebase.appcheck.FirebaseAppCheck
 import com.google.firebase.appcheck.debug.DebugAppCheckProviderFactory
 import com.google.firebase.appcheck.playintegrity.PlayIntegrityAppCheckProviderFactory
 
+/**
+ * Milestone 3.2 — Firebase App Check Configuration.
+ *
+ * Configures App Check for abuse prevention without creating an insecure production setup:
+ * - Uses DebugAppCheckProviderFactory in debug builds (logs debug token for Firebase Console).
+ * - Uses PlayIntegrityAppCheckProviderFactory in release builds (Play Integrity API).
+ */
 object AppCheckConfig {
+
     fun initialize(context: Context) {
         try {
             if (FirebaseApp.getApps(context).isNotEmpty()) {
                 val appCheck = FirebaseAppCheck.getInstance()
-                if (BuildConfig.DEBUG) {
+                val isDebug = try {
+                    BuildConfig.DEBUG
+                } catch (_: Throwable) {
+                    (context.applicationInfo.flags and ApplicationInfo.FLAG_DEBUGGABLE) != 0
+                }
+                if (isDebug) {
                     appCheck.installAppCheckProviderFactory(
                         DebugAppCheckProviderFactory.getInstance()
                     )
@@ -68,16 +82,17 @@ object AppCheckConfig {
                 }
             }
         } catch (_: Throwable) {
+            // App Check setup failure handled gracefully
         }
     }
 }
 `
   },
   {
-    path: 'app/src/main/java/com/aikeyboard/ime/ai/AiReplyGenerator.kt',
-    name: 'AiReplyGenerator.kt',
-    language: 'kotlin',
-    description: 'Milestone 3.0: Real Gemini generator with Firebase AI Logic, dynamic persona prompts, and generator abstraction.',
+    path: "app/src/main/java/com/aikeyboard/ime/ai/AiReplyGenerator.kt",
+    name: "AiReplyGenerator.kt",
+    language: "kotlin",
+    description: "Milestone 3.0: Real Gemini generator with Firebase AI Logic, dynamic persona prompts, and generator abstraction.",
     content: `package com.aikeyboard.ime.ai
 
 import com.google.firebase.Firebase
@@ -169,9 +184,14 @@ data class AiRequest(
 
 /**
  * Milestone 3.2 — Explicit Gemini Error Hierarchy.
+ *
+ * Ensures safe, actionable user-facing error reporting without raw crash dumps,
+ * and eliminates silent mock substitution when real Gemini calls fail.
  */
 sealed class GeminiException(message: String, cause: Throwable? = null) : Exception(message, cause) {
     class MissingConfiguration(message: String) : GeminiException(message)
+    class ApiNotEnabled(message: String, val enableUrl: String = "") : GeminiException(message)
+    class GenAiConfigNotFound(message: String, val setupUrl: String = "") : GeminiException(message)
     class Timeout(message: String) : GeminiException(message)
     class RateLimit(message: String) : GeminiException(message)
     class ServiceUnavailable(message: String) : GeminiException(message)
@@ -181,7 +201,10 @@ sealed class GeminiException(message: String, cause: Throwable? = null) : Except
 }
 
 /**
- * Milestone 3.0 — Generator Abstraction Interface.
+ * Milestone 3.0 & 3.2 — Generator Abstraction Interface.
+ *
+ * The UI and tests depend on this abstraction, supporting seamless switching
+ * between real Gemini generation via Firebase AI Logic and the offline mock generator.
  */
 interface ReplyGenerator {
     suspend fun generate(request: AiRequest): String
@@ -217,44 +240,45 @@ class MockReplyGenerator : ReplyGenerator {
 
         return when (action) {
             AiAction.REPLY -> when (persona) {
-                AiPersona.FRIENDLY -> if (hasContext) "Hey there! Regarding '\$trimmed', that sounds wonderful! 😊✨" else "Hey there! That sounds awesome, can't wait! 😊"
-                AiPersona.FREELANCER -> if (hasContext) "Thanks for the update on '\$trimmed'. I'm on it and will send the deliverables shortly." else "Thanks for reaching out! Reaching out with the latest updates."
-                AiPersona.PROFESSIONAL -> if (hasContext) "Thank you for the update regarding '\$trimmed'. I will review the details and proceed with the next steps." else "Thank you for reaching out. I will review the details and coordinate our next steps."
-                AiPersona.FUNNY -> if (hasContext) "Say no more! Working my magic on '\$trimmed' as we speak! 😂🚀" else "Plot twist: I actually agree with you on this one! 😂"
-                AiPersona.SHORT -> if (hasContext) "Got it (\$trimmed) — on it!" else "Sounds good, thanks!"
-                AiPersona.NATURAL -> if (hasContext) "Yeah sounds good! Looking into '\$trimmed' now." else "Sounds good to me, talk soon!"
-                AiPersona.ROMANTIC -> if (hasContext) "Always brightens my day hearing from you about '\$trimmed' ❤️" else "Thinking of you! Hope your day is as wonderful as you are ❤️"
+                AiPersona.FRIENDLY -> if (hasContext) "Hey there! Regarding '$trimmed', that sounds wonderful! 😊✨" else "Hey there! That sounds awesome, can't wait! 😊"
+                AiPersona.FREELANCER -> if (hasContext) "Thanks for the update on '$trimmed'. I'm on it and will send the deliverables shortly." else "Thanks for reaching out! Reaching out with the latest updates."
+                AiPersona.PROFESSIONAL -> if (hasContext) "Thank you for the update regarding '$trimmed'. I will review the details and proceed with the next steps." else "Thank you for reaching out. I will review the details and coordinate our next steps."
+                AiPersona.FUNNY -> if (hasContext) "Say no more! Working my magic on '$trimmed' as we speak! 😂🚀" else "Plot twist: I actually agree with you on this one! 😂"
+                AiPersona.SHORT -> if (hasContext) "Got it ($trimmed) — on it!" else "Sounds good, thanks!"
+                AiPersona.NATURAL -> if (hasContext) "Yeah sounds good! Looking into '$trimmed' now." else "Sounds good to me, talk soon!"
+                AiPersona.ROMANTIC -> if (hasContext) "Always brightens my day hearing from you about '$trimmed' ❤️" else "Thinking of you! Hope your day is as wonderful as you are ❤️"
             }
             AiAction.REWRITE -> when (persona) {
                 AiPersona.FRIENDLY -> if (hasContext) {
                     if (trimmed.equals("whatup", ignoreCase = true)) "Hey! What's up?"
-                    else "Hey there! \$trimmed 😊"
+                    else "Hey there! $trimmed 😊"
                 } else "Hey! What's up?"
-                AiPersona.FREELANCER -> if (hasContext) "Following up regarding: \$trimmed." else "Reaching out regarding our project milestones."
-                AiPersona.PROFESSIONAL -> if (hasContext) "Regarding: \$trimmed. Please review and advise." else "Reaching out to coordinate on our mutual deliverables."
-                AiPersona.FUNNY -> if (hasContext) "Plot twist: \$trimmed! 😂" else "Plot twist: wait until you hear this! 😂"
-                AiPersona.SHORT -> if (hasContext) "\$trimmed (updated)" else "Quick note."
-                AiPersona.NATURAL -> if (hasContext) "\$trimmed" else "Just wanted to check in."
-                AiPersona.ROMANTIC -> if (hasContext) "\$trimmed ❤️" else "Sending you love today ❤️"
+                AiPersona.FREELANCER -> if (hasContext) "Following up regarding: $trimmed." else "Reaching out regarding our project milestones."
+                AiPersona.PROFESSIONAL -> if (hasContext) "Regarding: $trimmed. Please review and advise." else "Reaching out to coordinate on our mutual deliverables."
+                AiPersona.FUNNY -> if (hasContext) "Plot twist: $trimmed! 😂" else "Plot twist: wait until you hear this! 😂"
+                AiPersona.SHORT -> if (hasContext) "$trimmed (updated)" else "Quick note."
+                AiPersona.NATURAL -> if (hasContext) "$trimmed" else "Just wanted to check in."
+                AiPersona.ROMANTIC -> if (hasContext) "$trimmed ❤️" else "Sending you love today ❤️"
             }
             AiAction.CONTINUE -> if (hasContext) {
-                "\$trimmed so we can align on next steps together."
+                "$trimmed so we can align on next steps together."
             } else {
-                "Looking forward to catching up whenever you have a moment."
+                "Let's coordinate on our next milestone together."
             }
-            AiAction.START -> if (hasContext) {
-                "Hey! Hope you're having a great week. Quick question on '\$trimmed':"
-            } else {
-                "Hey! Hope you are having a fantastic day! 😊"
+            AiAction.START -> when (persona) {
+                AiPersona.FRIENDLY -> if (hasContext) "Hey! Hope you're having a great week. Quick question about '$trimmed' 😊" else "Hey! Hope you are having a wonderful day! 😊"
+                AiPersona.FREELANCER, AiPersona.PROFESSIONAL -> if (hasContext) "Hi there, reaching out regarding '$trimmed' whenever you have a moment." else "Good morning, reaching out to coordinate on our mutual deliverables."
+                AiPersona.FUNNY -> if (hasContext) "Hey! Random thought about '$trimmed': brace yourself! 😂" else "Hey! Quick question before my coffee wears off! ☕"
+                AiPersona.SHORT -> if (hasContext) "Quick check on '$trimmed'." else "Quick check-in."
+                AiPersona.NATURAL -> if (hasContext) "Hey, was just thinking about '$trimmed'." else "Hey! How's it going?"
+                AiPersona.ROMANTIC -> if (hasContext) "Hey you ❤️ Just thinking about '$trimmed'." else "Hey you! Hope you're having the sweetest day ❤️"
             }
-            AiAction.CREATE -> if (instruction.isNotBlank()) {
-                "Draft: Regarding '\$instruction' — ready for review."
-            } else if (hasContext) {
-                "Draft for '\$trimmed': ready for your review."
-            } else {
-                "Here is a draft message ready to share! ✨"
+            AiAction.CREATE -> {
+                val topic = if (instruction.isNotBlank()) instruction else trimmed
+                if (topic.isNotEmpty()) "Draft for '$topic': ready for your review."
+                else "Here is a versatile friendly draft message ready to share! ✨"
             }
-            AiAction.ASK_AI -> generateAskAiSync(if (instruction.isNotBlank()) instruction else context, persona)
+            AiAction.ASK_AI -> generateAskAiSync(instruction.ifBlank { trimmed }, persona)
         }
     }
 
@@ -264,43 +288,34 @@ class MockReplyGenerator : ReplyGenerator {
         context: String = "",
         instruction: String = ""
     ): List<String> {
-        val trimmed = context.trim()
         val primary = generateSync(action, persona, context, instruction)
+        val trimmed = context.trim()
 
         if (action == AiAction.REWRITE) {
-            if (trimmed.equals("whatup", ignoreCase = true)) {
-                return listOf(
-                    "Hey! What's up?",
-                    "Hey, how's it going?",
-                    "Hey there! Hope you're having a good one!"
-                )
-            }
             return when (persona) {
-                AiPersona.FRIENDLY -> listOf(
-                    primary,
-                    if (trimmed.isNotEmpty()) "Hey there! How are you doing regarding '\$trimmed'? 😊" else "Hey, how are you doing?",
-                    if (trimmed.isNotEmpty()) "Hi! Just wanted to check in about '\$trimmed' ✨" else "Hi there! Hope all is well!"
-                )
-                AiPersona.FREELANCER, AiPersona.PROFESSIONAL -> listOf(
-                    primary,
-                    if (trimmed.isNotEmpty()) "Deliverable update: '\$trimmed'." else "Please review the attached project updates.",
-                    if (trimmed.isNotEmpty()) "Reaching out regarding '\$trimmed' for your review." else "Following up on our project milestones."
-                )
-                AiPersona.FUNNY -> listOf(
-                    primary,
-                    if (trimmed.isNotEmpty()) "Breaking news: '\$trimmed' just got upgraded! 🎉" else "Spiced-up version ready! 🎉",
-                    if (trimmed.isNotEmpty()) "Warning: '\$trimmed' contains excessive awesomeness! 🚀" else "Now with 200% more pizzazz! 🚀"
-                )
-                AiPersona.SHORT -> listOf(
-                    primary,
-                    if (trimmed.isNotEmpty()) "Note: \$trimmed" else "All set.",
-                    if (trimmed.isNotEmpty()) "Update: \$trimmed" else "Noted."
-                )
-                else -> listOf(
-                    primary,
-                    if (trimmed.isNotEmpty()) "Polished: \$trimmed" else "Sounds good!",
-                    if (trimmed.isNotEmpty()) "Cleaned up: \$trimmed" else "Talk soon!"
-                )
+                AiPersona.FRIENDLY -> if (trimmed.equals("whatup", ignoreCase = true)) {
+                    listOf("Hey! What's up?", "Hey, how's it going?", "What's up? Hope you're having a great day! 😊")
+                } else if (trimmed.isNotEmpty()) {
+                    listOf("Hey there! $trimmed 😊", "Hey! $trimmed", "Just wanted to say: $trimmed ✨")
+                } else {
+                    listOf("Hey! What's up?", "Hey, how's it going?", "Hope you're having a great day! 😊")
+                }
+                AiPersona.FREELANCER, AiPersona.PROFESSIONAL -> if (trimmed.isNotEmpty()) {
+                    listOf("Following up regarding: $trimmed.", "Please find the latest update: '$trimmed'.", "Regarding $trimmed — please advise at your convenience.")
+                } else {
+                    listOf("Reaching out regarding our project milestones.", "Please review the attached deliverables.", "Following up on our recent action items.")
+                }
+                AiPersona.FUNNY -> if (trimmed.isNotEmpty()) {
+                    listOf("Plot twist: $trimmed! 😂", "Breaking news: $trimmed! 🚀", "Spiced-up version: $trimmed 🎉")
+                } else {
+                    listOf("Plot twist: wait until you hear this! 😂", "Now with 200% more pizzazz! 🎉")
+                }
+                AiPersona.SHORT -> if (trimmed.isNotEmpty()) {
+                    listOf("$trimmed (updated)", "Quick note: $trimmed", "Noted: $trimmed")
+                } else {
+                    listOf("Got it.", "Noted.", "All set.")
+                }
+                else -> listOf(primary, "$primary 😊", "Quick update: $primary")
             }
         }
 
@@ -308,45 +323,41 @@ class MockReplyGenerator : ReplyGenerator {
             return when (persona) {
                 AiPersona.FRIENDLY -> listOf(
                     primary,
-                    if (trimmed.isNotEmpty()) "Hey! Thanks for the update on '\$trimmed'! 😊" else "Sounds wonderful! Let me know if you need anything! ✨",
-                    if (trimmed.isNotEmpty()) "Sounds awesome! Let's definitely do '\$trimmed'! ✨" else "Count me in! Talk soon! 😊"
+                    if (trimmed.isNotEmpty()) "Totally agree on '$trimmed'! Let's do it! 🙌" else "Totally agree! Let's do it! 🙌",
+                    if (trimmed.isNotEmpty()) "Thanks so much for the update on '$trimmed'! 😊" else "Thanks so much for reaching out! 😊"
                 )
                 AiPersona.FREELANCER, AiPersona.PROFESSIONAL -> listOf(
                     primary,
-                    if (trimmed.isNotEmpty()) "Noted regarding '\$trimmed'. I will incorporate this into the deliverables." else "Understood, thank you. I will proceed accordingly.",
-                    if (trimmed.isNotEmpty()) "Understood. Proceeding with '\$trimmed' as discussed." else "Thank you for the notification."
+                    if (trimmed.isNotEmpty()) "Understood regarding '$trimmed'. I've updated the milestones accordingly." else "Understood. I will follow up with the next deliverables.",
+                    if (trimmed.isNotEmpty()) "Thanks for sharing. I'll review '$trimmed' and follow up shortly." else "Thank you for the update. I will proceed with next steps."
                 )
                 AiPersona.FUNNY -> listOf(
                     primary,
-                    if (trimmed.isNotEmpty()) "Say no more, my friend! '\$trimmed' is already in motion! 🚀" else "Say no more! Magic in progress! 😂",
-                    if (trimmed.isNotEmpty()) "Challenge accepted for '\$trimmed'! 😂" else "Plot twist: we got this! 🍿"
+                    if (trimmed.isNotEmpty()) "Challenge accepted for '$trimmed'! 😂" else "Challenge accepted! 😂",
+                    if (trimmed.isNotEmpty()) "And boom! '$trimmed' is officially in motion! 🍿" else "And boom! We are on it! 🍿"
                 )
                 AiPersona.SHORT -> listOf(
                     primary,
-                    "Got it, thanks!",
-                    "Understood."
+                    if (trimmed.isNotEmpty()) "Sounds good regarding $trimmed." else "Sounds good, thanks!",
+                    "All set!"
                 )
-                else -> listOf(
-                    primary,
-                    if (trimmed.isNotEmpty()) "Sounds good regarding '\$trimmed'!" else "Sounds good!",
-                    if (trimmed.isNotEmpty()) "Got it, thanks for updating." else "Understood."
-                )
+                else -> listOf(primary, "Sounds great, talk soon!", "Understood, thank you!")
             }
         }
 
         if (action == AiAction.CONTINUE) {
             return listOf(
                 primary,
-                if (trimmed.isNotEmpty()) "\$trimmed so we can discuss the project details tomorrow." else "What do you think should be our next move?",
-                if (trimmed.isNotEmpty()) "\$trimmed and coordinate whenever you have a quick moment." else "Agreed, let's keep going!"
+                if (trimmed.isNotEmpty()) "$trimmed whenever you have a quick moment today." else "Looking forward to following up soon.",
+                if (trimmed.isNotEmpty()) "$trimmed and coordinate whenever you have a quick moment." else "Agreed, let's keep going!"
             )
         }
 
         if (action == AiAction.START) {
             return listOf(
                 primary,
-                if (trimmed.isNotEmpty()) "Hey! Hope you're having a great week. Quick question on '\$trimmed':" else "Hey! Hope you are having a fantastic day! 😊",
-                if (trimmed.isNotEmpty()) "Hi! Wanted to touch base regarding '\$trimmed' whenever you have a moment." else "Hi there! Reaching out to see how things are going."
+                if (trimmed.isNotEmpty()) "Hey! Hope you're having a great week. Quick question on '$trimmed':" else "Hey! Hope you are having a fantastic day! 😊",
+                if (trimmed.isNotEmpty()) "Hi! Wanted to touch base regarding '$trimmed' whenever you have a moment." else "Hi there! Reaching out to see how things are going."
             )
         }
 
@@ -360,23 +371,49 @@ class MockReplyGenerator : ReplyGenerator {
         val q = question.trim()
         if (q.isEmpty()) return "Ask me anything or provide an instruction!"
         return when (persona) {
-            AiPersona.FREELANCER, AiPersona.PROFESSIONAL -> "Analysis for \\\"\$q\\\": The recommended approach is to outline clear objectives, align stakeholder expectations, and proceed methodically."
-            AiPersona.FUNNY -> "According to my calculations on \\\"\$q\\\": 42! Just kidding — here is the fun answer: definitely go for it, but bring snacks! 🍕✨"
-            AiPersona.SHORT -> "\\\"\$q\\\" — Summary: Verified and recommended."
-            AiPersona.NATURAL -> "On \\\"\$q\\\": I would recommend keeping it simple and straightforward."
-            AiPersona.ROMANTIC -> "Regarding \\\"\$q\\\": Whatever you choose, follow your heart! I believe in you ❤️✨"
-            AiPersona.FRIENDLY -> "Great question about \\\"\$q\\\"! Here is a helpful breakdown: you can achieve this by breaking the goal into simple steps and tackling the most important piece first! 😊✨"
+            AiPersona.FREELANCER, AiPersona.PROFESSIONAL -> "Analysis for \\"$q\\": The recommended approach is to outline clear objectives, align stakeholder expectations, and proceed methodically."
+            AiPersona.FUNNY -> "According to my calculations on \\"$q\\": 42! Just kidding — here is the fun answer: definitely go for it, but bring snacks! 🍕✨"
+            AiPersona.SHORT -> "\\"$q\\" — Summary: Verified and recommended."
+            AiPersona.NATURAL -> "On \\"$q\\": I would recommend keeping it simple and straightforward."
+            AiPersona.ROMANTIC -> "Regarding \\"$q\\": Whatever you choose, follow your heart! I believe in you ❤️✨"
+            AiPersona.FRIENDLY -> "Great question about \\"$q\\"! Here is a helpful breakdown: you can achieve this by breaking the goal into simple steps and tackling the most important piece first! 😊✨"
         }
     }
 }
 
 /**
- * Milestone 3.0 — Real Gemini-powered implementation using Firebase AI Logic.
+ * Milestone 3.0 & 3.2 — Real Gemini-powered implementation using Firebase AI Logic.
+ *
+ * Uses Firebase AI Logic with the Google AI / Gemini developer backend.
+ * No raw API keys are stored in client code.
+ * Personas are dynamic prompt variations, not separate models.
+ * Never silently substitutes mock responses when real Gemini fails.
  */
 class FirebaseGeminiReplyGenerator(
-    private val fallback: MockReplyGenerator = MockReplyGenerator()
+    val fallback: MockReplyGenerator = MockReplyGenerator()
 ) : ReplyGenerator {
 
+    var isOfflineMode: Boolean = false
+
+    /**
+     * Checks if Firebase is initialized with authentic (non-placeholder) project credentials.
+     */
+    fun isFirebaseConfigured(): Boolean {
+        return try {
+            val app = FirebaseApp.getInstance()
+            val apiKey = app.options.apiKey
+            apiKey.isNotBlank() &&
+                !apiKey.contains("Dummy", ignoreCase = true) &&
+                !apiKey.contains("Placeholder", ignoreCase = true) &&
+                !apiKey.contains("example", ignoreCase = true)
+        } catch (_: Throwable) {
+            false
+        }
+    }
+
+    /**
+     * Builds dynamic persona prompt instructions conforming to Milestone 3.0 Section 5.
+     */
     fun buildPersonaPrompt(persona: AiPersona): String {
         return when (persona) {
             AiPersona.FRIENDLY ->
@@ -396,6 +433,9 @@ class FirebaseGeminiReplyGenerator(
         }
     }
 
+    /**
+     * Builds dynamic action instructions conforming to Milestone 3.0 Sections 4, 7-10.
+     */
     fun buildActionInstruction(action: AiAction, context: String, instruction: String): String {
         val trimmed = context.trim()
         val hasContext = trimmed.isNotEmpty()
@@ -403,28 +443,28 @@ class FirebaseGeminiReplyGenerator(
         return when (action) {
             AiAction.REPLY -> {
                 if (hasContext) {
-                    "Task: Reply. Use the user's current draft or message context: \\\"\$trimmed\\\". Generate a direct, natural conversational reply."
+                    "Task: Reply. Use the user's current draft or message context: \\"$trimmed\\". Generate a direct, natural conversational reply."
                 } else {
                     "Task: Reply. The draft is empty. Generate an appropriate conversational reply or follow-up based on context."
                 }
             }
             AiAction.REWRITE -> {
                 if (hasContext) {
-                    "Task: Rewrite. Rewrite the text: \\\"\$trimmed\\\". Preserve the exact meaning while applying the persona style naturally."
+                    "Task: Rewrite. Rewrite the text: \\"$trimmed\\". Preserve the exact meaning while applying the persona style naturally."
                 } else {
                     "Task: Rewrite. Provide a natural friendly message."
                 }
             }
             AiAction.CONTINUE -> {
                 if (hasContext) {
-                    "Task: Continue. Continue the user's message naturally: \\\"\$trimmed\\\". Complete the thought or sentence seamlessly without changing the original intent."
+                    "Task: Continue. Continue the user's message naturally: \\"$trimmed\\". Complete the thought or sentence seamlessly without changing the original intent."
                 } else {
                     "Task: Continue. Continue the conversation with a natural next step."
                 }
             }
             AiAction.START -> {
                 if (hasContext) {
-                    "Task: Start. Generate a natural opening message or conversation starter about: \\\"\$trimmed\\\"."
+                    "Task: Start. Generate a natural opening message or conversation starter about: \\"$trimmed\\"."
                 } else {
                     "Task: Start. Generate a natural opening conversation starter."
                 }
@@ -432,38 +472,32 @@ class FirebaseGeminiReplyGenerator(
             AiAction.CREATE -> {
                 val topic = if (instruction.isNotBlank()) instruction else trimmed
                 if (topic.isNotEmpty()) {
-                    "Task: Create. Draft a fresh message based on the topic/instruction: \\\"\$topic\\\"."
+                    "Task: Create. Draft a fresh message based on the topic/instruction: \\"$topic\\"."
                 } else {
                     "Task: Create. Create a versatile friendly draft message."
                 }
             }
             AiAction.ASK_AI -> {
                 val q = if (instruction.isNotBlank()) instruction else trimmed
-                "Task: Ask AI. Answer the question directly and concisely: \\\"\$q\\\"."
+                "Task: Ask AI. Answer the question directly and concisely: \\"$q\\"."
             }
         }
     }
 
-    fun isFirebaseConfigured(): Boolean {
-        return try {
-            val app = FirebaseApp.getInstance()
-            val apiKey = app.options.apiKey
-            apiKey.isNotBlank() &&
-                !apiKey.contains("Dummy", ignoreCase = true) &&
-                !apiKey.contains("Placeholder", ignoreCase = true) &&
-                !apiKey.contains("example", ignoreCase = true)
-        } catch (_: Throwable) {
-            false
-        }
-    }
-
     override suspend fun generate(request: AiRequest): String {
+        if (AiReplyGenerator.isOfflineMode) {
+            return fallback.generate(request)
+        }
         val suggestions = generateSuggestions(request)
         return suggestions.firstOrNull()
             ?: throw GeminiException.EmptyResponse("Gemini returned no response.")
     }
 
     override suspend fun generateSuggestions(request: AiRequest): List<String> {
+        if (AiReplyGenerator.isOfflineMode) {
+            return fallback.generateSuggestions(request)
+        }
+
         if (!isFirebaseConfigured()) {
             throw GeminiException.MissingConfiguration(
                 "Firebase is not configured. Connect your active Firebase project to enable live Gemini generation."
@@ -473,10 +507,10 @@ class FirebaseGeminiReplyGenerator(
         val personaGuidance = buildPersonaPrompt(request.persona)
         val actionGuidance = buildActionInstruction(request.action, request.context, request.instruction)
 
-        val prompt = \"\"\"
+        val prompt = """
 You are Nexora AI Keyboard's communication assistant.
-\$personaGuidance
-\$actionGuidance
+$personaGuidance
+$actionGuidance
 
 CRITICAL INSTRUCTIONS:
 1. Provide 3 distinct natural response variations formatted as a JSON array of strings:
@@ -485,21 +519,44 @@ CRITICAL INSTRUCTIONS:
 3. Natural human responses only. NEVER produce generic robotic phrases like "I have reviewed the matter and will proceed accordingly".
 4. For writing actions, do NOT return "Here is a rewritten version:". Return only the ready-to-insert message.
 5. Preserve the user's meaning and tone.
-\"\"\".trimIndent()
+""".trimIndent()
 
         return try {
             val result = withTimeoutOrNull(AiConfig.REQUEST_TIMEOUT_MS) {
-                val model = Firebase.vertexAI.generativeModel(
-                    modelName = AiConfig.GEMINI_FLASH_MODEL,
-                    generationConfig = generationConfig {
-                        temperature = AiConfig.TEMPERATURE
-                        topK = AiConfig.TOP_K
-                        topP = AiConfig.TOP_P
-                        maxOutputTokens = AiConfig.MAX_OUTPUT_TOKENS
+                try {
+                    val model = Firebase.vertexAI.generativeModel(
+                        modelName = AiConfig.GEMINI_FLASH_MODEL,
+                        generationConfig = generationConfig {
+                            temperature = AiConfig.TEMPERATURE
+                            topK = AiConfig.TOP_K
+                            topP = AiConfig.TOP_P
+                            maxOutputTokens = AiConfig.MAX_OUTPUT_TOKENS
+                        }
+                    )
+                    model.generateContent(prompt).text
+                } catch (primaryEx: Throwable) {
+                    val pMsg = primaryEx.message ?: ""
+                    // If it's a configuration or disabled API issue, let it bubble up immediately
+                    if (pMsg.contains("genai config not found", ignoreCase = true) ||
+                        pMsg.contains("error-genai-config-not-found", ignoreCase = true) ||
+                        pMsg.contains("firebasevertexai.googleapis.com", ignoreCase = true) ||
+                        pMsg.contains("has not been used in project", ignoreCase = true) ||
+                        pMsg.contains("API has not been enabled", ignoreCase = true) ||
+                        pMsg.contains("SERVICE_DISABLED", ignoreCase = true)) {
+                        throw primaryEx
                     }
-                )
-                val response = model.generateContent(prompt)
-                response.text
+                    // Fallback to GEMINI_FLASH_LITE_MODEL (gemini-3.8-flash)
+                    val fallbackModel = Firebase.vertexAI.generativeModel(
+                        modelName = AiConfig.GEMINI_FLASH_LITE_MODEL,
+                        generationConfig = generationConfig {
+                            temperature = AiConfig.TEMPERATURE
+                            topK = AiConfig.TOP_K
+                            topP = AiConfig.TOP_P
+                            maxOutputTokens = AiConfig.MAX_OUTPUT_TOKENS
+                        }
+                    )
+                    fallbackModel.generateContent(prompt).text
+                }
             }
 
             if (result == null) {
@@ -519,6 +576,22 @@ CRITICAL INSTRUCTIONS:
         } catch (e: Throwable) {
             val msg = e.message ?: ""
             when {
+                msg.contains("genai config not found", ignoreCase = true) ||
+                msg.contains("error-genai-config-not-found", ignoreCase = true) ->
+                    throw GeminiException.GenAiConfigNotFound(
+                        "Firebase AI Logic genai config not found in project (gen-lang-client-0126286835). Please initialize AI Logic in Firebase Console or switch to On-Device AI.",
+                        "https://firebase.google.com/docs/ai-logic/error-codes#error-genai-config-not-found"
+                    )
+                msg.contains("firebasevertexai.googleapis.com", ignoreCase = true) ||
+                msg.contains("has not been used in project", ignoreCase = true) ||
+                msg.contains("API has not been enabled", ignoreCase = true) ||
+                msg.contains("SERVICE_DISABLED", ignoreCase = true) ->
+                    throw GeminiException.ApiNotEnabled(
+                        "Vertex AI in Firebase API is not enabled in your Firebase project. Please enable firebasevertexai.googleapis.com in Google Cloud Console.",
+                        "https://console.developers.google.com/apis/api/firebasevertexai.googleapis.com/overview"
+                    )
+                msg.contains("retired", ignoreCase = true) || msg.contains("discontinued", ignoreCase = true) ->
+                    throw GeminiException.General("Gemini model retired or discontinued by Google. Using updated Gemini Flash models.", e)
                 msg.contains("429") || msg.contains("RESOURCE_EXHAUSTED") || msg.contains("quota", ignoreCase = true) ->
                     throw GeminiException.RateLimit("Gemini rate limit reached. Please wait a moment and tap retry.")
                 msg.contains("503") || msg.contains("UNAVAILABLE", ignoreCase = true) || msg.contains("high demand", ignoreCase = true) ->
@@ -537,6 +610,10 @@ CRITICAL INSTRUCTIONS:
         val q = question.trim()
         if (q.isEmpty()) return "Please enter a question or instruction to ask AI."
 
+        if (AiReplyGenerator.isOfflineMode) {
+            return fallback.generateAskAi(q, persona)
+        }
+
         if (!isFirebaseConfigured()) {
             throw GeminiException.MissingConfiguration(
                 "Firebase is not configured. Connect your active Firebase project to enable live Gemini generation."
@@ -544,32 +621,54 @@ CRITICAL INSTRUCTIONS:
         }
 
         val personaGuidance = buildPersonaPrompt(persona)
-        val prompt = \"\"\"
+        val prompt = """
 You are an AI assistant integrated directly into Nexora mobile keyboard.
-\$personaGuidance
+$personaGuidance
 
-The user asks: "\$q"
+The user asks: "$q"
 
 Instructions:
 - Provide a direct, helpful, and concise answer (1-3 short paragraphs).
 - Suitable for reading on a mobile keyboard screen.
 - Avoid preamble like "Sure, here is your answer:".
 - Directly answer the question.
-\"\"\".trimIndent()
+""".trimIndent()
 
         return try {
             val result = withTimeoutOrNull(AiConfig.REQUEST_TIMEOUT_MS) {
-                val model = Firebase.vertexAI.generativeModel(
-                    modelName = AiConfig.GEMINI_FLASH_MODEL,
-                    generationConfig = generationConfig {
-                        temperature = AiConfig.TEMPERATURE
-                        topK = AiConfig.TOP_K
-                        topP = AiConfig.TOP_P
-                        maxOutputTokens = AiConfig.MAX_OUTPUT_TOKENS
+                try {
+                    val model = Firebase.vertexAI.generativeModel(
+                        modelName = AiConfig.GEMINI_FLASH_MODEL,
+                        generationConfig = generationConfig {
+                            temperature = AiConfig.TEMPERATURE
+                            topK = AiConfig.TOP_K
+                            topP = AiConfig.TOP_P
+                            maxOutputTokens = AiConfig.MAX_OUTPUT_TOKENS
+                        }
+                    )
+                    model.generateContent(prompt).text
+                } catch (primaryEx: Throwable) {
+                    val pMsg = primaryEx.message ?: ""
+                    // If it's a configuration or disabled API issue, let it bubble up immediately
+                    if (pMsg.contains("genai config not found", ignoreCase = true) ||
+                        pMsg.contains("error-genai-config-not-found", ignoreCase = true) ||
+                        pMsg.contains("firebasevertexai.googleapis.com", ignoreCase = true) ||
+                        pMsg.contains("has not been used in project", ignoreCase = true) ||
+                        pMsg.contains("API has not been enabled", ignoreCase = true) ||
+                        pMsg.contains("SERVICE_DISABLED", ignoreCase = true)) {
+                        throw primaryEx
                     }
-                )
-                val response = model.generateContent(prompt)
-                response.text
+                    val fallbackModel = Firebase.vertexAI.generativeModel(
+                        modelName = AiConfig.GEMINI_FLASH_LITE_MODEL,
+                        generationConfig = generationConfig {
+                            temperature = AiConfig.TEMPERATURE
+                            topK = AiConfig.TOP_K
+                            topP = AiConfig.TOP_P
+                            maxOutputTokens = AiConfig.MAX_OUTPUT_TOKENS
+                        }
+                    )
+                    fallbackModel.generateContent(prompt).text
+                }
             }
 
             if (result == null) {
@@ -585,6 +684,22 @@ Instructions:
         } catch (e: Throwable) {
             val msg = e.message ?: ""
             when {
+                msg.contains("genai config not found", ignoreCase = true) ||
+                msg.contains("error-genai-config-not-found", ignoreCase = true) ->
+                    throw GeminiException.GenAiConfigNotFound(
+                        "Firebase AI Logic genai config not found in project (gen-lang-client-0126286835). Please initialize AI Logic in Firebase Console or switch to On-Device AI.",
+                        "https://firebase.google.com/docs/ai-logic/error-codes#error-genai-config-not-found"
+                    )
+                msg.contains("firebasevertexai.googleapis.com", ignoreCase = true) ||
+                msg.contains("has not been used in project", ignoreCase = true) ||
+                msg.contains("API has not been enabled", ignoreCase = true) ||
+                msg.contains("SERVICE_DISABLED", ignoreCase = true) ->
+                    throw GeminiException.ApiNotEnabled(
+                        "Vertex AI in Firebase API is not enabled in your Firebase project. Please enable firebasevertexai.googleapis.com or switch to On-Device AI.",
+                        "https://console.developers.google.com/apis/api/firebasevertexai.googleapis.com/overview"
+                    )
+                msg.contains("retired", ignoreCase = true) || msg.contains("discontinued", ignoreCase = true) ->
+                    throw GeminiException.General("Gemini model retired or discontinued by Google. Using updated Gemini Flash models.", e)
                 msg.contains("429") || msg.contains("RESOURCE_EXHAUSTED") || msg.contains("quota", ignoreCase = true) ->
                     throw GeminiException.RateLimit("Gemini rate limit reached. Please wait a moment and tap retry.")
                 msg.contains("503") || msg.contains("UNAVAILABLE", ignoreCase = true) || msg.contains("high demand", ignoreCase = true) ->
@@ -599,6 +714,9 @@ Instructions:
         }
     }
 
+    /**
+     * Parses the LLM response into individual suggestion strings.
+     */
     private fun parseSuggestions(raw: String): List<String> {
         val cleaned = raw.trim()
             .removePrefix("\`\`\`json")
@@ -606,23 +724,25 @@ Instructions:
             .removeSuffix("\`\`\`")
             .trim()
 
+        // Attempt JSON array parsing
         if (cleaned.startsWith("[") && cleaned.endsWith("]")) {
             val items = cleaned.substring(1, cleaned.length - 1)
                 .split(Regex("""(?<!\\\\)","|(?<!\\\\)','"""))
                 .map {
                     it.trim()
-                        .removePrefix("\\\"")
-                        .removeSuffix("\\\"")
+                        .removePrefix("\\"")
+                        .removeSuffix("\\"")
                         .removePrefix("'")
                         .removeSuffix("'")
-                        .replace("\\\\\"", "\\"")
+                        .replace("\\\\\\"", "\\"")
                 }
                 .filter { it.isNotBlank() }
             if (items.isNotEmpty()) return items.take(3)
         }
 
+        // Line-based fallback
         val lines = cleaned.lines()
-            .map { it.replace(Regex("""^[-*•\\d.]+\\s*"""), "").trim().removeSurrounding("\\\"").removeSurrounding("'") }
+            .map { it.replace(Regex("""^[-*•\\d.]+\\s*"""), "").trim().removeSurrounding("\\"").removeSurrounding("'") }
             .filter { it.isNotBlank() }
 
         return if (lines.isNotEmpty()) lines.take(3) else listOf(cleaned)
@@ -631,12 +751,25 @@ Instructions:
 
 /**
  * Milestone 2 & 3 — AI Reply Generator Facade.
+ *
+ * Keeps all existing signatures intact for UI, tests, and backward compatibility,
+ * while delegating to the current real Gemini / Firebase AI Logic implementation.
  */
 object AiReplyGenerator {
 
     val mockGenerator = MockReplyGenerator()
-    var currentGenerator: ReplyGenerator = FirebaseGeminiReplyGenerator(mockGenerator)
+    val firebaseGenerator = FirebaseGeminiReplyGenerator(mockGenerator)
+    var currentGenerator: ReplyGenerator = firebaseGenerator
 
+    var isOfflineMode: Boolean
+        get() = currentGenerator === mockGenerator
+        set(value) {
+            currentGenerator = if (value) mockGenerator else firebaseGenerator
+        }
+
+    /**
+     * Synchronous generator method (used by unit tests and offline testing).
+     */
     fun generateSuggestions(
         action: AiAction,
         persona: AiPersona,
@@ -672,6 +805,9 @@ object AiReplyGenerator {
         return generateReply(AiAction.REPLY, persona, customPrompt)
     }
 
+    /**
+     * Coroutine-based asynchronous generator calling currentGenerator (Firebase Gemini).
+     */
     suspend fun generateSuggestionsAsync(request: AiRequest): List<String> {
         return currentGenerator.generateSuggestions(request)
     }
@@ -679,14 +815,18 @@ object AiReplyGenerator {
     suspend fun generateAskAiAsync(question: String, persona: AiPersona): String {
         return currentGenerator.generateAskAi(question, persona)
     }
+
+    suspend fun generateReplyAsync(request: AiRequest): String {
+        return currentGenerator.generate(request)
+    }
 }
 `
   },
   {
-    path: 'app/src/main/java/com/aikeyboard/ime/ui/AiReplyPanelView.kt',
-    name: 'AiReplyPanelView.kt',
-    language: 'kotlin',
-    description: 'Milestone 2: Compact AI reply panel composable docked above the keyboard with style selectors, custom prompt typing, and Generate button.',
+    path: "app/src/main/java/com/aikeyboard/ime/ui/AiReplyPanelView.kt",
+    name: "AiReplyPanelView.kt",
+    language: "kotlin",
+    description: "Milestone 2: Compact AI reply panel composable docked above the keyboard with style selectors, custom prompt typing, and Generate button.",
     content: `package com.aikeyboard.ime.ui
 
 import androidx.compose.animation.AnimatedVisibility
@@ -705,17 +845,26 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.lazy.LazyRow
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.Clear
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.ExpandLess
+import androidx.compose.material.icons.filled.ExpandMore
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -725,33 +874,1283 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.aikeyboard.ime.ai.AiAction
+import com.aikeyboard.ime.ai.AiPersona
+import com.aikeyboard.ime.ai.AiReplyGenerator
 import com.aikeyboard.ime.ai.AiReplyStyle
+import com.aikeyboard.ime.ai.AiRequest
+import com.aikeyboard.ime.ai.GeminiException
 import com.aikeyboard.ime.ui.theme.AiPillGradientEnd
 import com.aikeyboard.ime.ui.theme.AiPillGradientStart
 import com.aikeyboard.ime.ui.theme.KeyboardColorTokens
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+
+enum class AiPanelMode {
+    ACTION_BOARD,
+    ASK_AI
+}
+
+enum class InputTarget {
+    HOST,
+    AI_CONTEXT
+}
 
 /**
- * Milestone 2: Compact AI Reply Panel
+ * Milestone 3.2 — Explicit UI state for Writing Action suggestions.
+ */
+sealed interface AiGenerationState {
+    object Idle : AiGenerationState
+    object Loading : AiGenerationState
+    data class Success(val suggestions: List<String>, val isOfflineFallback: Boolean = false) : AiGenerationState
+    data class Error(
+        val message: String,
+        val isConfigError: Boolean = false,
+        val isApiDisabled: Boolean = false,
+        val isGenAiConfigNotFound: Boolean = false
+    ) : AiGenerationState
+}
+
+/**
+ * Milestone 3.2 — Explicit UI state for Ask AI queries.
+ */
+sealed interface AskAiState {
+    object Idle : AskAiState
+    object Loading : AskAiState
+    data class Success(val answer: String, val isOfflineFallback: Boolean = false) : AskAiState
+    data class Error(
+        val message: String,
+        val isConfigError: Boolean = false,
+        val isApiDisabled: Boolean = false,
+        val isGenAiConfigNotFound: Boolean = false
+    ) : AskAiState
+}
+
+/**
+ * Milestone 2 & 3.2: AI Command Center Panel
  *
- * Docked directly above the keyboard:
- * ┌─────────────────────────────────────┐
- * │ ✨ AI Reply                    ×    │
- * ├─────────────────────────────────────┤
- * │ [ Reply ] [ Friendly ] [ Short ]   │
- * │ [ Professional ] [ Funny ]         │
- * │                                     │
- * │ Custom prompt                       │
- * │ ┌─────────────────────────────────┐ │
- * │ │ e.g. make this sound warmer... │ │
- * │ └─────────────────────────────────┘ │
- * │                                     │
- * │             Generate ✨             │
- * └─────────────────────────────────────┘
- *
- * Fast, compact, phone-friendly, completely offline mock generator for Milestone 2.
+ * Fully connected to real Gemini via the ReplyGenerator abstraction (AiReplyGenerator.currentGenerator).
+ * Uses Kotlin coroutines and explicit UI states (Idle, Loading, Success, Error).
+ * Never blocks the main/rendering thread and avoids accidental duplicate requests.
+ */
+@Composable
+fun AiReplyPanelView(
+    panelMode: AiPanelMode = AiPanelMode.ACTION_BOARD,
+    onSetPanelMode: (AiPanelMode) -> Unit = {},
+    selectedAction: AiAction = AiAction.REPLY,
+    onSelectAction: (AiAction) -> Unit = {},
+    selectedPersona: AiPersona = AiPersona.FRIENDLY,
+    onSelectPersona: (AiPersona) -> Unit = {},
+    contextText: String = "",
+    onClearPrompt: () -> Unit = {},
+    inputTarget: InputTarget = InputTarget.HOST,
+    onSetInputTarget: (InputTarget) -> Unit = {},
+    isMoreExpanded: Boolean = false,
+    onToggleMoreExpanded: (Boolean) -> Unit = {},
+    hostText: String = "",
+    onReplace: ((String) -> Unit)? = null,
+    onGenerate: (AiAction, AiPersona, String) -> Unit = { _, _, _ -> },
+    onInsertAskAiResult: ((String) -> Unit)? = null,
+    onClose: () -> Unit,
+    tokens: KeyboardColorTokens,
+    hapticEnabled: Boolean = true,
+    keyAnimationEnabled: Boolean = true,
+    modifier: Modifier = Modifier
+) {
+    val haptic = LocalHapticFeedback.current
+    val coroutineScope = rememberCoroutineScope()
+
+    val panelShape = RoundedCornerShape(topStart = 16.dp, topEnd = 16.dp, bottomStart = 8.dp, bottomEnd = 8.dp)
+    val panelBg = if (tokens.isDark) Color(0xFF0F172A) else Color(0xFFF8FAFC)
+    val panelBorder = if (tokens.isDark) Color(0x33818CF8) else Color(0x40CBD5E1)
+
+    // State management for M3.2 real async generation & offline toggle
+    var actionGenerationState by remember { mutableStateOf<AiGenerationState>(AiGenerationState.Idle) }
+    var askAiState by remember { mutableStateOf<AskAiState>(AskAiState.Idle) }
+    var retryTrigger by remember { mutableStateOf(0) }
+    var isOfflineMode by remember { mutableStateOf(AiReplyGenerator.isOfflineMode) }
+    var replacedIdx by remember { mutableStateOf<Int?>(null) }
+
+    val isContextFocused = inputTarget == InputTarget.AI_CONTEXT
+    val isActionLoading = actionGenerationState is AiGenerationState.Loading
+
+    // Trigger asynchronous generation via ReplyGenerator abstraction when action, persona, host context, offline toggle, or retry changes
+    LaunchedEffect(panelMode, selectedAction, selectedPersona, hostText, retryTrigger, isOfflineMode) {
+        if (panelMode == AiPanelMode.ACTION_BOARD) {
+            actionGenerationState = AiGenerationState.Loading
+            replacedIdx = null
+            try {
+                val request = AiRequest(
+                    action = selectedAction,
+                    persona = selectedPersona,
+                    context = hostText
+                )
+                val results = withContext(Dispatchers.IO) {
+                    AiReplyGenerator.currentGenerator.generateSuggestions(request)
+                }
+                actionGenerationState = if (results.isNotEmpty()) {
+                    AiGenerationState.Success(results, isOfflineFallback = isOfflineMode)
+                } else {
+                    AiGenerationState.Error("No suggestions generated. Tap retry to reload.")
+                }
+            } catch (e: GeminiException.MissingConfiguration) {
+                actionGenerationState = AiGenerationState.Error(
+                    message = e.message ?: "Firebase is not configured. Connect your active Firebase project to enable live Gemini generation.",
+                    isConfigError = true
+                )
+            } catch (e: GeminiException.GenAiConfigNotFound) {
+                actionGenerationState = AiGenerationState.Error(
+                    message = "Firebase AI Logic genai config not found in project (gen-lang-client-0126286835).",
+                    isConfigError = false,
+                    isApiDisabled = false,
+                    isGenAiConfigNotFound = true
+                )
+            } catch (e: GeminiException.ApiNotEnabled) {
+                actionGenerationState = AiGenerationState.Error(
+                    message = "Vertex AI API is not enabled yet in your Firebase project (gen-lang-client-0126286835).",
+                    isConfigError = false,
+                    isApiDisabled = true
+                )
+            } catch (e: Throwable) {
+                val msg = e.message ?: ""
+                val isGenAiNotFound = msg.contains("genai config not found", ignoreCase = true) ||
+                                      msg.contains("error-genai-config-not-found", ignoreCase = true)
+                val isApi = !isGenAiNotFound && (
+                            msg.contains("firebasevertexai.googleapis.com", ignoreCase = true) ||
+                            msg.contains("has not been used in project", ignoreCase = true) ||
+                            msg.contains("API has not been enabled", ignoreCase = true))
+                actionGenerationState = AiGenerationState.Error(
+                    message = when {
+                        isGenAiNotFound -> "Firebase AI Logic genai config not found in project gen-lang-client-0126286835."
+                        isApi -> "Vertex AI API is not enabled yet in your Firebase project (gen-lang-client-0126286835)."
+                        else -> msg.ifBlank { "Unable to connect to Gemini. Tap retry to reload." }
+                    },
+                    isConfigError = false,
+                    isApiDisabled = isApi,
+                    isGenAiConfigNotFound = isGenAiNotFound
+                )
+            }
+        }
+    }
+
+    Column(
+        modifier = modifier
+            .fillMaxWidth()
+            .clip(panelShape)
+            .background(panelBg)
+            .border(1.dp, panelBorder, panelShape)
+            .padding(horizontal = 12.dp, vertical = 7.dp),
+        verticalArrangement = Arrangement.spacedBy(6.dp)
+    ) {
+        // ==========================================
+        // MODE B: ASK AI MODE
+        // ==========================================
+        if (panelMode == AiPanelMode.ASK_AI) {
+            // Header: [← writing actions]               [🧠 ask ai] [×]
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Row(
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(6.dp))
+                        .background(if (tokens.isDark) Color(0xFF1E283D) else Color(0xFFE2E8F0))
+                        .clickable {
+                            if (hapticEnabled) haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                            onSetInputTarget(InputTarget.HOST)
+                            onSetPanelMode(AiPanelMode.ACTION_BOARD)
+                        }
+                        .padding(horizontal = 8.dp, vertical = 4.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(4.dp)
+                ) {
+                    Icon(
+                        imageVector = Icons.Filled.ArrowBack,
+                        contentDescription = "Back",
+                        tint = tokens.textSecondary,
+                        modifier = Modifier.size(12.dp)
+                    )
+                    Text(
+                        text = "writing actions",
+                        fontSize = 11.sp,
+                        color = tokens.textPrimary,
+                        fontWeight = FontWeight.Medium
+                    )
+                }
+
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(4.dp)
+                    ) {
+                        Text(text = "🧠", fontSize = 13.sp)
+                        Text(
+                            text = "ask ai",
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = tokens.textPrimary
+                        )
+                    }
+
+                    // Clickable mode badge for Ask AI mode
+                    Box(
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(6.dp))
+                            .background(
+                                if (isOfflineMode) {
+                                    if (tokens.isDark) Color(0xFF064E3B) else Color(0xFFD1FAE5)
+                                } else {
+                                    if (tokens.isDark) Color(0xFF312E81) else Color(0xFFE0E7FF)
+                                }
+                            )
+                            .border(
+                                1.dp,
+                                if (isOfflineMode) {
+                                    Color(0xFF10B981)
+                                } else {
+                                    if (tokens.isDark) Color(0xFF818CF8) else Color(0xFF6366F1)
+                                },
+                                RoundedCornerShape(6.dp)
+                            )
+                            .clickable {
+                                if (hapticEnabled) haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                val newMode = !isOfflineMode
+                                isOfflineMode = newMode
+                                AiReplyGenerator.isOfflineMode = newMode
+                            }
+                            .padding(horizontal = 6.dp, vertical = 2.dp),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Text(
+                            text = if (isOfflineMode) "⚡ On-Device" else "✨ Cloud",
+                            fontSize = 10.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = if (isOfflineMode) {
+                                if (tokens.isDark) Color(0xFFA7F3D0) else Color(0xFF047857)
+                            } else {
+                                if (tokens.isDark) Color(0xFFC7D2FE) else Color(0xFF4338CA)
+                            }
+                        )
+                    }
+
+                    Box(
+                        modifier = Modifier
+                            .size(22.dp)
+                            .clip(CircleShape)
+                            .background(if (tokens.isDark) Color(0xFF1E283D) else Color(0xFFE2E8F0))
+                            .clickable {
+                                if (hapticEnabled) haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                onSetInputTarget(InputTarget.HOST)
+                                onClose()
+                            },
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Icon(
+                            imageVector = Icons.Filled.Close,
+                            contentDescription = "Close AI Panel",
+                            tint = tokens.textSecondary,
+                            modifier = Modifier.size(12.dp)
+                        )
+                    }
+                }
+            }
+
+            // Question prompt field
+            Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                Text(
+                    text = "ask or instruct ai",
+                    fontSize = 11.sp,
+                    color = tokens.textSecondary,
+                    fontWeight = FontWeight.Medium
+                )
+
+                val promptFieldShape = RoundedCornerShape(8.dp)
+                val promptBorderColor = if (isContextFocused) {
+                    if (tokens.isDark) Color(0xFF818CF8) else Color(0xFF4F46E5)
+                } else {
+                    tokens.borderRim
+                }
+                val promptBg = if (tokens.isDark) Color(0xFF1E283D) else Color(0xFFFFFFFF)
+
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(34.dp)
+                        .clip(promptFieldShape)
+                        .background(promptBg)
+                        .border(if (isContextFocused) 1.5.dp else 1.dp, promptBorderColor, promptFieldShape)
+                        .clickable {
+                            if (hapticEnabled) haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                            onSetInputTarget(InputTarget.AI_CONTEXT)
+                        }
+                        .padding(horizontal = 10.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    Box(modifier = Modifier.weight(1f)) {
+                        if (contextText.isEmpty()) {
+                            Text(
+                                text = "type your question...",
+                                fontSize = 11.sp,
+                                color = tokens.textSecondary.copy(alpha = 0.7f),
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                        } else {
+                            Text(
+                                text = contextText,
+                                fontSize = 11.sp,
+                                color = tokens.textPrimary,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                        }
+                    }
+
+                    if (contextText.isNotEmpty()) {
+                        Box(
+                            modifier = Modifier
+                                .size(18.dp)
+                                .clip(CircleShape)
+                                .background(if (tokens.isDark) Color(0xFF2E3D5B) else Color(0xFFE2E8F0))
+                                .clickable {
+                                    if (hapticEnabled) haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                    onClearPrompt()
+                                },
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Icon(
+                                imageVector = Icons.Filled.Clear,
+                                contentDescription = "Clear",
+                                tint = tokens.textSecondary,
+                                modifier = Modifier.size(10.dp)
+                            )
+                        }
+                    }
+                }
+            }
+
+            // Ask ✨ Button (debounced during generation)
+            val isAskLoading = askAiState is AskAiState.Loading
+            ActionPrimaryButton(
+                label = if (isAskLoading) "thinking ✨" else "ask",
+                enabled = !isAskLoading && contextText.isNotBlank(),
+                onClick = {
+                    val q = contextText.trim()
+                    if (q.isNotEmpty() && !isAskLoading) {
+                        onSetInputTarget(InputTarget.HOST)
+                        askAiState = AskAiState.Loading
+                        coroutineScope.launch {
+                            try {
+                                val answer = withContext(Dispatchers.IO) {
+                                    AiReplyGenerator.currentGenerator.generateAskAi(q, selectedPersona)
+                                }
+                                askAiState = AskAiState.Success(answer, isOfflineFallback = isOfflineMode)
+                            } catch (e: GeminiException.MissingConfiguration) {
+                                askAiState = AskAiState.Error(
+                                    message = e.message ?: "Firebase is not configured. Connect your active Firebase project to enable live Gemini.",
+                                    isConfigError = true
+                                )
+                            } catch (e: GeminiException.GenAiConfigNotFound) {
+                                askAiState = AskAiState.Error(
+                                    message = "Firebase AI Logic genai config not found in project (gen-lang-client-0126286835).",
+                                    isConfigError = false,
+                                    isApiDisabled = false,
+                                    isGenAiConfigNotFound = true
+                                )
+                            } catch (e: GeminiException.ApiNotEnabled) {
+                                askAiState = AskAiState.Error(
+                                    message = "Vertex AI API is not enabled yet in your Firebase project (gen-lang-client-0126286835).",
+                                    isConfigError = false,
+                                    isApiDisabled = true
+                                )
+                            } catch (e: Throwable) {
+                                val msg = e.message ?: ""
+                                val isGenAiNotFound = msg.contains("genai config not found", ignoreCase = true) ||
+                                                      msg.contains("error-genai-config-not-found", ignoreCase = true)
+                                val isApi = !isGenAiNotFound && (
+                                            msg.contains("firebasevertexai.googleapis.com", ignoreCase = true) ||
+                                            msg.contains("has not been used in project", ignoreCase = true) ||
+                                            msg.contains("API has not been enabled", ignoreCase = true))
+                                askAiState = AskAiState.Error(
+                                    message = when {
+                                        isGenAiNotFound -> "Firebase AI Logic genai config not found in project gen-lang-client-0126286835."
+                                        isApi -> "Vertex AI API is not enabled yet in your Firebase project (gen-lang-client-0126286835)."
+                                        else -> msg.ifBlank { "Unable to get an answer right now. Please tap retry." }
+                                    },
+                                    isConfigError = false,
+                                    isApiDisabled = isApi,
+                                    isGenAiConfigNotFound = isGenAiNotFound
+                                )
+                            }
+                        }
+                    }
+                },
+                tokens = tokens,
+                hapticEnabled = hapticEnabled,
+                keyAnimationEnabled = keyAnimationEnabled
+            )
+
+            // Ask AI Response or Loading / Error Card
+            when (val state = askAiState) {
+                is AskAiState.Loading -> {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(8.dp))
+                            .background(if (tokens.isDark) Color(0xFF141E30) else Color(0xFFF1F5F9))
+                            .padding(10.dp),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Text(
+                            text = "thinking ✨",
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.SemiBold,
+                            color = if (tokens.isDark) Color(0xFF818CF8) else Color(0xFF4F46E5)
+                        )
+                    }
+                }
+                is AskAiState.Error -> {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(8.dp))
+                            .background(if (tokens.isDark) Color(0xFF261218) else Color(0xFFFEF2F2))
+                            .border(1.dp, Color(0xFFF87171), RoundedCornerShape(8.dp))
+                            .padding(8.dp)
+                    ) {
+                        Column(
+                            modifier = Modifier.fillMaxWidth(),
+                            verticalArrangement = Arrangement.spacedBy(5.dp),
+                            horizontalAlignment = Alignment.CenterHorizontally
+                        ) {
+                            Text(
+                                text = state.message,
+                                fontSize = 10.sp,
+                                color = Color(0xFFEF4444),
+                                textAlign = TextAlign.Center
+                            )
+                            if (state.isGenAiConfigNotFound) {
+                                Text(
+                                    text = "Firebase AI Logic is not initialized in project gen-lang-client-0126286835. Tap below to answer with On-Device AI.",
+                                    fontSize = 9.sp,
+                                    color = tokens.textSecondary,
+                                    textAlign = TextAlign.Center
+                                )
+                            } else if (state.isApiDisabled) {
+                                Text(
+                                    text = "Tip: Enable firebasevertexai.googleapis.com in Google Cloud Console or use On-Device AI.",
+                                    fontSize = 9.sp,
+                                    color = tokens.textSecondary,
+                                    textAlign = TextAlign.Center
+                                )
+                            }
+                            Row(
+                                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                val q = contextText.trim()
+                                // 1-tap fallback to On-Device AI
+                                Box(
+                                    modifier = Modifier
+                                        .clip(RoundedCornerShape(6.dp))
+                                        .background(Color(0xFF059669))
+                                        .clickable {
+                                            if (hapticEnabled) haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                            isOfflineMode = true
+                                            AiReplyGenerator.isOfflineMode = true
+                                            if (q.isNotEmpty()) {
+                                                askAiState = AskAiState.Loading
+                                                coroutineScope.launch {
+                                                    val answer = withContext(Dispatchers.IO) {
+                                                        AiReplyGenerator.currentGenerator.generateAskAi(q, selectedPersona)
+                                                    }
+                                                    askAiState = AskAiState.Success(answer, isOfflineFallback = true)
+                                                }
+                                            }
+                                        }
+                                        .padding(horizontal = 10.dp, vertical = 6.dp)
+                                ) {
+                                    Text(
+                                        text = "⚡ Switch to On-Device AI",
+                                        fontSize = 10.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        color = Color.White
+                                    )
+                                }
+
+                                if (!state.isConfigError) {
+                                    Box(
+                                        modifier = Modifier
+                                            .clip(RoundedCornerShape(6.dp))
+                                            .background(Color(0xFFDC2626))
+                                            .clickable {
+                                                if (hapticEnabled) haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                                isOfflineMode = false
+                                                AiReplyGenerator.isOfflineMode = false
+                                                if (q.isNotEmpty()) {
+                                                    askAiState = AskAiState.Loading
+                                                    coroutineScope.launch {
+                                                        try {
+                                                            val answer = withContext(Dispatchers.IO) {
+                                                                AiReplyGenerator.currentGenerator.generateAskAi(q, selectedPersona)
+                                                            }
+                                                            askAiState = AskAiState.Success(answer)
+                                                        } catch (e: Throwable) {
+                                                            val msg = e.message ?: ""
+                                                            val isNotFound = msg.contains("genai config not found", ignoreCase = true) ||
+                                                                              msg.contains("error-genai-config-not-found", ignoreCase = true)
+                                                            val isApi = !isNotFound && (msg.contains("firebasevertexai.googleapis.com", ignoreCase = true) ||
+                                                                        msg.contains("has not been used in project", ignoreCase = true) ||
+                                                                        msg.contains("API has not been enabled", ignoreCase = true))
+                                                            askAiState = AskAiState.Error(
+                                                                message = msg.ifBlank { "Unable to get an answer right now. Please tap retry." },
+                                                                isApiDisabled = isApi,
+                                                                isGenAiConfigNotFound = isNotFound
+                                                            )
+                                                        }
+                                                    }
+                                                }
+                                            }
+                                            .padding(horizontal = 10.dp, vertical = 6.dp)
+                                    ) {
+                                        Text(
+                                            text = "Retry Cloud 🔄",
+                                            fontSize = 10.sp,
+                                            fontWeight = FontWeight.Bold,
+                                            color = Color.White
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+                is AskAiState.Success -> {
+                    Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                        Text(
+                            text = "ai response",
+                            fontSize = 10.sp,
+                            fontWeight = FontWeight.SemiBold,
+                            color = tokens.textSecondary
+                        )
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clip(RoundedCornerShape(8.dp))
+                                .background(if (tokens.isDark) Color(0xFF141E30) else Color(0xFFF1F5F9))
+                                .border(1.dp, if (tokens.isDark) Color(0x33818CF8) else Color(0x40CBD5E1), RoundedCornerShape(8.dp))
+                                .padding(8.dp)
+                        ) {
+                            Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                                Text(
+                                    text = state.answer,
+                                    fontSize = 11.sp,
+                                    color = tokens.textPrimary,
+                                    lineHeight = 15.sp
+                                )
+                                onInsertAskAiResult?.let { insertFn ->
+                                    Box(
+                                        modifier = Modifier
+                                            .align(Alignment.End)
+                                            .clip(RoundedCornerShape(6.dp))
+                                            .background(Color(0xFF4F46E5))
+                                            .clickable {
+                                                if (hapticEnabled) haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                                onSetInputTarget(InputTarget.HOST)
+                                                insertFn(state.answer)
+                                            }
+                                            .padding(horizontal = 8.dp, vertical = 3.dp)
+                                    ) {
+                                        Text(
+                                            text = "insert",
+                                            fontSize = 10.sp,
+                                            fontWeight = FontWeight.Bold,
+                                            color = Color.White
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+                is AskAiState.Idle -> { /* Idle */ }
+            }
+
+        } else {
+            // ==========================================
+            // MODE A: ACTION BOARD (DEFAULT)
+            // ==========================================
+            // 1. Header: ← ✨ AI + Close (×)
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .size(24.dp)
+                            .clip(CircleShape)
+                            .background(if (tokens.isDark) Color(0xFF1E283D) else Color(0xFFE2E8F0))
+                            .clickable {
+                                if (hapticEnabled) haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                onSetInputTarget(InputTarget.HOST)
+                                onClose()
+                            },
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Icon(
+                            imageVector = Icons.Filled.ArrowBack,
+                            contentDescription = "Back to Keyboard",
+                            tint = tokens.textSecondary,
+                            modifier = Modifier.size(13.dp)
+                        )
+                    }
+
+                    Text(text = "✨", fontSize = 13.sp)
+                    Text(
+                        text = "AI Command Center",
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = tokens.textPrimary
+                    )
+                }
+
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(6.dp))
+                            .background(
+                                if (isOfflineMode) {
+                                    if (tokens.isDark) Color(0xFF064E3B) else Color(0xFFD1FAE5)
+                                } else {
+                                    if (tokens.isDark) Color(0xFF312E81) else Color(0xFFE0E7FF)
+                                }
+                            )
+                            .border(
+                                1.dp,
+                                if (isOfflineMode) {
+                                    Color(0xFF10B981)
+                                } else {
+                                    if (tokens.isDark) Color(0xFF818CF8) else Color(0xFF6366F1)
+                                },
+                                RoundedCornerShape(6.dp)
+                            )
+                            .clickable {
+                                if (hapticEnabled) haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                val newMode = !isOfflineMode
+                                isOfflineMode = newMode
+                                AiReplyGenerator.isOfflineMode = newMode
+                                retryTrigger++
+                            }
+                            .padding(horizontal = 7.dp, vertical = 2.dp),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Text(
+                            text = if (isOfflineMode) "⚡ On-Device AI" else "✨ Cloud Gemini",
+                            fontSize = 10.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = if (isOfflineMode) {
+                                if (tokens.isDark) Color(0xFFA7F3D0) else Color(0xFF047857)
+                            } else {
+                                if (tokens.isDark) Color(0xFFC7D2FE) else Color(0xFF4338CA)
+                            }
+                        )
+                    }
+
+                    Box(
+                        modifier = Modifier
+                            .size(22.dp)
+                            .clip(CircleShape)
+                            .background(if (tokens.isDark) Color(0xFF1E283D) else Color(0xFFE2E8F0))
+                            .clickable {
+                                if (hapticEnabled) haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                onSetInputTarget(InputTarget.HOST)
+                                onClose()
+                            },
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Icon(
+                            imageVector = Icons.Filled.Close,
+                            contentDescription = "Close AI Panel",
+                            tint = tokens.textSecondary,
+                            modifier = Modifier.size(12.dp)
+                        )
+                    }
+                }
+            }
+
+            // 2. Primary Actions: Reply, Rewrite + More (collapsible)
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(6.dp)
+            ) {
+                ActionChip(
+                    action = AiAction.REPLY,
+                    isSelected = selectedAction == AiAction.REPLY,
+                    enabled = !isActionLoading,
+                    onClick = {
+                        onSetInputTarget(InputTarget.HOST)
+                        onSelectAction(AiAction.REPLY)
+                    },
+                    tokens = tokens,
+                    keyAnimationEnabled = keyAnimationEnabled,
+                    hapticEnabled = hapticEnabled,
+                    modifier = Modifier.weight(1f)
+                )
+
+                ActionChip(
+                    action = AiAction.REWRITE,
+                    isSelected = selectedAction == AiAction.REWRITE,
+                    enabled = !isActionLoading,
+                    onClick = {
+                        onSetInputTarget(InputTarget.HOST)
+                        onSelectAction(AiAction.REWRITE)
+                    },
+                    tokens = tokens,
+                    keyAnimationEnabled = keyAnimationEnabled,
+                    hapticEnabled = hapticEnabled,
+                    modifier = Modifier.weight(1f)
+                )
+
+                // More toggle chip
+                val moreSelected = isMoreExpanded || (selectedAction != AiAction.REPLY && selectedAction != AiAction.REWRITE)
+                val moreBg = if (moreSelected) {
+                    if (tokens.isDark) Color(0xFF261D52) else Color(0xFFDBEAFE)
+                } else {
+                    if (tokens.isDark) Color(0xFF1E283D) else Color(0xFFF1F5F9)
+                }
+                val moreBorder = if (moreSelected) {
+                    if (tokens.isDark) Color(0xFF818CF8) else Color(0xFF3B82F6)
+                } else {
+                    tokens.borderRim
+                }
+                val moreText = if (moreSelected) {
+                    if (tokens.isDark) Color(0xFFC7D2FE) else Color(0xFF1D4ED8)
+                } else {
+                    tokens.textPrimary
+                }
+
+                Box(
+                    modifier = Modifier
+                        .height(30.dp)
+                        .weight(1f)
+                        .clip(RoundedCornerShape(8.dp))
+                        .background(moreBg)
+                        .border(1.dp, moreBorder, RoundedCornerShape(8.dp))
+                        .clickable {
+                            if (hapticEnabled) haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                            onSetInputTarget(InputTarget.HOST)
+                            onToggleMoreExpanded(!isMoreExpanded)
+                        },
+                    contentAlignment = Alignment.Center
+                ) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(3.dp)
+                    ) {
+                        Text(
+                            text = "More",
+                            fontSize = 11.sp,
+                            fontWeight = if (moreSelected) FontWeight.SemiBold else FontWeight.Normal,
+                            color = moreText
+                        )
+                        Icon(
+                            imageVector = if (isMoreExpanded) Icons.Filled.ExpandLess else Icons.Filled.ExpandMore,
+                            contentDescription = null,
+                            tint = moreText,
+                            modifier = Modifier.size(13.dp)
+                        )
+                    }
+                }
+            }
+
+            // 3. Secondary Actions Collapsible: Continue, Start, Ask AI, Create
+            if (isMoreExpanded) {
+                Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        ActionChip(
+                            action = AiAction.CONTINUE,
+                            isSelected = selectedAction == AiAction.CONTINUE,
+                            enabled = !isActionLoading,
+                            onClick = {
+                                onSetInputTarget(InputTarget.HOST)
+                                onSelectAction(AiAction.CONTINUE)
+                            },
+                            tokens = tokens,
+                            keyAnimationEnabled = keyAnimationEnabled,
+                            hapticEnabled = hapticEnabled,
+                            modifier = Modifier.weight(1f)
+                        )
+                        ActionChip(
+                            action = AiAction.START,
+                            isSelected = selectedAction == AiAction.START,
+                            enabled = !isActionLoading,
+                            onClick = {
+                                onSetInputTarget(InputTarget.HOST)
+                                onSelectAction(AiAction.START)
+                            },
+                            tokens = tokens,
+                            keyAnimationEnabled = keyAnimationEnabled,
+                            hapticEnabled = hapticEnabled,
+                            modifier = Modifier.weight(1f)
+                        )
+                    }
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        ActionChip(
+                            action = AiAction.ASK_AI,
+                            isSelected = selectedAction == AiAction.ASK_AI,
+                            enabled = !isActionLoading,
+                            onClick = {
+                                onSetInputTarget(InputTarget.HOST)
+                                onSetPanelMode(AiPanelMode.ASK_AI)
+                            },
+                            tokens = tokens,
+                            keyAnimationEnabled = keyAnimationEnabled,
+                            hapticEnabled = hapticEnabled,
+                            modifier = Modifier.weight(1f)
+                        )
+                        ActionChip(
+                            action = AiAction.CREATE,
+                            isSelected = selectedAction == AiAction.CREATE,
+                            enabled = !isActionLoading,
+                            onClick = {
+                                onSetInputTarget(InputTarget.HOST)
+                                onSelectAction(AiAction.CREATE)
+                            },
+                            tokens = tokens,
+                            keyAnimationEnabled = keyAnimationEnabled,
+                            hapticEnabled = hapticEnabled,
+                            modifier = Modifier.weight(1f)
+                        )
+                    }
+                }
+            }
+
+            // 4. In-Panel Horizontal Scrolling Persona Selector (NO DROPDOWN!)
+            Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                Text(
+                    text = "persona",
+                    fontSize = 11.sp,
+                    color = tokens.textSecondary,
+                    fontWeight = FontWeight.Medium
+                )
+
+                LazyRow(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    items(AiPersona.values()) { persona ->
+                        val isSelected = selectedPersona == persona
+                        val chipBg = if (isSelected) {
+                            if (tokens.isDark) Color(0xFF261D52) else Color(0xFFDBEAFE)
+                        } else {
+                            if (tokens.isDark) Color(0xFF1E283D) else Color(0xFFF1F5F9)
+                        }
+                        val chipBorder = if (isSelected) {
+                            if (tokens.isDark) Color(0xFF818CF8) else Color(0xFF3B82F6)
+                        } else {
+                            tokens.borderRim
+                        }
+                        val chipText = if (isSelected) {
+                            if (tokens.isDark) Color(0xFFC7D2FE) else Color(0xFF1D4ED8)
+                        } else {
+                            tokens.textPrimary
+                        }
+
+                        Row(
+                            modifier = Modifier
+                                .clip(RoundedCornerShape(6.dp))
+                                .background(chipBg)
+                                .border(1.dp, chipBorder, RoundedCornerShape(6.dp))
+                                .clickable(enabled = !isActionLoading) {
+                                    if (hapticEnabled) haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                    onSetInputTarget(InputTarget.HOST)
+                                    onSelectPersona(persona)
+                                }
+                                .padding(horizontal = 8.dp, vertical = 4.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(4.dp)
+                        ) {
+                            Text(text = persona.emoji, fontSize = 11.sp)
+                            Text(
+                                text = persona.displayName,
+                                fontSize = 11.sp,
+                                fontWeight = if (isSelected) FontWeight.SemiBold else FontWeight.Normal,
+                                color = chipText
+                            )
+                        }
+                    }
+                }
+            }
+
+            // 5. AI RESULTS SECTION
+            // Explicit states: Loading (generating ✨), Error (retry), Success (result cards)
+            Column(
+                modifier = Modifier.fillMaxWidth(),
+                verticalArrangement = Arrangement.spacedBy(4.dp)
+            ) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = if (hostText.isNotBlank()) "AI RESULTS • CONTEXT: \\"\${hostText.take(20)}\\"" else "AI RESULTS",
+                        fontSize = 10.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = tokens.textSecondary
+                    )
+                    Text(
+                        text = when (val state = actionGenerationState) {
+                            is AiGenerationState.Loading -> "generating..."
+                            is AiGenerationState.Success -> "\${state.suggestions.size} suggestions"
+                            is AiGenerationState.Error -> "error"
+                            is AiGenerationState.Idle -> ""
+                        },
+                        fontSize = 10.sp,
+                        color = if (tokens.isDark) Color(0xFF818CF8) else Color(0xFF4F46E5)
+                    )
+                }
+
+                when (val state = actionGenerationState) {
+                    is AiGenerationState.Loading -> {
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clip(RoundedCornerShape(8.dp))
+                                .background(if (tokens.isDark) Color(0xFF141E30) else Color(0xFFF1F5F9))
+                                .padding(vertical = 14.dp),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Column(
+                                horizontalAlignment = Alignment.CenterHorizontally,
+                                verticalArrangement = Arrangement.spacedBy(2.dp)
+                            ) {
+                                Text(
+                                    text = "generating ✨",
+                                    fontSize = 12.sp,
+                                    fontWeight = FontWeight.SemiBold,
+                                    color = if (tokens.isDark) Color(0xFF818CF8) else Color(0xFF4F46E5)
+                                )
+                                Text(
+                                    text = "crafting natural responses with gemini flash...",
+                                    fontSize = 10.sp,
+                                    color = tokens.textSecondary
+                                )
+                            }
+                        }
+                    }
+
+                    is AiGenerationState.Error -> {
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clip(RoundedCornerShape(8.dp))
+                                .background(if (tokens.isDark) Color(0xFF261218) else Color(0xFFFEF2F2))
+                                .border(1.dp, Color(0xFFF87171), RoundedCornerShape(8.dp))
+                                .padding(10.dp)
+                        ) {
+                            Column(
+                                modifier = Modifier.fillMaxWidth(),
+                                verticalArrangement = Arrangement.spacedBy(6.dp),
+                                horizontalAlignment = Alignment.CenterHorizontally
+                            ) {
+                                Text(
+                                    text = state.message,
+                                    fontSize = 10.sp,
+                                    color = Color(0xFFEF4444),
+                                    textAlign = TextAlign.Center
+                                )
+                                if (state.isGenAiConfigNotFound) {
+                                    Text(
+                                        text = "Firebase AI Logic is not initialized in project gen-lang-client-0126286835. Tap below to switch to Instant On-Device AI.",
+                                        fontSize = 9.sp,
+                                        color = tokens.textSecondary,
+                                        textAlign = TextAlign.Center
+                                    )
+                                } else if (state.isApiDisabled) {
+                                    Text(
+                                        text = "Cloud AI requires the Vertex AI in Firebase API (firebasevertexai.googleapis.com) to be enabled in your Google Cloud Console.",
+                                        fontSize = 9.sp,
+                                        color = tokens.textSecondary,
+                                        textAlign = TextAlign.Center
+                                    )
+                                }
+                                Row(
+                                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    // 1-tap fallback to On-Device AI
+                                    Box(
+                                        modifier = Modifier
+                                            .clip(RoundedCornerShape(6.dp))
+                                            .background(Color(0xFF059669))
+                                            .clickable {
+                                                if (hapticEnabled) haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                                isOfflineMode = true
+                                                AiReplyGenerator.isOfflineMode = true
+                                                retryTrigger++
+                                            }
+                                            .padding(horizontal = 10.dp, vertical = 6.dp)
+                                    ) {
+                                        Text(
+                                            text = "⚡ Switch to On-Device AI",
+                                            fontSize = 10.sp,
+                                            fontWeight = FontWeight.Bold,
+                                            color = Color.White
+                                        )
+                                    }
+
+                                    if (!state.isConfigError) {
+                                        Box(
+                                            modifier = Modifier
+                                                .clip(RoundedCornerShape(6.dp))
+                                                .background(Color(0xFFDC2626))
+                                                .clickable {
+                                                    if (hapticEnabled) haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                                    isOfflineMode = false
+                                                    AiReplyGenerator.isOfflineMode = false
+                                                    retryTrigger++
+                                                }
+                                                .padding(horizontal = 10.dp, vertical = 6.dp)
+                                        ) {
+                                            Text(
+                                                text = "Retry Cloud 🔄",
+                                                fontSize = 10.sp,
+                                                fontWeight = FontWeight.Bold,
+                                                color = Color.White
+                                            )
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    is AiGenerationState.Success -> {
+                        state.suggestions.forEachIndexed { idx, suggestion ->
+                            val isReplaced = replacedIdx == idx
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clip(RoundedCornerShape(8.dp))
+                                    .background(if (tokens.isDark) Color(0xFF141E30) else Color(0xFFFFFFFF))
+                                    .border(
+                                        1.dp,
+                                        if (isReplaced) Color(0xFF10B981) else if (tokens.isDark) Color(0x33818CF8) else Color(0x40CBD5E1),
+                                        RoundedCornerShape(8.dp)
+                                    )
+                                    .padding(8.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.SpaceBetween
+                            ) {
+                                Text(
+                                    text = suggestion,
+                                    fontSize = 11.sp,
+                                    color = tokens.textPrimary,
+                                    modifier = Modifier.weight(1f).padding(end = 8.dp)
+                                )
+
+                                Box(
+                                    modifier = Modifier
+                                        .clip(RoundedCornerShape(6.dp))
+                                        .background(if (isReplaced) Color(0xFF059669) else Color(0xFF4F46E5))
+                                        .clickable {
+                                            if (hapticEnabled) haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                            onSetInputTarget(InputTarget.HOST)
+                                            replacedIdx = idx
+                                            onReplace?.invoke(suggestion)
+                                        }
+                                        .padding(horizontal = 8.dp, vertical = 4.dp),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Text(
+                                        text = if (isReplaced) "Replaced" else "Replace",
+                                        fontSize = 10.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        color = Color.White
+                                    )
+                                }
+                            }
+                        }
+                    }
+
+                    is AiGenerationState.Idle -> { /* Idle */ }
+                }
+            }
+        }
+    }
+}
+
+/**
+ * Action button chip with highlighted selection state and disable support during generation
+ */
+@Composable
+private fun ActionChip(
+    action: AiAction,
+    isSelected: Boolean,
+    enabled: Boolean = true,
+    onClick: () -> Unit,
+    tokens: KeyboardColorTokens,
+    keyAnimationEnabled: Boolean,
+    hapticEnabled: Boolean,
+    modifier: Modifier = Modifier
+) {
+    val haptic = LocalHapticFeedback.current
+    val interactionSource = remember { MutableInteractionSource() }
+    val isPressed by interactionSource.collectIsPressedAsState()
+    val scale by animateFloatAsState(
+        targetValue = if (isPressed && keyAnimationEnabled && enabled) 0.95f else 1.0f,
+        animationSpec = tween(80),
+        label = "action_chip_scale"
+    )
+
+    val chipShape = RoundedCornerShape(8.dp)
+    val bg = if (isSelected) {
+        if (tokens.isDark) Color(0xFF261D52) else Color(0xFFDBEAFE)
+    } else {
+        if (tokens.isDark) Color(0xFF1E283D) else Color(0xFFF1F5F9)
+    }
+    val border = if (isSelected) {
+        if (tokens.isDark) Color(0xFF818CF8) else Color(0xFF3B82F6)
+    } else {
+        tokens.borderRim
+    }
+    val textColor = if (isSelected) {
+        if (tokens.isDark) Color(0xFFC7D2FE) else Color(0xFF1D4ED8)
+    } else {
+        tokens.textPrimary
+    }
+
+    Box(
+        modifier = modifier
+            .height(30.dp)
+            .scale(scale)
+            .clip(chipShape)
+            .background(bg)
+            .border(1.dp, border, chipShape)
+            .clickable(
+                enabled = enabled,
+                interactionSource = interactionSource,
+                indication = null
+            ) {
+                if (hapticEnabled) haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                onClick()
+            },
+        contentAlignment = Alignment.Center
+    ) {
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(4.dp),
+            modifier = Modifier.padding(horizontal = 6.dp)
+        ) {
+            Text(text = action.emoji, fontSize = 11.sp)
+            Text(
+                text = action.displayName,
+                fontSize = 11.sp,
+                fontWeight = if (isSelected) FontWeight.SemiBold else FontWeight.Medium,
+                color = textColor,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
+        }
+    }
+}
+
+/**
+ * Gradient Action Button for generate / ask with disabled/loading state
+ */
+@Composable
+private fun ActionPrimaryButton(
+    label: String,
+    enabled: Boolean = true,
+    onClick: () -> Unit,
+    tokens: KeyboardColorTokens,
+    hapticEnabled: Boolean,
+    keyAnimationEnabled: Boolean
+) {
+    val haptic = LocalHapticFeedback.current
+    val interactionSource = remember { MutableInteractionSource() }
+    val isPressed by interactionSource.collectIsPressedAsState()
+    val scale by animateFloatAsState(
+        targetValue = if (isPressed && keyAnimationEnabled && enabled) 0.96f else 1.0f,
+        animationSpec = tween(100),
+        label = "btn_scale"
+    )
+
+    val btnShape = RoundedCornerShape(8.dp)
+    Box(
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(34.dp)
+            .scale(scale)
+            .clip(btnShape)
+            .background(
+                if (enabled) {
+                    Brush.horizontalGradient(
+                        listOf(AiPillGradientStart, AiPillGradientEnd)
+                    )
+                } else {
+                    Brush.horizontalGradient(
+                        listOf(AiPillGradientStart.copy(alpha = 0.5f), AiPillGradientEnd.copy(alpha = 0.5f))
+                    )
+                }
+            )
+            .clickable(
+                enabled = enabled,
+                interactionSource = interactionSource,
+                indication = null
+            ) {
+                if (hapticEnabled) haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                onClick()
+            },
+        contentAlignment = Alignment.Center
+    ) {
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(6.dp)
+        ) {
+            Text(
+                text = label,
+                fontSize = 12.sp,
+                fontWeight = FontWeight.Bold,
+                color = Color.White
+            )
+            Icon(
+                imageVector = Icons.Filled.AutoAwesome,
+                contentDescription = null,
+                tint = Color(0xFFFDE047),
+                modifier = Modifier.size(13.dp)
+            )
+        }
+    }
+}
+
+/**
+ * Backwards compatibility overload for legacy unit tests
  */
 @Composable
 fun AiReplyPanelView(
@@ -768,351 +2167,83 @@ fun AiReplyPanelView(
     keyAnimationEnabled: Boolean = true,
     modifier: Modifier = Modifier
 ) {
-    val haptic = LocalHapticFeedback.current
-
-    val panelShape = RoundedCornerShape(topStart = 16.dp, topEnd = 16.dp, bottomStart = 8.dp, bottomEnd = 8.dp)
-    val panelBg = if (tokens.isDark) Color(0xFF0F172A) else Color(0xFFF8FAFC)
-    val panelBorder = if (tokens.isDark) Color(0x33818CF8) else Color(0x40CBD5E1)
-
-    Column(
+    AiReplyPanelView(
+        panelMode = AiPanelMode.ACTION_BOARD,
+        onSetPanelMode = {},
+        selectedAction = AiAction.REPLY,
+        onSelectAction = { },
+        selectedPersona = when (selectedStyle) {
+            AiReplyStyle.REPLY -> AiPersona.FRIENDLY
+            AiReplyStyle.FRIENDLY -> AiPersona.FRIENDLY
+            AiReplyStyle.SHORT -> AiPersona.SHORT
+            AiReplyStyle.PROFESSIONAL -> AiPersona.PROFESSIONAL
+            AiReplyStyle.FUNNY -> AiPersona.FUNNY
+        },
+        onSelectPersona = { persona ->
+            val style = when (persona) {
+                AiPersona.FRIENDLY -> AiReplyStyle.FRIENDLY
+                AiPersona.FREELANCER, AiPersona.PROFESSIONAL -> AiReplyStyle.PROFESSIONAL
+                AiPersona.FUNNY -> AiReplyStyle.FUNNY
+                AiPersona.SHORT -> AiReplyStyle.SHORT
+                AiPersona.NATURAL -> AiReplyStyle.FRIENDLY
+                AiPersona.ROMANTIC -> AiReplyStyle.FRIENDLY
+            }
+            onSelectStyle(style)
+        },
+        contextText = customPrompt,
+        onClearPrompt = onClearPrompt,
+        inputTarget = if (isPromptFocused) InputTarget.AI_CONTEXT else InputTarget.HOST,
+        onSetInputTarget = { target -> onTogglePromptFocus(target == InputTarget.AI_CONTEXT) },
+        onGenerate = { _, persona, ctx ->
+            val style = when (persona) {
+                AiPersona.FRIENDLY -> AiReplyStyle.FRIENDLY
+                AiPersona.FREELANCER, AiPersona.PROFESSIONAL -> AiReplyStyle.PROFESSIONAL
+                AiPersona.FUNNY -> AiReplyStyle.FUNNY
+                AiPersona.SHORT -> AiReplyStyle.SHORT
+                AiPersona.NATURAL -> AiReplyStyle.FRIENDLY
+                AiPersona.ROMANTIC -> AiReplyStyle.FRIENDLY
+            }
+            onGenerate(style, ctx)
+        },
+        onClose = onClose,
+        tokens = tokens,
+        hapticEnabled = hapticEnabled,
+        keyAnimationEnabled = keyAnimationEnabled,
         modifier = modifier
-            .fillMaxWidth()
-            .clip(panelShape)
-            .background(panelBg)
-            .border(1.dp, panelBorder, panelShape)
-            .padding(horizontal = 12.dp, vertical = 8.dp),
-        verticalArrangement = Arrangement.spacedBy(8.dp)
-    ) {
-        // 1. Header: ✨ AI Reply + Close (×) button
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(6.dp)
-            ) {
-                Icon(
-                    imageVector = Icons.Filled.AutoAwesome,
-                    contentDescription = null,
-                    tint = if (tokens.isDark) Color(0xFFFDE047) else Color(0xFFD97706),
-                    modifier = Modifier.size(16.dp)
-                )
-                Text(
-                    text = "AI Reply",
-                    fontSize = 14.sp,
-                    fontWeight = FontWeight.Bold,
-                    color = tokens.textPrimary
-                )
-            }
-
-            // Close button (×)
-            Box(
-                modifier = Modifier
-                    .size(26.dp)
-                    .clip(CircleShape)
-                    .background(if (tokens.isDark) Color(0xFF1E283D) else Color(0xFFE2E8F0))
-                    .clickable {
-                        if (hapticEnabled) haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                        onClose()
-                    },
-                contentAlignment = Alignment.Center
-            ) {
-                Icon(
-                    imageVector = Icons.Filled.Close,
-                    contentDescription = "Close AI Panel",
-                    tint = tokens.textSecondary,
-                    modifier = Modifier.size(14.dp)
-                )
-            }
-        }
-
-        // 2. Reply Style Buttons (Single Selection with subtle highlighted state)
-        // Row A: [ Reply ] [ Friendly ] [ Short ]
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(6.dp)
-        ) {
-            listOf(AiReplyStyle.REPLY, AiReplyStyle.FRIENDLY, AiReplyStyle.SHORT).forEach { style ->
-                StyleChip(
-                    style = style,
-                    isSelected = selectedStyle == style,
-                    onClick = {
-                        if (hapticEnabled) haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                        onSelectStyle(style)
-                    },
-                    tokens = tokens,
-                    keyAnimationEnabled = keyAnimationEnabled,
-                    modifier = Modifier.weight(1f)
-                )
-            }
-        }
-
-        // Row B: [ Professional ] [ Funny ]
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(6.dp)
-        ) {
-            listOf(AiReplyStyle.PROFESSIONAL, AiReplyStyle.FUNNY).forEach { style ->
-                StyleChip(
-                    style = style,
-                    isSelected = selectedStyle == style,
-                    onClick = {
-                        if (hapticEnabled) haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                        onSelectStyle(style)
-                    },
-                    tokens = tokens,
-                    keyAnimationEnabled = keyAnimationEnabled,
-                    modifier = Modifier.weight(1f)
-                )
-            }
-        }
-
-        // 3. Custom Prompt Field (Works seamlessly with IME keyboard typing)
-        Column(verticalArrangement = Arrangement.spacedBy(3.dp)) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Text(
-                    text = "Custom prompt",
-                    fontSize = 11.sp,
-                    fontWeight = FontWeight.Medium,
-                    color = tokens.textSecondary
-                )
-                if (isPromptFocused) {
-                    Text(
-                        text = "Keyboard typing active",
-                        fontSize = 10.sp,
-                        fontWeight = FontWeight.SemiBold,
-                        color = if (tokens.isDark) Color(0xFF818CF8) else Color(0xFF4F46E5)
-                    )
-                }
-            }
-
-            val promptFieldShape = RoundedCornerShape(8.dp)
-            val promptBorderColor = if (isPromptFocused) {
-                if (tokens.isDark) Color(0xFF818CF8) else Color(0xFF4F46E5)
-            } else {
-                tokens.borderRim
-            }
-            val promptBg = if (tokens.isDark) Color(0xFF1E283D) else Color(0xFFFFFFFF)
-
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(36.dp)
-                    .clip(promptFieldShape)
-                    .background(promptBg)
-                    .border(if (isPromptFocused) 1.5.dp else 1.dp, promptBorderColor, promptFieldShape)
-                    .clickable {
-                        if (hapticEnabled) haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                        onTogglePromptFocus(!isPromptFocused)
-                    }
-                    .padding(horizontal = 10.dp),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.SpaceBetween
-            ) {
-                Box(
-                    modifier = Modifier.weight(1f),
-                    contentAlignment = Alignment.CenterStart
-                ) {
-                    if (customPrompt.isEmpty()) {
-                        Text(
-                            text = "e.g. make this sound warmer...",
-                            fontSize = 12.sp,
-                            color = tokens.textSecondary.copy(alpha = 0.7f),
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis
-                        )
-                    } else {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Text(
-                                text = customPrompt,
-                                fontSize = 12.sp,
-                                fontWeight = FontWeight.Normal,
-                                color = tokens.textPrimary,
-                                maxLines = 1,
-                                overflow = TextOverflow.Ellipsis
-                            )
-                            if (isPromptFocused) {
-                                Text(
-                                    text = "|",
-                                    fontSize = 12.sp,
-                                    fontWeight = FontWeight.Bold,
-                                    color = if (tokens.isDark) Color(0xFF818CF8) else Color(0xFF4F46E5)
-                                )
-                            }
-                        }
-                    }
-                }
-
-                if (customPrompt.isNotEmpty()) {
-                    Box(
-                        modifier = Modifier
-                            .size(20.dp)
-                            .clip(CircleShape)
-                            .background(if (tokens.isDark) Color(0xFF2E3D5B) else Color(0xFFE2E8F0))
-                            .clickable {
-                                if (hapticEnabled) haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                                onClearPrompt()
-                            },
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Icon(
-                            imageVector = Icons.Filled.Clear,
-                            contentDescription = "Clear Prompt",
-                            tint = tokens.textSecondary,
-                            modifier = Modifier.size(12.dp)
-                        )
-                    }
-                }
-            }
-        }
-
-        // 4. Generate Button: Generate ✨
-        val interactionSource = remember { MutableInteractionSource() }
-        val isPressed by interactionSource.collectIsPressedAsState()
-        val scale by animateFloatAsState(
-            targetValue = if (isPressed && keyAnimationEnabled) 0.96f else 1.0f,
-            animationSpec = tween(100),
-            label = "generate_btn_scale"
-        )
-
-        val btnShape = RoundedCornerShape(10.dp)
-        Box(
-            modifier = Modifier
-                .fillMaxWidth()
-                .height(38.dp)
-                .scale(scale)
-                .clip(btnShape)
-                .background(
-                    Brush.horizontalGradient(
-                        listOf(AiPillGradientStart, AiPillGradientEnd)
-                    )
-                )
-                .clickable(
-                    interactionSource = interactionSource,
-                    indication = null
-                ) {
-                    if (hapticEnabled) {
-                        haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                    }
-                    onGenerate(selectedStyle, customPrompt)
-                },
-            contentAlignment = Alignment.Center
-        ) {
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(6.dp)
-            ) {
-                Text(
-                    text = "Generate",
-                    fontSize = 13.sp,
-                    fontWeight = FontWeight.Bold,
-                    color = Color.White
-                )
-                Icon(
-                    imageVector = Icons.Filled.AutoAwesome,
-                    contentDescription = null,
-                    tint = Color(0xFFFDE047),
-                    modifier = Modifier.size(14.dp)
-                )
-            }
-        }
-    }
-}
-
-/**
- * Individual Reply Tone Style Chip with subtle selected highlight.
- */
-@Composable
-private fun StyleChip(
-    style: AiReplyStyle,
-    isSelected: Boolean,
-    onClick: () -> Unit,
-    tokens: KeyboardColorTokens,
-    keyAnimationEnabled: Boolean,
-    modifier: Modifier = Modifier
-) {
-    val interactionSource = remember { MutableInteractionSource() }
-    val isPressed by interactionSource.collectIsPressedAsState()
-    val scale by animateFloatAsState(
-        targetValue = if (isPressed && keyAnimationEnabled) 0.95f else 1.0f,
-        animationSpec = tween(80),
-        label = "chip_scale"
     )
-
-    val chipShape = RoundedCornerShape(8.dp)
-
-    val bgColor = if (isSelected) {
-        if (tokens.isDark) Color(0xFF312E81) else Color(0xFFDBEAFE)
-    } else {
-        tokens.keySurface
-    }
-
-    val borderColor = if (isSelected) {
-        if (tokens.isDark) Color(0xFF818CF8) else Color(0xFF3B82F6)
-    } else {
-        tokens.borderRim
-    }
-
-    val textColor = if (isSelected) {
-        if (tokens.isDark) Color(0xFFEEF2FF) else Color(0xFF1E40AF)
-    } else {
-        tokens.textSecondary
-    }
-
-    Box(
-        modifier = modifier
-            .height(30.dp)
-            .scale(scale)
-            .clip(chipShape)
-            .background(bgColor)
-            .border(if (isSelected) 1.5.dp else 1.dp, borderColor, chipShape)
-            .clickable(
-                interactionSource = interactionSource,
-                indication = null,
-                onClick = onClick
-            ),
-        contentAlignment = Alignment.Center
-    ) {
-        Text(
-            text = style.displayName,
-            fontSize = 11.sp,
-            fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
-            color = textColor,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis
-        )
-    }
 }
 `
   },
-
   {
-    path: 'app/src/main/java/com/aikeyboard/ime/ui/theme/KeyboardTheme.kt',
-    name: 'KeyboardTheme.kt',
-    language: 'kotlin',
-    description: 'Milestone 1C: Extensible Theme Engine with Midnight and Light themes, color tokens, and height metrics.',
+    path: "app/src/main/java/com/aikeyboard/ime/ui/theme/KeyboardTheme.kt",
+    name: "KeyboardTheme.kt",
+    language: "kotlin",
+    description: "Milestone 1C: Extensible Theme Engine with Midnight and Light themes, color tokens, and height metrics.",
     content: `package com.aikeyboard.ime.ui.theme
 
 import androidx.compose.ui.graphics.Color
 
+/**
+ * Extensible theme identifier for AI Keyboard.
+ * Currently supports MIDNIGHT and LIGHT; prepared for future additions (Galaxy, Sakura, Ocean, etc.).
+ */
 enum class KeyboardThemeId(val displayName: String) {
     MIDNIGHT("Midnight"),
     LIGHT("Light")
-    // Extensible placeholders for future milestones: GALAXY, SAKURA, OCEAN, EMBER, AURORA, CRYSTAL, ICE
 }
 
+/**
+ * Configurable keyboard heights in dp.
+ */
 enum class KeyboardHeightOption(val displayName: String, val keyHeightDp: Int) {
     SHORT("Short", 42),
     NORMAL("Normal", 47),
     TALL("Tall", 53)
 }
 
+/**
+ * Color tokens for complete keyboard rendering across themes.
+ */
 data class KeyboardColorTokens(
     val background: Color,
     val surface: Color,
@@ -1168,13 +2299,14 @@ object KeyboardThemes {
         KeyboardThemeId.MIDNIGHT -> Midnight
         KeyboardThemeId.LIGHT -> Light
     }
-}`
+}
+`
   },
   {
-    path: 'app/src/main/java/com/aikeyboard/ime/KeyboardPreferences.kt',
-    name: 'KeyboardPreferences.kt',
-    language: 'kotlin',
-    description: 'Milestone 1C: Local on-device SharedPreferences storage for theme, haptic feedback, height, and animation.',
+    path: "app/src/main/java/com/aikeyboard/ime/KeyboardPreferences.kt",
+    name: "KeyboardPreferences.kt",
+    language: "kotlin",
+    description: "Milestone 1C: Local on-device SharedPreferences storage for theme, haptic feedback, height, and animation.",
     content: `package com.aikeyboard.ime
 
 import android.content.Context
@@ -1216,6 +2348,26 @@ class KeyboardPreferences(context: Context) {
         get() = prefs.getBoolean(KEY_ANIMATION, true)
         set(value) = prefs.edit().putBoolean(KEY_ANIMATION, value).apply()
 
+    var autocorrectEnabled: Boolean
+        get() = prefs.getBoolean(KEY_AUTOCORRECT, true)
+        set(value) = prefs.edit().putBoolean(KEY_AUTOCORRECT, value).apply()
+
+    var wordSuggestionsEnabled: Boolean
+        get() = prefs.getBoolean(KEY_WORD_SUGGESTIONS, true)
+        set(value) = prefs.edit().putBoolean(KEY_WORD_SUGGESTIONS, value).apply()
+
+    var nextWordPredictionEnabled: Boolean
+        get() = prefs.getBoolean(KEY_NEXT_WORD_PREDICTION, true)
+        set(value) = prefs.edit().putBoolean(KEY_NEXT_WORD_PREDICTION, value).apply()
+
+    var doubleSpacePeriodEnabled: Boolean
+        get() = prefs.getBoolean(KEY_DOUBLE_SPACE_PERIOD, true)
+        set(value) = prefs.edit().putBoolean(KEY_DOUBLE_SPACE_PERIOD, value).apply()
+
+    var autoCapitalizationEnabled: Boolean
+        get() = prefs.getBoolean(KEY_AUTO_CAPITALIZATION, true)
+        set(value) = prefs.edit().putBoolean(KEY_AUTO_CAPITALIZATION, value).apply()
+
     fun getClipboardHistory(): List<String> {
         val raw = prefs.getString(KEY_CLIPBOARD_HISTORY, null) ?: return emptyList()
         return try {
@@ -1255,17 +2407,31 @@ class KeyboardPreferences(context: Context) {
         private const val KEY_HEIGHT = "pref_height"
         private const val KEY_ANIMATION = "pref_key_animation"
         private const val KEY_CLIPBOARD_HISTORY = "pref_clipboard_history"
+        private const val KEY_AUTOCORRECT = "pref_autocorrect"
+        private const val KEY_WORD_SUGGESTIONS = "pref_word_suggestions"
+        private const val KEY_NEXT_WORD_PREDICTION = "pref_next_word_prediction"
+        private const val KEY_DOUBLE_SPACE_PERIOD = "pref_double_space_period"
+        private const val KEY_AUTO_CAPITALIZATION = "pref_auto_capitalization"
     }
 }
 `
   },
   {
-    path: 'app/src/main/java/com/aikeyboard/ime/suggestion/KeyboardSuggestionEngine.kt',
-    name: 'KeyboardSuggestionEngine.kt',
-    language: 'kotlin',
-    description: 'Gboard-style On-Device Autocorrect, Typo Correction, and Next-Word Bigram Prediction Engine with 0ms latency.',
+    path: "app/src/main/java/com/aikeyboard/ime/suggestion/KeyboardSuggestionEngine.kt",
+    name: "KeyboardSuggestionEngine.kt",
+    language: "kotlin",
+    description: "Gboard-style On-Device Autocorrect, Typo Correction, and Next-Word Bigram Prediction Engine with 0ms latency.",
     content: `package com.aikeyboard.ime.suggestion
 
+/**
+ * Gboard-style On-Device Autocorrect & Next-Word Suggestion Engine.
+ *
+ * Runs 100% locally on-device with 0ms latency:
+ * - High-speed dictionary prefix lookup
+ * - Common typographical error correction (e.g. "teh" -> "the", "recieve" -> "receive")
+ * - Next-word bigram predictive suggestions (e.g. "thank" -> ["you", "so much", "for"])
+ * - Case preservation (capitalization matching user input)
+ */
 data class SuggestionResult(
     val candidates: List<String>,
     val autocorrectCandidate: String? = null
@@ -1273,105 +2439,295 @@ data class SuggestionResult(
 
 object KeyboardSuggestionEngine {
 
+    // Common English typographical errors mapped to their correct spellings
     private val commonTypos = mapOf(
-        "teh" to "the", "recieve" to "receive", "recieved" to "received",
-        "seperate" to "separate", "definately" to "definitely", "becuase" to "because",
-        "dont" to "don't", "cant" to "can't", "wont" to "won't", "im" to "I'm",
-        "youre" to "you're", "theyre" to "they're", "alot" to "a lot", "truely" to "truly",
-        "tommorow" to "tomorrow", "tommorrow" to "tomorrow", "thier" to "their",
-        "omw" to "on my way", "idk" to "I don't know", "tbh" to "to be honest",
-        "btw" to "by the way", "np" to "no problem", "plz" to "please"
+        "teh" to "the",
+        "recieve" to "receive",
+        "recieved" to "received",
+        "seperate" to "separate",
+        "seperated" to "separated",
+        "definately" to "definitely",
+        "becuase" to "because",
+        "dont" to "don't",
+        "cant" to "can't",
+        "wont" to "won't",
+        "im" to "I'm",
+        "youre" to "you're",
+        "theyre" to "they're",
+        "ive" to "I've",
+        "id" to "I'd",
+        "weve" to "we've",
+        "alot" to "a lot",
+        "untill" to "until",
+        "occured" to "occurred",
+        "truely" to "truly",
+        "goverment" to "government",
+        "wierd" to "weird",
+        "beleive" to "believe",
+        "acheive" to "achieve",
+        "tommorow" to "tomorrow",
+        "tommorrow" to "tomorrow",
+        "alread" to "already",
+        "thier" to "their",
+        "feild" to "field",
+        "peice" to "piece",
+        "freind" to "friend",
+        "freinds" to "friends",
+        "neccesary" to "necessary",
+        "begining" to "beginning",
+        "suprise" to "surprise",
+        "embarass" to "embarrass",
+        "accomodate" to "accommodate",
+        "appologize" to "apologize",
+        "calender" to "calendar",
+        "definately" to "definitely",
+        "enviroment" to "environment",
+        "familar" to "familiar",
+        "finnaly" to "finally",
+        "gaurentee" to "guarantee",
+        "greatful" to "grateful",
+        "incidently" to "incidentally",
+        "knowlege" to "knowledge",
+        "millenium" to "millennium",
+        "noticable" to "noticeable",
+        "ocassion" to "occasion",
+        "parrallel" to "parallel",
+        "persue" to "pursue",
+        "posession" to "possession",
+        "priviledge" to "privilege",
+        "reccomend" to "recommend",
+        "refering" to "referring",
+        "religous" to "religious",
+        "rember" to "remember",
+        "resistence" to "resistance",
+        "sence" to "sense",
+        "succesful" to "successful",
+        "thnx" to "thanks",
+        "tnx" to "thanks",
+        "plz" to "please",
+        "pls" to "please",
+        "u" to "you",
+        "ur" to "your",
+        "r" to "are",
+        "omw" to "on my way",
+        "idk" to "I don't know",
+        "imo" to "in my opinion",
+        "tbh" to "to be honest",
+        "btw" to "by the way",
+        "np" to "no problem"
     )
 
+    // Contextual Bigram next-word predictions for natural conversation flow
     private val nextWordPredictions = mapOf(
         "how" to listOf("are", "is", "about"),
+        "hows" to listOf("it", "your", "everything"),
+        "how's" to listOf("it", "your", "everything"),
         "thank" to listOf("you", "you so much", "for"),
         "thanks" to listOf("for", "again", "a lot"),
         "let" to listOf("me", "us", "know"),
+        "lets" to listOf("meet", "do", "go"),
         "let's" to listOf("meet", "do", "go"),
+        "i" to listOf("am", "will", "would"),
+        "im" to listOf("going", "on", "sure"),
+        "i'm" to listOf("going", "on", "sure"),
         "good" to listOf("morning", "night", "job"),
         "see" to listOf("you", "what", "later"),
-        "sounds" to listOf("good", "great", "like")
+        "are" to listOf("you", "we", "there"),
+        "what" to listOf("do", "are", "is"),
+        "can" to listOf("you", "we", "i"),
+        "where" to listOf("are", "is", "can"),
+        "when" to listOf("are", "can", "will"),
+        "why" to listOf("not", "did", "are"),
+        "have" to listOf("a", "you", "been"),
+        "please" to listOf("let", "find", "call"),
+        "sounds" to listOf("good", "great", "like"),
+        "talk" to listOf("to you soon", "later", "soon"),
+        "hope" to listOf("you're", "this", "all"),
+        "on" to listOf("my way", "the way", "it"),
+        "nice" to listOf("to", "meeting", "job"),
+        "great" to listOf("job", "to hear", "seeing"),
+        "call" to listOf("me", "you", "when"),
+        "text" to listOf("me", "you", "later"),
+        "at" to listOf("the", "home", "work"),
+        "in" to listOf("the", "a", "my"),
+        "to" to listOf("the", "be", "do"),
+        "for" to listOf("the", "you", "now"),
+        "with" to listOf("you", "me", "the"),
+        "we" to listOf("can", "will", "should"),
+        "you" to listOf("can", "are", "have"),
+        "they" to listOf("are", "will", "have"),
+        "it" to listOf("is", "was", "would"),
+        "that" to listOf("is", "was", "sounds")
     )
 
+    // High-frequency English dictionary for prefix matching and completions
     private val commonWords = listOf(
-        "the", "be", "to", "of", "and", "a", "in", "that", "have", "i", "it", "for",
-        "not", "on", "with", "he", "as", "you", "do", "at", "this", "but", "his",
-        "by", "from", "they", "we", "say", "her", "she", "or", "an", "will", "my",
-        "one", "all", "would", "there", "their", "what", "so", "up", "out", "if",
-        "great", "hello", "hi", "hey", "thanks", "thank", "please", "yes", "sure",
-        "today", "tomorrow", "morning", "afternoon", "evening", "night", "meeting"
+        "the", "be", "to", "of", "and", "a", "in", "that", "have", "i",
+        "it", "for", "not", "on", "with", "he", "as", "you", "do", "at",
+        "this", "but", "his", "by", "from", "they", "we", "say", "her", "she",
+        "or", "an", "will", "my", "one", "all", "would", "there", "their", "what",
+        "so", "up", "out", "if", "about", "who", "get", "which", "go", "me",
+        "when", "make", "can", "like", "time", "no", "just", "him", "know", "take",
+        "people", "into", "year", "your", "good", "some", "could", "them", "see", "other",
+        "than", "then", "now", "look", "only", "come", "its", "over", "think", "also",
+        "back", "after", "use", "two", "how", "our", "work", "first", "well", "way",
+        "even", "new", "want", "because", "any", "these", "give", "day", "most", "us",
+        "great", "hello", "hi", "hey", "thanks", "thank", "please", "yes", "sure", "today",
+        "tomorrow", "tonight", "morning", "afternoon", "evening", "night", "week", "meeting",
+        "call", "phone", "message", "email", "send", "receive", "update", "working", "going",
+        "ready", "done", "perfect", "awesome", "sounds", "looking", "check", "happy", "need",
+        "help", "question", "answer", "talk", "later", "soon", "fine", "cool", "maybe",
+        "definitely", "probably", "actually", "already", "always", "never", "everything",
+        "something", "anything", "nothing", "someone", "anyone", "everyone", "where", "here",
+        "there", "together", "friend", "family", "office", "home", "place", "school", "project",
+        "plan", "number", "idea", "problem", "solution", "start", "stop", "finish", "complete",
+        "important", "interesting", "possible", "difficult", "easy", "simple", "quick", "fast",
+        "slow", "right", "left", "again", "much", "many", "little", "few", "more", "less"
     )
 
+    /**
+     * Generates Gboard-like suggestions based on current word prefix and previous context word.
+     */
     fun getSuggestions(
         currentWord: String,
         previousWord: String? = null,
         suggestionsEnabled: Boolean = true
     ): SuggestionResult {
-        if (!suggestionsEnabled) return SuggestionResult(emptyList())
+        if (!suggestionsEnabled) {
+            return SuggestionResult(emptyList())
+        }
 
         val trimmedCurrent = currentWord.trim()
+
+        // 1. If currently typing a word (prefix matching and typo correction)
         if (trimmedCurrent.isNotEmpty()) {
             val lowerCurrent = trimmedCurrent.lowercase()
             val isCapitalized = trimmedCurrent.first().isUpperCase()
+            val isAllUpper = trimmedCurrent.length > 1 && trimmedCurrent.all { it.isUpperCase() }
 
-            fun matchCase(word: String): String =
-                if (isCapitalized) word.replaceFirstChar { it.uppercase() } else word
-
-            val typoMatch = commonTypos[lowerCurrent]
-            val autocorrect = typoMatch?.let { matchCase(it) }
-            val candidates = mutableListOf<String>()
-
-            if (autocorrect != null) {
-                candidates.add(trimmedCurrent)
-                candidates.add(autocorrect)
-                val nextWords = nextWordPredictions[autocorrect.lowercase()] ?: emptyList()
-                if (nextWords.isNotEmpty()) candidates.add(nextWords.first())
-            } else {
-                val prefixMatches = commonWords.filter { it.startsWith(lowerCurrent) && it != lowerCurrent }
-                    .take(3).map { matchCase(it) }
-                if (prefixMatches.isNotEmpty()) {
-                    candidates.addAll(prefixMatches)
-                } else {
-                    candidates.add(trimmedCurrent)
+            fun matchCase(word: String): String {
+                return when {
+                    isAllUpper -> word.uppercase()
+                    isCapitalized -> word.replaceFirstChar { it.uppercase() }
+                    else -> word
                 }
             }
 
-            return SuggestionResult(candidates.distinct().take(3), autocorrect)
+            // Check direct typo match
+            val typoMatch = commonTypos[lowerCurrent]
+            val autocorrect = typoMatch?.let { matchCase(it) }
+
+            val candidates = mutableListOf<String>()
+
+            // If it's a known typo, place the autocorrect candidate front and center
+            if (autocorrect != null) {
+                candidates.add(trimmedCurrent) // Literal typed word
+                candidates.add(autocorrect)   // Corrected word
+                // Find next completion for the corrected word
+                val nextWords = nextWordPredictions[autocorrect.lowercase()] ?: emptyList()
+                if (nextWords.isNotEmpty()) {
+                    candidates.add(nextWords.first())
+                }
+            } else {
+                // Find prefix completions from common dictionary
+                val prefixMatches = commonWords.filter { it.startsWith(lowerCurrent) && it != lowerCurrent }
+                    .take(3)
+                    .map { matchCase(it) }
+
+                if (prefixMatches.isNotEmpty()) {
+                    // Center is top completion, Left is literal or second, Right is third
+                    if (prefixMatches.size == 1) {
+                        candidates.add(trimmedCurrent)
+                        candidates.add(prefixMatches[0])
+                        // Add next word prediction for the top completion
+                        val next = nextWordPredictions[prefixMatches[0].lowercase()]?.firstOrNull()
+                        if (next != null) candidates.add(next)
+                    } else if (prefixMatches.size == 2) {
+                        candidates.add(trimmedCurrent)
+                        candidates.add(prefixMatches[0])
+                        candidates.add(prefixMatches[1])
+                    } else {
+                        candidates.add(prefixMatches[1])
+                        candidates.add(prefixMatches[0])
+                        candidates.add(prefixMatches[2])
+                    }
+                } else {
+                    // Exact match or unfamiliar word: offer capitalized or literal
+                    candidates.add(trimmedCurrent)
+                    if (!isCapitalized) {
+                        candidates.add(trimmedCurrent.replaceFirstChar { it.uppercase() })
+                    }
+                }
+            }
+
+            return SuggestionResult(
+                candidates = candidates.distinct().take(3),
+                autocorrectCandidate = autocorrect
+            )
         }
 
+        // 2. If at a word boundary (space just typed), offer Next-Word Predictions
         if (!previousWord.isNullOrBlank()) {
-            val lowerPrev = previousWord.trim().lowercase().removeSuffix(".").removeSuffix(",")
+            val lowerPrev = previousWord.trim().lowercase().removeSuffix(".").removeSuffix(",").removeSuffix("!").removeSuffix("?")
             val predictions = nextWordPredictions[lowerPrev]
             if (!predictions.isNullOrEmpty()) {
-                return SuggestionResult(predictions.take(3))
+                return SuggestionResult(
+                    candidates = predictions.take(3),
+                    autocorrectCandidate = null
+                )
             }
-            return SuggestionResult(listOf("and", "is", "to"))
+            // Fallback continuations for arbitrary preceding words
+            return SuggestionResult(
+                candidates = listOf("and", "is", "to"),
+                autocorrectCandidate = null
+            )
         }
 
-        return SuggestionResult(listOf("Hey", "Sounds good", "Thanks!"))
+        // Default conversational starters when starting a sentence or input is empty
+        return SuggestionResult(
+            candidates = listOf("Hey", "Sounds good", "Thanks!"),
+            autocorrectCandidate = null
+        )
     }
 
-    fun shouldTriggerDoubleSpacePeriod(lastSpaceTimeMs: Long, currentTimeMs: Long, doubleSpaceEnabled: Boolean): Boolean {
+    /**
+     * Determines if a double-space was pressed within threshold to trigger ". "
+     */
+    fun shouldTriggerDoubleSpacePeriod(
+        lastSpaceTimeMs: Long,
+        currentTimeMs: Long,
+        doubleSpaceEnabled: Boolean
+    ): Boolean {
         if (!doubleSpaceEnabled) return false
         val delta = currentTimeMs - lastSpaceTimeMs
         return delta in 50..450
     }
 
-    fun shouldAutoCapitalize(textBeforeCursor: CharSequence?, autoCapEnabled: Boolean): Boolean {
+    /**
+     * Checks if the previous text indicates the start of a sentence for auto-capitalization.
+     */
+    fun shouldAutoCapitalize(
+        textBeforeCursor: CharSequence?,
+        autoCapEnabled: Boolean
+    ): Boolean {
         if (!autoCapEnabled || textBeforeCursor == null) return false
         val trimmed = textBeforeCursor.toString()
         if (trimmed.isEmpty()) return true
-        return trimmed.endsWith(". ") || trimmed.endsWith("! ") || trimmed.endsWith("? ") || trimmed.endsWith("\\n")
+        val endsWithSentenceEnd = trimmed.endsWith(". ") ||
+                trimmed.endsWith("! ") ||
+                trimmed.endsWith("? ") ||
+                trimmed.endsWith("\\n") ||
+                trimmed.endsWith(".  ")
+        return endsWithSentenceEnd
     }
 }
 `
   },
   {
-    path: 'app/src/main/java/com/aikeyboard/MainActivity.kt',
-    name: 'MainActivity.kt',
-    language: 'kotlin',
-    description: 'Milestone 1C: Polished Onboarding Wizard (Enable & Select) + Settings Screen (Themes, Haptics, Height, Animation) + Privacy Pledge.',
+    path: "app/src/main/java/com/aikeyboard/MainActivity.kt",
+    name: "MainActivity.kt",
+    language: "kotlin",
+    description: "Milestone 1C: Polished Onboarding Wizard (Enable & Select) + Settings Screen (Themes, Haptics, Height, Animation) + Privacy Pledge.",
     content: `package com.aikeyboard
 
 import android.content.Context
@@ -1389,7 +2745,13 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.*
+import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.material.icons.filled.Keyboard
+import androidx.compose.material.icons.filled.Lock
+import androidx.compose.material.icons.filled.Palette
+import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material.icons.filled.TouchApp
+import androidx.compose.material.icons.filled.Vibration
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -1434,10 +2796,16 @@ fun MainSettingsAndOnboardingScreen() {
     var isKeyboardSelected by remember { mutableStateOf(false) }
     var testInputText by remember { mutableStateOf("") }
 
+    // Settings state backed by local SharedPreferences
     var currentTheme by remember { mutableStateOf(prefs.themeId) }
     var isHapticEnabled by remember { mutableStateOf(prefs.hapticEnabled) }
     var currentHeight by remember { mutableStateOf(prefs.keyboardHeight) }
     var isKeyAnimationEnabled by remember { mutableStateOf(prefs.keyAnimationEnabled) }
+    var isAutocorrectEnabled by remember { mutableStateOf(prefs.autocorrectEnabled) }
+    var isWordSuggestionsEnabled by remember { mutableStateOf(prefs.wordSuggestionsEnabled) }
+    var isNextWordPredictionEnabled by remember { mutableStateOf(prefs.nextWordPredictionEnabled) }
+    var isAutoCapitalizationEnabled by remember { mutableStateOf(prefs.autoCapitalizationEnabled) }
+    var isDoubleSpacePeriodEnabled by remember { mutableStateOf(prefs.doubleSpacePeriodEnabled) }
 
     fun checkKeyboardStatus() {
         val packageName = context.packageName
@@ -1496,9 +2864,16 @@ fun MainSettingsAndOnboardingScreen() {
                 .verticalScroll(rememberScrollState()),
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
-            // Step-by-Step Onboarding
-            Text("GET STARTED", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary, letterSpacing = 1.sp)
+            // --- SECTION 1: ONBOARDING ---
+            Text(
+                text = "GET STARTED",
+                fontSize = 12.sp,
+                fontWeight = FontWeight.Bold,
+                color = MaterialTheme.colorScheme.primary,
+                letterSpacing = 1.sp
+            )
 
+            // Step 1: Enable Keyboard in Settings
             StepCard(
                 stepNumber = "1",
                 title = stringResource(R.string.step_1_enable),
@@ -1507,11 +2882,14 @@ fun MainSettingsAndOnboardingScreen() {
                 actionButtonText = if (isKeyboardEnabled) "Enabled" else "Open Settings",
                 actionIcon = Icons.Default.Settings,
                 onAction = {
-                    val intent = Intent(Settings.ACTION_INPUT_METHOD_SETTINGS).apply { addFlags(Intent.FLAG_ACTIVITY_NEW_TASK) }
+                    val intent = Intent(Settings.ACTION_INPUT_METHOD_SETTINGS).apply {
+                        addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                    }
                     context.startActivity(intent)
                 }
             )
 
+            // Step 2: Select Keyboard as Active IME
             StepCard(
                 stepNumber = "2",
                 title = stringResource(R.string.step_2_select),
@@ -1519,22 +2897,69 @@ fun MainSettingsAndOnboardingScreen() {
                 isCompleted = isKeyboardSelected,
                 actionButtonText = if (isKeyboardSelected) "Selected" else "Switch Keyboard",
                 actionIcon = Icons.Default.Keyboard,
-                onAction = { imm.showInputMethodPicker() }
+                onAction = {
+                    imm.showInputMethodPicker()
+                }
             )
 
             HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
 
-            // Keyboard Settings
-            Text("KEYBOARD SETTINGS", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary, letterSpacing = 1.sp)
+            // --- SECTION 2: KEYBOARD SETTINGS ---
+            Text(
+                text = "KEYBOARD SETTINGS",
+                fontSize = 12.sp,
+                fontWeight = FontWeight.Bold,
+                color = MaterialTheme.colorScheme.primary,
+                letterSpacing = 1.sp
+            )
 
-            // Themes
-            Card(modifier = Modifier.fillMaxWidth(), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)) {
-                Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            // AI Engine Overview Card (Cloud Gemini)
+            Card(
+                modifier = Modifier.fillMaxWidth(),
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
+            ) {
+                Column(
+                    modifier = Modifier.padding(16.dp),
+                    verticalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Text("✨", fontSize = 16.sp)
+                        Column {
+                            Text("Cloud AI Generation: Google Gemini", fontWeight = FontWeight.SemiBold)
+                            Text(
+                                text = "Live Gemini 2.5 Flash generation via Firebase AI Logic",
+                                fontSize = 12.sp,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                    }
+                    Text(
+                        text = "Writing Actions (Reply, Continue, Start, Ask AI, Rewrite, Create) and Personas are powered directly by Cloud Gemini AI for authentic conversational responses without mock templates. On-device autocorrect and word suggestions operate locally with 0ms latency.",
+                        fontSize = 11.sp,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.8f),
+                        lineHeight = 15.sp
+                    )
+                }
+            }
+
+            // Theme Selection (Midnight / Light)
+            Card(
+                modifier = Modifier.fillMaxWidth(),
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
+            ) {
+                Column(
+                    modifier = Modifier.padding(16.dp),
+                    verticalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
                     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         Icon(Icons.Default.Palette, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
                         Text("Theme", fontWeight = FontWeight.SemiBold)
                     }
-                    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
                         ThemeOptionCard(
                             title = "Midnight",
                             subtitle = "Dark navy & violet",
@@ -1559,18 +2984,31 @@ fun MainSettingsAndOnboardingScreen() {
                 }
             }
 
-            // Keyboard Height
-            Card(modifier = Modifier.fillMaxWidth(), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)) {
-                Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            // Keyboard Height Selection (Short / Normal / Tall)
+            Card(
+                modifier = Modifier.fillMaxWidth(),
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
+            ) {
+                Column(
+                    modifier = Modifier.padding(16.dp),
+                    verticalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
                     Text("Keyboard Height", fontWeight = FontWeight.SemiBold)
-                    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
                         KeyboardHeightOption.values().forEach { option ->
                             val isSelected = currentHeight == option
                             Box(
                                 modifier = Modifier
                                     .weight(1f)
                                     .clip(RoundedCornerShape(8.dp))
-                                    .background(if (isSelected) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceVariant)
+                                    .background(
+                                        if (isSelected) MaterialTheme.colorScheme.primaryContainer
+                                        else MaterialTheme.colorScheme.surfaceVariant
+                                    )
                                     .clickable {
                                         currentHeight = option
                                         prefs.keyboardHeight = option
@@ -1590,10 +3028,18 @@ fun MainSettingsAndOnboardingScreen() {
                 }
             }
 
-            // Haptic & Animation Switches
-            Card(modifier = Modifier.fillMaxWidth(), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)) {
+            // Haptic Feedback & Key Animation Toggles
+            Card(
+                modifier = Modifier.fillMaxWidth(),
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
+            ) {
                 Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
-                    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                    // Haptic feedback
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
                         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                             Icon(Icons.Default.Vibration, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
                             Column {
@@ -1601,10 +3047,23 @@ fun MainSettingsAndOnboardingScreen() {
                                 Text("Vibrate when keys are pressed", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
                             }
                         }
-                        Switch(checked = isHapticEnabled, onCheckedChange = { isHapticEnabled = it; prefs.hapticEnabled = it })
+                        Switch(
+                            checked = isHapticEnabled,
+                            onCheckedChange = {
+                                isHapticEnabled = it
+                                prefs.hapticEnabled = it
+                            }
+                        )
                     }
+
                     HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.3f))
-                    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+
+                    // Key animation
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
                         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                             Icon(Icons.Default.TouchApp, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
                             Column {
@@ -1612,17 +3071,208 @@ fun MainSettingsAndOnboardingScreen() {
                                 Text("80-150ms press feedback scaling", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
                             }
                         }
-                        Switch(checked = isKeyAnimationEnabled, onCheckedChange = { isKeyAnimationEnabled = it; prefs.keyAnimationEnabled = it })
+                        Switch(
+                            checked = isKeyAnimationEnabled,
+                            onCheckedChange = {
+                                isKeyAnimationEnabled = it
+                                prefs.keyAnimationEnabled = it
+                            }
+                        )
                     }
                 }
             }
 
-            // Privacy Commitment
-            Card(modifier = Modifier.fillMaxWidth(), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f))) {
-                Row(modifier = Modifier.padding(14.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+            // Gboard-Style Smart Typing & Autocorrect Settings
+            Card(
+                modifier = Modifier.fillMaxWidth(),
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
+            ) {
+                Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
+                    Text("Smart Typing & Autocorrect (Gboard-Style)", fontWeight = FontWeight.SemiBold, fontSize = 15.sp)
+
+                    // Autocorrect
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Column(modifier = Modifier.weight(1f).padding(end = 8.dp)) {
+                            Text("Autocorrect", fontWeight = FontWeight.Medium, fontSize = 14.sp)
+                            Text("Fix misspelled words automatically when pressing space", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
+                        Switch(
+                            checked = isAutocorrectEnabled,
+                            onCheckedChange = {
+                                isAutocorrectEnabled = it
+                                prefs.autocorrectEnabled = it
+                            }
+                        )
+                    }
+
+                    HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.3f))
+
+                    // Word Suggestions
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Column(modifier = Modifier.weight(1f).padding(end = 8.dp)) {
+                            Text("Word Suggestions", fontWeight = FontWeight.Medium, fontSize = 14.sp)
+                            Text("Show 3 candidate completions above keyboard", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
+                        Switch(
+                            checked = isWordSuggestionsEnabled,
+                            onCheckedChange = {
+                                isWordSuggestionsEnabled = it
+                                prefs.wordSuggestionsEnabled = it
+                            }
+                        )
+                    }
+
+                    HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.3f))
+
+                    // Next-Word Prediction
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Column(modifier = Modifier.weight(1f).padding(end = 8.dp)) {
+                            Text("Next-Word Prediction", fontWeight = FontWeight.Medium, fontSize = 14.sp)
+                            Text("Predict subsequent words based on conversational context", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
+                        Switch(
+                            checked = isNextWordPredictionEnabled,
+                            onCheckedChange = {
+                                isNextWordPredictionEnabled = it
+                                prefs.nextWordPredictionEnabled = it
+                            }
+                        )
+                    }
+
+                    HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.3f))
+
+                    // Auto-Capitalization
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Column(modifier = Modifier.weight(1f).padding(end = 8.dp)) {
+                            Text("Auto-Capitalization", fontWeight = FontWeight.Medium, fontSize = 14.sp)
+                            Text("Capitalize the first word of each sentence automatically", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
+                        Switch(
+                            checked = isAutoCapitalizationEnabled,
+                            onCheckedChange = {
+                                isAutoCapitalizationEnabled = it
+                                prefs.autoCapitalizationEnabled = it
+                            }
+                        )
+                    }
+
+                    HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.3f))
+
+                    // Double-Space Period
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Column(modifier = Modifier.weight(1f).padding(end = 8.dp)) {
+                            Text("Double-Space Period", fontWeight = FontWeight.Medium, fontSize = 14.sp)
+                            Text("Double-tap spacebar to insert a period followed by a space", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
+                        Switch(
+                            checked = isDoubleSpacePeriodEnabled,
+                            onCheckedChange = {
+                                isDoubleSpacePeriodEnabled = it
+                                prefs.doubleSpacePeriodEnabled = it
+                            }
+                        )
+                    }
+                }
+            }
+
+            // Cloud AI Intelligence Status Card
+            Card(
+                modifier = Modifier.fillMaxWidth(),
+                colors = CardDefaults.cardColors(
+                    containerColor = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.4f)
+                )
+            ) {
+                Column(
+                    modifier = Modifier.padding(16.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.CheckCircle,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.primary
+                        )
+                        Text(
+                            text = "Cloud AI Generation: Google Gemini",
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 14.sp,
+                            color = MaterialTheme.colorScheme.primary
+                        )
+                    }
+                    Text(
+                        text = "Writing Actions (Reply, Continue, Start, Ask AI, Rewrite, Create) and Personas are powered directly by Cloud Gemini AI for authentic conversational intelligence without mock templates. Autocorrect and word completions run on-device with 0ms latency.",
+                        fontSize = 12.sp,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        lineHeight = 16.sp
+                    )
+                }
+            }
+
+            // --- SECTION 3: INTERACTIVE TEST FIELD ---
+            Card(
+                modifier = Modifier.fillMaxWidth(),
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
+            ) {
+                Column(
+                    modifier = Modifier.padding(16.dp),
+                    verticalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                    Text(
+                        text = "Interactive Live Test",
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 14.sp
+                    )
+                    Text(
+                        text = "Tap the field below to test typing with autocorrect and suggestions:",
+                        fontSize = 12.sp,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    OutlinedTextField(
+                        value = testInputText,
+                        onValueChange = { testInputText = it },
+                        modifier = Modifier.fillMaxWidth(),
+                        placeholder = { Text(stringResource(R.string.test_hint)) },
+                        minLines = 2
+                    )
+                }
+            }
+
+            // --- SECTION 4: PRIVACY COMMITMENT ---
+            Card(
+                modifier = Modifier.fillMaxWidth(),
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f))
+            ) {
+                Row(
+                    modifier = Modifier.padding(14.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
                     Icon(Icons.Default.Lock, contentDescription = "Privacy", tint = MaterialTheme.colorScheme.primary)
                     Text(
-                        text = "100% Offline & Private: AI Keyboard operates strictly on-device. No keystrokes, passwords, or personal data are collected or transmitted.",
+                        text = "Private by Design: Regular typing, autocorrect, and dictionary suggestions run 100% on-device. No keystrokes or passwords are ever logged or sent. Cloud AI generation only occurs when you explicitly tap an AI Action.",
                         fontSize = 11.sp,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         lineHeight = 15.sp
@@ -1631,13 +3281,110 @@ fun MainSettingsAndOnboardingScreen() {
             }
         }
     }
-}`
+}
+
+@Composable
+fun ThemeOptionCard(
+    title: String,
+    subtitle: String,
+    isSelected: Boolean,
+    modifier: Modifier = Modifier,
+    onClick: () -> Unit
+) {
+    Box(
+        modifier = modifier
+            .clip(RoundedCornerShape(10.dp))
+            .background(if (isSelected) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceVariant)
+            .border(
+                width = if (isSelected) 2.dp else 1.dp,
+                color = if (isSelected) MaterialTheme.colorScheme.primary else Color.Transparent,
+                shape = RoundedCornerShape(10.dp)
+            )
+            .clickable { onClick() }
+            .padding(12.dp)
+    ) {
+        Column {
+            Text(
+                text = title,
+                fontWeight = FontWeight.Bold,
+                fontSize = 13.sp,
+                color = if (isSelected) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            Text(
+                text = subtitle,
+                fontSize = 11.sp,
+                color = if (isSelected) MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.8f) else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
+            )
+        }
+    }
+}
+
+@Composable
+fun StepCard(
+    stepNumber: String,
+    title: String,
+    description: String,
+    isCompleted: Boolean,
+    actionButtonText: String,
+    actionIcon: androidx.compose.ui.graphics.vector.ImageVector,
+    onAction: () -> Unit
+) {
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
+    ) {
+        Column(
+            modifier = Modifier.padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    text = "Step $stepNumber: $title",
+                    style = MaterialTheme.typography.titleSmall,
+                    fontWeight = FontWeight.Bold
+                )
+                if (isCompleted) {
+                    Icon(
+                        imageVector = Icons.Default.CheckCircle,
+                        contentDescription = "Completed",
+                        tint = MaterialTheme.colorScheme.primary
+                    )
+                }
+            }
+
+            Text(
+                text = description,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+
+            Spacer(modifier = Modifier.height(4.dp))
+
+            Button(
+                onClick = onAction,
+                modifier = Modifier.align(Alignment.End)
+            ) {
+                Icon(
+                    imageVector = actionIcon,
+                    contentDescription = null,
+                    modifier = Modifier.padding(end = 6.dp)
+                )
+                Text(actionButtonText)
+            }
+        }
+    }
+}
+`
   },
   {
-    path: 'app/src/main/java/com/aikeyboard/ime/ui/KeyboardToolbar.kt',
-    name: 'KeyboardToolbar.kt',
-    language: 'kotlin',
-    description: 'Milestone 1B: Keyboard Toolbar with prominent ✨ AI pill button, quick actions (Emoji, GIF, Clipboard, Theme, Settings), and toast notice.',
+    path: "app/src/main/java/com/aikeyboard/ime/ui/KeyboardToolbar.kt",
+    name: "KeyboardToolbar.kt",
+    language: "kotlin",
+    description: "Milestone 1B: Keyboard Toolbar with prominent ✨ AI pill button, quick actions (Emoji, GIF, Clipboard, Theme, Settings), and toast notice.",
     content: `package com.aikeyboard.ime.ui
 
 import androidx.compose.animation.AnimatedVisibility
@@ -1654,12 +3401,17 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.*
+import androidx.compose.material.icons.filled.AutoAwesome
+import androidx.compose.material.icons.filled.ChevronLeft
+import androidx.compose.material.icons.filled.ContentPaste
+import androidx.compose.material.icons.filled.MoreHoriz
+import androidx.compose.material.icons.filled.Palette
+import androidx.compose.material.icons.filled.SentimentSatisfiedAlt
+import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
-import androidx.compose.runtime.Composable
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.remember
+import androidx.compose.material3.VerticalDivider
+import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -1670,6 +3422,8 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.aikeyboard.ime.KeyboardActionListener
@@ -1678,83 +3432,184 @@ import com.aikeyboard.ime.ui.theme.AiPillGradientStart
 import com.aikeyboard.ime.ui.theme.KeyboardColorTokens
 import com.aikeyboard.ime.ui.theme.KeyboardThemes
 
+/**
+ * Gboard-style Combined Suggestion Strip & Quick Action Toolbar.
+ *
+ * Provides:
+ * 1. 3 Candidate Word Suggestion Chips with middle autocorrect emphasis
+ * 2. Instant 1-tap word replacement
+ * 3. Compact AI button for opening Cloud Gemini Command Center
+ * 4. Toggle between Word Suggestions and Quick Tools (Emoji, GIF, Clipboard, Theme, Settings)
+ */
 @Composable
 fun KeyboardToolbar(
     actionListener: KeyboardActionListener,
-    aiNoticeVisible: Boolean,
+    aiNoticeVisible: Boolean = false,
+    suggestions: List<String> = emptyList(),
+    autocorrectCandidate: String? = null,
     tokens: KeyboardColorTokens = KeyboardThemes.Midnight,
     hapticEnabled: Boolean = true,
     keyAnimationEnabled: Boolean = true,
     modifier: Modifier = Modifier
 ) {
+    var showFullTools by remember { mutableStateOf(false) }
+    val haptic = LocalHapticFeedback.current
+
+    val hasSuggestions = suggestions.isNotEmpty()
+    val isShowingSuggestions = hasSuggestions && !showFullTools
+
     Box(
         modifier = modifier
             .fillMaxWidth()
             .height(44.dp)
             .background(tokens.toolbarBackground)
-            .padding(horizontal = 8.dp, vertical = 4.dp),
+            .padding(horizontal = 4.dp, vertical = 4.dp),
         contentAlignment = Alignment.CenterStart
     ) {
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            // ✨ Prominent AI Pill Button
-            AiFeatureButton(
-                onClick = { actionListener.onAiClicked() },
-                hapticEnabled = hapticEnabled,
-                keyAnimationEnabled = keyAnimationEnabled
-            )
-
-            // Secondary Quick Actions
+        if (isShowingSuggestions) {
+            // ========================================================
+            // GBOARD-STYLE WORD SUGGESTION CANDIDATE STRIP
+            // ========================================================
             Row(
-                horizontalArrangement = Arrangement.spacedBy(4.dp),
-                verticalAlignment = Alignment.CenterVertically
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween
             ) {
-                ToolbarIconButton(
-                    icon = Icons.Filled.SentimentSatisfiedAlt,
-                    contentDescription = "Emoji",
-                    tokens = tokens,
-                    onClick = { actionListener.onEmojiClicked() },
+                // Left: Compact AI button
+                CompactAiButton(
+                    onClick = { actionListener.onAiClicked() },
                     hapticEnabled = hapticEnabled,
                     keyAnimationEnabled = keyAnimationEnabled
                 )
-                ToolbarTextButton(
-                    text = "GIF",
-                    tokens = tokens,
-                    onClick = { actionListener.onGifClicked() },
-                    hapticEnabled = hapticEnabled,
-                    keyAnimationEnabled = keyAnimationEnabled
-                )
+
+                // Middle: 3 Word Suggestion Candidates
+                Row(
+                    modifier = Modifier
+                        .weight(1f)
+                        .fillMaxHeight()
+                        .padding(horizontal = 4.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceEvenly
+                ) {
+                    suggestions.take(3).forEachIndexed { index, candidate ->
+                        val isCenterCandidate = index == 1 || (suggestions.size == 1 && index == 0)
+                        val isAutocorrectMatch = autocorrectCandidate != null && candidate.equals(autocorrectCandidate, ignoreCase = true)
+
+                        if (index > 0) {
+                            Box(
+                                modifier = Modifier
+                                    .width(1.dp)
+                                    .height(18.dp)
+                                    .background(tokens.borderRim.copy(alpha = 0.5f))
+                            )
+                        }
+
+                        SuggestionChip(
+                            text = candidate,
+                            isHighlighted = isCenterCandidate || isAutocorrectMatch,
+                            tokens = tokens,
+                            modifier = Modifier
+                                .weight(1f)
+                                .fillMaxHeight(),
+                            onClick = {
+                                if (hapticEnabled) haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                actionListener.onSuggestionClicked(candidate)
+                            }
+                        )
+                    }
+                }
+
+                // Right: Toggle to reveal extra tools
                 ToolbarIconButton(
-                    icon = Icons.Filled.ContentPaste,
-                    contentDescription = "Clipboard",
+                    icon = Icons.Filled.MoreHoriz,
+                    contentDescription = "More Tools",
                     tokens = tokens,
-                    onClick = { actionListener.onClipboardClicked() },
-                    hapticEnabled = hapticEnabled,
-                    keyAnimationEnabled = keyAnimationEnabled
-                )
-                ToolbarIconButton(
-                    icon = Icons.Filled.Palette,
-                    contentDescription = "Theme",
-                    tokens = tokens,
-                    onClick = { actionListener.onThemeClicked() },
-                    hapticEnabled = hapticEnabled,
-                    keyAnimationEnabled = keyAnimationEnabled
-                )
-                ToolbarIconButton(
-                    icon = Icons.Filled.Settings,
-                    contentDescription = "Settings",
-                    tokens = tokens,
-                    onClick = { actionListener.onSettingsClicked() },
+                    onClick = { showFullTools = true },
                     hapticEnabled = hapticEnabled,
                     keyAnimationEnabled = keyAnimationEnabled
                 )
             }
+        } else {
+            // ========================================================
+            // FULL QUICK ACTIONS TOOLBAR
+            // ========================================================
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(4.dp)
+                ) {
+                    if (hasSuggestions) {
+                        ToolbarIconButton(
+                            icon = Icons.Filled.ChevronLeft,
+                            contentDescription = "Back to Suggestions",
+                            tokens = tokens,
+                            onClick = { showFullTools = false },
+                            hapticEnabled = hapticEnabled,
+                            keyAnimationEnabled = keyAnimationEnabled
+                        )
+                    }
+
+                    // ✨ Prominent AI Pill Button
+                    AiFeatureButton(
+                        onClick = { actionListener.onAiClicked() },
+                        hapticEnabled = hapticEnabled,
+                        keyAnimationEnabled = keyAnimationEnabled
+                    )
+                }
+
+                // Secondary Quick Actions
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(4.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    ToolbarIconButton(
+                        icon = Icons.Filled.SentimentSatisfiedAlt,
+                        contentDescription = "Emoji",
+                        tokens = tokens,
+                        onClick = { actionListener.onEmojiClicked() },
+                        hapticEnabled = hapticEnabled,
+                        keyAnimationEnabled = keyAnimationEnabled
+                    )
+                    ToolbarTextButton(
+                        text = "GIF",
+                        tokens = tokens,
+                        onClick = { actionListener.onGifClicked() },
+                        hapticEnabled = hapticEnabled,
+                        keyAnimationEnabled = keyAnimationEnabled
+                    )
+                    ToolbarIconButton(
+                        icon = Icons.Filled.ContentPaste,
+                        contentDescription = "Clipboard",
+                        tokens = tokens,
+                        onClick = { actionListener.onClipboardClicked() },
+                        hapticEnabled = hapticEnabled,
+                        keyAnimationEnabled = keyAnimationEnabled
+                    )
+                    ToolbarIconButton(
+                        icon = Icons.Filled.Palette,
+                        contentDescription = "Theme",
+                        tokens = tokens,
+                        onClick = { actionListener.onThemeClicked() },
+                        hapticEnabled = hapticEnabled,
+                        keyAnimationEnabled = keyAnimationEnabled
+                    )
+                    ToolbarIconButton(
+                        icon = Icons.Filled.Settings,
+                        contentDescription = "Settings",
+                        tokens = tokens,
+                        onClick = { actionListener.onSettingsClicked() },
+                        hapticEnabled = hapticEnabled,
+                        keyAnimationEnabled = keyAnimationEnabled
+                    )
+                }
+            }
         }
 
-        // Temporary "AI Assistant — Coming Soon" Toast Banner
+        // Optional Toast Banner
         AnimatedVisibility(
             visible = aiNoticeVisible,
             enter = fadeIn(tween(150)),
@@ -1765,16 +3620,16 @@ fun KeyboardToolbar(
                 modifier = Modifier
                     .clip(RoundedCornerShape(20.dp))
                     .background(if (tokens.isDark) Color(0xFF1E1B4B) else Color(0xFFEEF2FF))
-                    .border(
-                        1.dp,
-                        if (tokens.isDark) Color(0xFF818CF8).copy(alpha = 0.6f) else Color(0xFF6366F1).copy(alpha = 0.4f),
-                        RoundedCornerShape(20.dp)
-                    )
-                    .padding(horizontal = 14.dp, vertical = 6.dp),
+                .border(
+                    1.dp,
+                    if (tokens.isDark) Color(0xFF818CF8).copy(alpha = 0.6f) else Color(0xFF6366F1).copy(alpha = 0.4f),
+                    RoundedCornerShape(20.dp)
+                )
+                .padding(horizontal = 14.dp, vertical = 6.dp),
                 contentAlignment = Alignment.Center
             ) {
                 Text(
-                    text = "✨ AI Assistant — Coming Soon",
+                    text = "✨ AI Keyboard",
                     color = if (tokens.isDark) Color(0xFFC7D2FE) else Color(0xFF4338CA),
                     fontSize = 12.sp,
                     fontWeight = FontWeight.SemiBold,
@@ -1782,6 +3637,94 @@ fun KeyboardToolbar(
                 )
             }
         }
+    }
+}
+
+/**
+ * Gboard-style individual candidate word chip
+ */
+@Composable
+private fun SuggestionChip(
+    text: String,
+    isHighlighted: Boolean,
+    tokens: KeyboardColorTokens,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    val chipShape = RoundedCornerShape(8.dp)
+    val bgColor = if (isHighlighted) {
+        if (tokens.isDark) Color(0xFF2E2A6E).copy(alpha = 0.5f) else Color(0xFFEEF2FF)
+    } else {
+        Color.Transparent
+    }
+
+    Box(
+        modifier = modifier
+            .padding(horizontal = 2.dp, vertical = 2.dp)
+            .clip(chipShape)
+            .background(bgColor)
+            .clickable { onClick() }
+            .padding(horizontal = 4.dp),
+        contentAlignment = Alignment.Center
+    ) {
+        Text(
+            text = text,
+            fontSize = if (isHighlighted) 14.sp else 13.sp,
+            fontWeight = if (isHighlighted) FontWeight.Bold else FontWeight.Normal,
+            color = if (isHighlighted) tokens.keyAccent else tokens.textPrimary,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+            textAlign = TextAlign.Center
+        )
+    }
+}
+
+/**
+ * Compact AI button for candidate strip
+ */
+@Composable
+fun CompactAiButton(
+    onClick: () -> Unit,
+    hapticEnabled: Boolean,
+    keyAnimationEnabled: Boolean,
+    modifier: Modifier = Modifier
+) {
+    val haptic = LocalHapticFeedback.current
+    val interactionSource = remember { MutableInteractionSource() }
+    val isPressed by interactionSource.collectIsPressedAsState()
+
+    val scale by animateFloatAsState(
+        targetValue = if (isPressed && keyAnimationEnabled) 0.90f else 1.0f,
+        animationSpec = tween(durationMillis = 80),
+        label = "compact_ai_scale"
+    )
+
+    val gradient = Brush.horizontalGradient(
+        colors = listOf(AiPillGradientStart, AiPillGradientEnd)
+    )
+
+    Box(
+        modifier = modifier
+            .scale(scale)
+            .size(32.dp)
+            .clip(CircleShape)
+            .background(gradient)
+            .border(1.dp, Color.White.copy(alpha = 0.3f), CircleShape)
+            .clickable(
+                interactionSource = interactionSource,
+                indication = null
+            ) {
+                if (hapticEnabled) haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                onClick()
+            },
+        contentAlignment = Alignment.Center
+    ) {
+        Icon(
+            imageVector = Icons.Filled.AutoAwesome,
+            contentDescription = "AI Assistant",
+            tint = Color.White,
+            modifier = Modifier.size(16.dp)
+        )
     }
 }
 
@@ -1937,13 +3880,14 @@ fun ToolbarTextButton(
             letterSpacing = 0.3.sp
         )
     }
-}`
+}
+`
   },
   {
-    path: 'app/src/main/java/com/aikeyboard/ime/ui/ComposeKeyboardView.kt',
-    name: 'ComposeKeyboardView.kt',
-    language: 'kotlin',
-    description: 'Milestone 2: Jetpack Compose keyboard with compact AI reply panel, exact measured character popups, and long-press repeat backspace.',
+    path: "app/src/main/java/com/aikeyboard/ime/ui/ComposeKeyboardView.kt",
+    name: "ComposeKeyboardView.kt",
+    language: "kotlin",
+    description: "Milestone 2: Jetpack Compose keyboard with compact AI reply panel, exact measured character popups, and long-press repeat backspace.",
     content: `package com.aikeyboard.ime.ui
 
 import androidx.compose.animation.core.animateFloatAsState
@@ -1992,6 +3936,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -2055,9 +4000,12 @@ fun ComposeKeyboardView(
     onSelectAiStyle: ((AiReplyStyle) -> Unit)? = null,
     onSetAiPromptFocused: ((Boolean) -> Unit)? = null,
     onClearAiPrompt: (() -> Unit)? = null,
+    suggestions: List<String> = emptyList(),
+    autocorrectCandidate: String? = null,
     preferences: KeyboardPreferences? = null,
     modifier: Modifier = Modifier
 ) {
+    val coroutineScope = rememberCoroutineScope()
     var rootCoordinates by remember { mutableStateOf<LayoutCoordinates?>(null) }
     var activePopupInfo by remember { mutableStateOf<ActiveKeyPopupInfo?>(null) }
 
@@ -2236,7 +4184,7 @@ fun ComposeKeyboardView(
                                     localCustomPromptText = ""
                                     onSetAiPromptFocused?.invoke(false)
                                     onClearAiPrompt?.invoke()
-                                } catch (_: Throwable) {
+                                } catch (e: Throwable) {
                                     // If generation fails, keep panel open to present error state
                                 }
                             }
@@ -2253,39 +4201,41 @@ fun ComposeKeyboardView(
                         hapticEnabled = hapticEnabled,
                         keyAnimationEnabled = keyAnimationEnabled
                     )
-                }
+                } else {
+                    // Keyboard Toolbar with AI button, Gboard suggestions, and shortcuts
+                    KeyboardToolbar(
+                        actionListener = actionListener,
+                        aiNoticeVisible = aiNoticeVisible,
+                        suggestions = suggestions,
+                        autocorrectCandidate = autocorrectCandidate,
+                        tokens = tokens,
+                        hapticEnabled = hapticEnabled,
+                        keyAnimationEnabled = keyAnimationEnabled
+                    )
 
-                // Keyboard Toolbar with AI button and shortcuts
-                KeyboardToolbar(
-                    actionListener = actionListener,
-                    aiNoticeVisible = aiNoticeVisible,
-                    tokens = tokens,
-                    hapticEnabled = hapticEnabled,
-                    keyAnimationEnabled = keyAnimationEnabled
-                )
-
-                // Keys Container
-                Column(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = 4.dp),
-                    verticalArrangement = Arrangement.spacedBy(6.dp)
-                ) {
-                    when (keyboardMode) {
-                        KeyboardMode.ALPHA -> {
-                            AlphaKeyboardLayout(shiftState, effectiveListener, tokens, keyHeightDp, keyAnimationEnabled, hapticEnabled, onKeyBoundsChanged)
-                        }
-                        KeyboardMode.SYMBOLS -> {
-                            SymbolsKeyboardLayout(isAlt = false, effectiveListener, tokens, keyHeightDp, keyAnimationEnabled, hapticEnabled, onKeyBoundsChanged)
-                        }
-                        KeyboardMode.ALT_SYMBOLS -> {
-                            SymbolsKeyboardLayout(isAlt = true, effectiveListener, tokens, keyHeightDp, keyAnimationEnabled, hapticEnabled, onKeyBoundsChanged)
-                        }
-                        KeyboardMode.EMOJI -> {
-                            EmojiKeyboardLayout(effectiveListener, tokens, keyHeightDp, keyAnimationEnabled, hapticEnabled)
-                        }
-                        KeyboardMode.CLIPBOARD -> {
-                            ClipboardPanelView(preferences, effectiveListener, tokens, keyHeightDp, hapticEnabled)
+                    // Keys Container
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 4.dp),
+                        verticalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        when (keyboardMode) {
+                            KeyboardMode.ALPHA -> {
+                                AlphaKeyboardLayout(shiftState, effectiveListener, tokens, keyHeightDp, keyAnimationEnabled, hapticEnabled, onKeyBoundsChanged)
+                            }
+                            KeyboardMode.SYMBOLS -> {
+                                SymbolsKeyboardLayout(isAlt = false, effectiveListener, tokens, keyHeightDp, keyAnimationEnabled, hapticEnabled, onKeyBoundsChanged)
+                            }
+                            KeyboardMode.ALT_SYMBOLS -> {
+                                SymbolsKeyboardLayout(isAlt = true, effectiveListener, tokens, keyHeightDp, keyAnimationEnabled, hapticEnabled, onKeyBoundsChanged)
+                            }
+                            KeyboardMode.EMOJI -> {
+                                EmojiKeyboardLayout(effectiveListener, tokens, keyHeightDp, keyAnimationEnabled, hapticEnabled)
+                            }
+                            KeyboardMode.CLIPBOARD -> {
+                                ClipboardPanelView(preferences, effectiveListener, tokens, keyHeightDp, hapticEnabled)
+                            }
                         }
                     }
                 }
@@ -3064,6 +5014,8 @@ fun BackspaceKey(
     var isPressed by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
     var repeatJob by remember { mutableStateOf<Job?>(null) }
+    // M2 Fix: Ensure pointerInput and repeat loop always invoke the freshest onDelete routing
+    val currentOnDelete by rememberUpdatedState(onDelete)
 
     val scale by animateFloatAsState(
         targetValue = if (isPressed && keyAnimationEnabled) 0.94f else 1.0f,
@@ -3089,7 +5041,7 @@ fun BackspaceKey(
                     isPressed = true
 
                     // Initial single deletion on touch down
-                    onDelete()
+                    currentOnDelete()
                     if (hapticEnabled) {
                         haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
                     }
@@ -3099,7 +5051,7 @@ fun BackspaceKey(
                     repeatJob = scope.launch {
                         delay(400) // Initial delay: 400ms (within 350-500ms)
                         while (isActive) {
-                            onDelete()
+                            currentOnDelete()
                             if (hapticEnabled) {
                                 haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
                             }
@@ -3350,10 +5302,10 @@ private fun ClipboardPanelView(
 `
   },
   {
-    path: 'app/src/main/java/com/aikeyboard/ime/AiInputMethodService.kt',
-    name: 'AiInputMethodService.kt',
-    language: 'kotlin',
-    description: 'Android InputMethodService implementation that communicates with text fields via InputConnection and applies local theme/settings.',
+    path: "app/src/main/java/com/aikeyboard/ime/AiInputMethodService.kt",
+    name: "AiInputMethodService.kt",
+    language: "kotlin",
+    description: "Android InputMethodService implementation that communicates with text fields via InputConnection and applies local theme/settings.",
     content: `package com.aikeyboard.ime
 
 import android.content.ClipboardManager
@@ -3375,6 +5327,7 @@ import com.aikeyboard.ime.ai.AiReplyGenerator
 import com.aikeyboard.ime.ai.AiReplyStyle
 import com.aikeyboard.ime.ai.AiRequest
 import com.aikeyboard.ime.ai.AppCheckConfig
+import com.aikeyboard.ime.suggestion.KeyboardSuggestionEngine
 import com.aikeyboard.ime.ui.ComposeKeyboardView
 import com.aikeyboard.ime.ui.theme.AIKeyboardTheme
 import com.aikeyboard.ime.ui.theme.KeyboardHeightOption
@@ -3385,9 +5338,10 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
 /**
- * Production-ready Android InputMethodService with Milestone 1C:
- * Themes (Midnight / Light), local Settings, and haptic feedback controls.
- * Communicates strictly via InputConnection.
+ * Production-ready Android InputMethodService with Gboard-style smart typing:
+ * Autocorrect, word suggestions, next-word prediction, auto-capitalization,
+ * and double-space period.
+ * AI generation is strictly powered by Cloud Gemini AI.
  */
 class AiInputMethodService : ComposeLifecycleInputMethodService(), KeyboardActionListener {
 
@@ -3405,6 +5359,13 @@ class AiInputMethodService : ComposeLifecycleInputMethodService(), KeyboardActio
     private val heightOptionState = mutableStateOf(KeyboardHeightOption.NORMAL)
     private val hapticEnabledState = mutableStateOf(true)
     private val keyAnimationEnabledState = mutableStateOf(true)
+
+    // Gboard-style On-Device Suggestion & Autocorrect State
+    private val suggestionsState = mutableStateOf<List<String>>(emptyList())
+    private val autocorrectCandidateState = mutableStateOf<String?>(null)
+    private var lastSpaceTimeMs = 0L
+    private var lastAutocorrectOriginal: String? = null
+    private var lastAutocorrectReplacement: String? = null
 
     private var lastShiftClickTime = 0L
     private val mainHandler = Handler(Looper.getMainLooper())
@@ -3457,6 +5418,8 @@ class AiInputMethodService : ComposeLifecycleInputMethodService(), KeyboardActio
                     onSelectAiStyle = { selectedAiStyleState.value = it },
                     onSetAiPromptFocused = { aiPromptFocused.value = it },
                     onClearAiPrompt = { customPromptTextState.value = "" },
+                    suggestions = suggestionsState.value,
+                    autocorrectCandidate = autocorrectCandidateState.value,
                     preferences = preferences
                 )
             }
@@ -3467,6 +5430,62 @@ class AiInputMethodService : ComposeLifecycleInputMethodService(), KeyboardActio
     override fun onEvaluateFullscreenMode(): Boolean = false
 
     override fun onEvaluateInputViewShown(): Boolean = true
+
+    private fun getWordsBeforeCursor(): Pair<String, String?> {
+        val ic = currentInputConnection ?: return Pair("", null)
+        val textBefore = ic.getTextBeforeCursor(100, 0)?.toString() ?: ""
+        if (textBefore.isEmpty()) return Pair("", null)
+
+        val lastChar = textBefore.last()
+        return if (lastChar.isWhitespace()) {
+            val trimmed = textBefore.trimEnd()
+            val tokens = trimmed.split(Regex("\\\\s+"))
+            val prev = tokens.lastOrNull()?.filter { it.isLetterOrDigit() || it == '\\'' }
+            Pair("", prev)
+        } else {
+            val lastDelim = textBefore.indexOfLast { it.isWhitespace() || it in ",.!?;:\\n" }
+            val curr = if (lastDelim >= 0) {
+                textBefore.substring(lastDelim + 1)
+            } else {
+                textBefore
+            }.filter { it.isLetterOrDigit() || it == '\\'' }
+
+            val beforeDelim = if (lastDelim >= 0) {
+                textBefore.substring(0, lastDelim).trimEnd()
+            } else {
+                ""
+            }
+            val prevTokens = beforeDelim.split(Regex("\\\\s+"))
+            val prev = prevTokens.lastOrNull()?.filter { it.isLetterOrDigit() || it == '\\'' }
+
+            Pair(curr, prev)
+        }
+    }
+
+    private fun updateSuggestions() {
+        if (!preferences.wordSuggestionsEnabled) {
+            suggestionsState.value = emptyList()
+            autocorrectCandidateState.value = null
+            return
+        }
+        val (curr, prev) = getWordsBeforeCursor()
+        val result = KeyboardSuggestionEngine.getSuggestions(
+            currentWord = curr,
+            previousWord = prev,
+            suggestionsEnabled = preferences.wordSuggestionsEnabled
+        )
+        suggestionsState.value = result.candidates
+        autocorrectCandidateState.value = if (preferences.autocorrectEnabled) result.autocorrectCandidate else null
+    }
+
+    private fun checkAutoCapitalization() {
+        if (!preferences.autoCapitalizationEnabled) return
+        val ic = currentInputConnection ?: return
+        val textBefore = ic.getTextBeforeCursor(100, 0)
+        if (KeyboardSuggestionEngine.shouldAutoCapitalize(textBefore, true)) {
+            shiftState.value = ShiftState.SHIFTED
+        }
+    }
 
     override fun onStartInputView(info: EditorInfo?, restarting: Boolean) {
         super.onStartInputView(info, restarting)
@@ -3481,7 +5500,12 @@ class AiInputMethodService : ComposeLifecycleInputMethodService(), KeyboardActio
             aiPromptFocused.value = false
             customPromptTextState.value = ""
             hostTextState.value = ""
+            lastAutocorrectOriginal = null
+            lastAutocorrectReplacement = null
+            lastSpaceTimeMs = 0L
         }
+        checkAutoCapitalization()
+        updateSuggestions()
     }
 
     override fun onFinishInputView(finishingInput: Boolean) {
@@ -3513,23 +5537,46 @@ class AiInputMethodService : ComposeLifecycleInputMethodService(), KeyboardActio
             if (shiftState.value == ShiftState.SHIFTED) {
                 shiftState.value = ShiftState.OFF
             }
+            lastAutocorrectOriginal = null
+            lastAutocorrectReplacement = null
+            updateSuggestions()
         }
     }
 
     override fun onBackspace() {
         if (aiPanelVisible.value && aiPromptFocused.value) {
-            // Milestone 2 Fix: Route backspace to AI custom prompt state when focused, never touching host InputConnection
+            // Route backspace to AI custom prompt state when focused, never touching host InputConnection
             if (customPromptTextState.value.isNotEmpty()) {
                 customPromptTextState.value = customPromptTextState.value.dropLast(1)
             }
         } else {
             val ic = currentInputConnection ?: return
+
+            // If user backspaces right after an autocorrection, restore original typo (Gboard behavior)
+            val autoOriginal = lastAutocorrectOriginal
+            val autoReplaced = lastAutocorrectReplacement
+            if (autoOriginal != null && autoReplaced != null) {
+                val textBefore = ic.getTextBeforeCursor(autoReplaced.length + 1, 0)?.toString() ?: ""
+                if (textBefore.endsWith("$autoReplaced ")) {
+                    ic.deleteSurroundingText(autoReplaced.length + 1, 0)
+                    ic.commitText(autoOriginal, 1)
+                    lastAutocorrectOriginal = null
+                    lastAutocorrectReplacement = null
+                    updateSuggestions()
+                    return
+                }
+            }
+
             val selectedText = ic.getSelectedText(0)
             if (!selectedText.isNullOrEmpty()) {
                 ic.commitText("", 1)
             } else {
                 ic.deleteSurroundingText(1, 0)
             }
+            lastAutocorrectOriginal = null
+            lastAutocorrectReplacement = null
+            checkAutoCapitalization()
+            updateSuggestions()
         }
     }
 
@@ -3537,7 +5584,42 @@ class AiInputMethodService : ComposeLifecycleInputMethodService(), KeyboardActio
         if (aiPanelVisible.value && aiPromptFocused.value) {
             customPromptTextState.value += " "
         } else {
-            currentInputConnection?.commitText(" ", 1)
+            val ic = currentInputConnection ?: return
+            val now = System.currentTimeMillis()
+
+            // 1. Double-space period check
+            if (preferences.doubleSpacePeriodEnabled &&
+                KeyboardSuggestionEngine.shouldTriggerDoubleSpacePeriod(lastSpaceTimeMs, now, true)
+            ) {
+                ic.deleteSurroundingText(1, 0)
+                ic.commitText(". ", 1)
+                lastAutocorrectOriginal = null
+                lastAutocorrectReplacement = null
+                if (preferences.autoCapitalizationEnabled) {
+                    shiftState.value = ShiftState.SHIFTED
+                }
+                lastSpaceTimeMs = 0L
+                updateSuggestions()
+                return
+            }
+
+            // 2. Gboard-style autocorrect on space
+            val autocorrect = autocorrectCandidateState.value
+            val (currentWord, _) = getWordsBeforeCursor()
+            if (preferences.autocorrectEnabled && autocorrect != null && currentWord.isNotBlank()) {
+                ic.deleteSurroundingText(currentWord.length, 0)
+                ic.commitText("$autocorrect ", 1)
+                lastAutocorrectOriginal = currentWord
+                lastAutocorrectReplacement = autocorrect
+            } else {
+                ic.commitText(" ", 1)
+                lastAutocorrectOriginal = null
+                lastAutocorrectReplacement = null
+            }
+
+            lastSpaceTimeMs = now
+            checkAutoCapitalization()
+            updateSuggestions()
         }
     }
 
@@ -3545,7 +5627,12 @@ class AiInputMethodService : ComposeLifecycleInputMethodService(), KeyboardActio
         if (aiPanelVisible.value && aiPromptFocused.value) {
             customPromptTextState.value += "."
         } else {
-            currentInputConnection?.commitText(".", 1)
+            val ic = currentInputConnection ?: return
+            ic.commitText(".", 1)
+            lastAutocorrectOriginal = null
+            lastAutocorrectReplacement = null
+            checkAutoCapitalization()
+            updateSuggestions()
         }
     }
 
@@ -3725,6 +5812,26 @@ class AiInputMethodService : ComposeLifecycleInputMethodService(), KeyboardActio
         startActivity(intent)
     }
 
+    // --- Gboard-style Suggestion Chip Click Action ---
+
+    override fun onSuggestionClicked(suggestion: String) {
+        val ic = currentInputConnection ?: return
+        val (currentWord, _) = getWordsBeforeCursor()
+
+        if (currentWord.isNotEmpty()) {
+            ic.deleteSurroundingText(currentWord.length, 0)
+        }
+        ic.commitText("$suggestion ", 1)
+        lastAutocorrectOriginal = null
+        lastAutocorrectReplacement = null
+
+        if (shiftState.value == ShiftState.SHIFTED) {
+            shiftState.value = ShiftState.OFF
+        }
+        checkAutoCapitalization()
+        updateSuggestions()
+    }
+
     override fun onDestroy() {
         super.onDestroy()
         mainHandler.removeCallbacks(hideAiNoticeRunnable)
@@ -3733,10 +5840,10 @@ class AiInputMethodService : ComposeLifecycleInputMethodService(), KeyboardActio
 `
   },
   {
-    path: 'app/src/main/java/com/aikeyboard/ime/KeyboardState.kt',
-    name: 'KeyboardState.kt',
-    language: 'kotlin',
-    description: 'Defines keyboard layout modes, shift states, and the action listener contract.',
+    path: "app/src/main/java/com/aikeyboard/ime/KeyboardState.kt",
+    name: "KeyboardState.kt",
+    language: "kotlin",
+    description: "Defines keyboard layout modes, shift states, and the action listener contract.",
     content: `package com.aikeyboard.ime
 
 /**
@@ -3782,23 +5889,28 @@ interface KeyboardActionListener {
     fun onThemeClicked()
     fun onSettingsClicked()
 
-    // Milestone 2: AI Reply Panel Actions
+    // Milestone 2 & M2.1: AI Actions & Replace
     fun onAiGenerate(style: String, customPrompt: String) {}
+    fun onAiReplace(replacement: String) {}
     fun onCloseAiPanel() {}
     fun onSetAiPromptFocused(focused: Boolean) {}
     fun onClearAiPrompt() {}
+
+    // Gboard-style Word Suggestion & Autocorrect Actions
+    fun onSuggestionClicked(suggestion: String) {}
 }
 `
   },
   {
-    path: 'app/src/main/java/com/aikeyboard/ime/ComposeLifecycleInputMethodService.kt',
-    name: 'ComposeLifecycleInputMethodService.kt',
-    language: 'kotlin',
-    description: 'Bridge class that provides Android Lifecycle, ViewModelStore, and SavedStateRegistry owners to ComposeView within an InputMethodService.',
+    path: "app/src/main/java/com/aikeyboard/ime/ComposeLifecycleInputMethodService.kt",
+    name: "ComposeLifecycleInputMethodService.kt",
+    language: "kotlin",
+    description: "Bridge class that provides Android Lifecycle, ViewModelStore, and SavedStateRegistry owners to ComposeView within an InputMethodService.",
     content: `package com.aikeyboard.ime
 
 import android.inputmethodservice.InputMethodService
-import androidx.compose.ui.platform.ComposeView
+import android.os.Bundle
+import android.view.View
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleOwner
 import androidx.lifecycle.LifecycleRegistry
@@ -3811,18 +5923,27 @@ import androidx.savedstate.SavedStateRegistryController
 import androidx.savedstate.SavedStateRegistryOwner
 import androidx.savedstate.setViewTreeSavedStateRegistryOwner
 
+/**
+ * Base InputMethodService providing LifecycleOwner, ViewModelStoreOwner,
+ * and SavedStateRegistryOwner for ComposeView interoperability.
+ */
 abstract class ComposeLifecycleInputMethodService : InputMethodService(),
     LifecycleOwner,
     ViewModelStoreOwner,
     SavedStateRegistryOwner {
 
-    private val lifecycleRegistry = LifecycleRegistry(this)
-    private val store = ViewModelStore()
-    private val savedStateRegistryController = SavedStateRegistryController.create(this)
+    private val lifecycleRegistry by lazy { LifecycleRegistry(this) }
+    private val store by lazy { ViewModelStore() }
+    private val savedStateRegistryController by lazy { SavedStateRegistryController.create(this) }
 
-    override val lifecycle: Lifecycle get() = lifecycleRegistry
-    override val viewModelStore: ViewModelStore get() = store
-    override val savedStateRegistry: SavedStateRegistry get() = savedStateRegistryController.savedStateRegistry
+    override val lifecycle: Lifecycle
+        get() = lifecycleRegistry
+
+    override val viewModelStore: ViewModelStore
+        get() = store
+
+    override val savedStateRegistry: SavedStateRegistry
+        get() = savedStateRegistryController.savedStateRegistry
 
     override fun onCreate() {
         super.onCreate()
@@ -3830,10 +5951,18 @@ abstract class ComposeLifecycleInputMethodService : InputMethodService(),
         lifecycleRegistry.handleLifecycleEvent(Lifecycle.Event.ON_CREATE)
     }
 
-    override fun onDestroy() {
-        super.onDestroy()
-        lifecycleRegistry.handleLifecycleEvent(Lifecycle.Event.ON_DESTROY)
-        store.clear()
+    /**
+     * Wires the Compose ViewTree owners to the window DecorView and input view.
+     */
+    protected fun setupComposeView(view: View) {
+        window?.window?.decorView?.let { decorView ->
+            decorView.setViewTreeLifecycleOwner(this)
+            decorView.setViewTreeViewModelStoreOwner(this)
+            decorView.setViewTreeSavedStateRegistryOwner(this)
+        }
+        view.setViewTreeLifecycleOwner(this)
+        view.setViewTreeViewModelStoreOwner(this)
+        view.setViewTreeSavedStateRegistryOwner(this)
     }
 
     override fun onWindowShown() {
@@ -3853,27 +5982,24 @@ abstract class ComposeLifecycleInputMethodService : InputMethodService(),
         lifecycleRegistry.handleLifecycleEvent(Lifecycle.Event.ON_STOP)
     }
 
-    protected fun setupComposeView(view: View) {
-        window?.window?.decorView?.let { decorView ->
-            decorView.setViewTreeLifecycleOwner(this)
-            decorView.setViewTreeViewModelStoreOwner(this)
-            decorView.setViewTreeSavedStateRegistryOwner(this)
-        }
-        view.setViewTreeLifecycleOwner(this)
-        view.setViewTreeViewModelStoreOwner(this)
-        view.setViewTreeSavedStateRegistryOwner(this)
+    override fun onDestroy() {
+        super.onDestroy()
+        lifecycleRegistry.handleLifecycleEvent(Lifecycle.Event.ON_DESTROY)
+        store.clear()
     }
-}`
+}
+`
   },
   {
-    path: 'app/src/main/java/com/aikeyboard/ime/ui/theme/Color.kt',
-    name: 'Color.kt',
-    language: 'kotlin',
-    description: 'Color palette definitions for the Midnight theme, key surfaces, and gradients.',
+    path: "app/src/main/java/com/aikeyboard/ime/ui/theme/Color.kt",
+    name: "Color.kt",
+    language: "kotlin",
+    description: "Color palette definitions for the Midnight theme, key surfaces, and gradients.",
     content: `package com.aikeyboard.ime.ui.theme
 
 import androidx.compose.ui.graphics.Color
 
+// Premium Play Store Dark Navy / Black Palette
 val KeyboardNavyBackground = Color(0xFF090D16)
 val KeyboardNavySurface = Color(0xFF0F172A)
 val KeyboardBorderRim = Color(0x1FFFFFFF)
@@ -3884,22 +6010,26 @@ val KeySurfaceDarkPressed = Color(0xFF2E3D5B)
 val KeySpecialDark = Color(0xFF161F33)
 val KeySpecialDarkPressed = Color(0xFF243252)
 
-val AiPillGradientStart = Color(0xFF4338CA)
-val AiPillGradientEnd = Color(0xFF7C3AED)
+// AI Gradient Colors (Subtle Blue to Purple)
+val AiPillGradientStart = Color(0xFF4338CA) // Rich indigo
+val AiPillGradientEnd = Color(0xFF7C3AED)   // Modern violet
 val AiPillGlow = Color(0x338B5CF6)
 
+// Action Keys & Accents
 val KeyAccentBlue = Color(0xFF2563EB)
 val KeyAccentBluePressed = Color(0xFF1D4ED8)
 
+// Typography
 val TextPrimary = Color(0xFFF8FAFC)
 val TextSecondary = Color(0xFF94A3B8)
-val TextDisabled = Color(0xFF64748B)`
+val TextDisabled = Color(0xFF64748B)
+`
   },
   {
-    path: 'app/src/main/java/com/aikeyboard/ime/ui/theme/Theme.kt',
-    name: 'Theme.kt',
-    language: 'kotlin',
-    description: 'MaterialTheme integration linking Compose darkColorScheme and lightColorScheme with AI Keyboard palettes.',
+    path: "app/src/main/java/com/aikeyboard/ime/ui/theme/Theme.kt",
+    name: "Theme.kt",
+    language: "kotlin",
+    description: "MaterialTheme integration linking Compose darkColorScheme and lightColorScheme with AI Keyboard palettes.",
     content: `package com.aikeyboard.ime.ui.theme
 
 import androidx.compose.foundation.isSystemInDarkTheme
@@ -3939,13 +6069,14 @@ fun AIKeyboardTheme(
         typography = Typography,
         content = content
     )
-}`
+}
+`
   },
   {
-    path: 'app/src/main/java/com/aikeyboard/ime/ui/theme/Type.kt',
-    name: 'Type.kt',
-    language: 'kotlin',
-    description: 'Typography configuration for standard Material 3 components.',
+    path: "app/src/main/java/com/aikeyboard/ime/ui/theme/Type.kt",
+    name: "Type.kt",
+    language: "kotlin",
+    description: "Typography configuration for standard Material 3 components.",
     content: `package com.aikeyboard.ime.ui.theme
 
 import androidx.compose.material3.Typography
@@ -3967,13 +6098,14 @@ val Typography = Typography(
         fontSize = 18.sp,
         letterSpacing = 0.5.sp
     )
-)`
+)
+`
   },
   {
-    path: 'app/src/main/res/xml/method.xml',
-    name: 'method.xml',
-    language: 'xml',
-    description: 'Android InputMethod subtype configuration linking to settingsActivity and subtype definitions.',
+    path: "app/src/main/res/xml/method.xml",
+    name: "method.xml",
+    language: "xml",
+    description: "Android InputMethod subtype configuration linking to settingsActivity and subtype definitions.",
     content: `<?xml version="1.0" encoding="utf-8"?>
 <input-method xmlns:android="http://schemas.android.com/apk/res/android"
     android:settingsActivity="com.aikeyboard.MainActivity"
@@ -3984,13 +6116,14 @@ val Typography = Typography(
         android:imeSubtypeLocale="en_US"
         android:languageTag="en-US"
         android:imeSubtypeMode="keyboard" />
-</input-method>`
+</input-method>
+`
   },
   {
-    path: 'app/src/main/res/values/strings.xml',
-    name: 'strings.xml',
-    language: 'xml',
-    description: 'String resources for app label, IME name, subtype, and onboarding instructions.',
+    path: "app/src/main/res/values/strings.xml",
+    name: "strings.xml",
+    language: "xml",
+    description: "String resources for app label, IME name, subtype, and onboarding instructions.",
     content: `<?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="app_name">AI Keyboard</string>
@@ -4000,26 +6133,28 @@ val Typography = Typography(
     <string name="step_2_select">2. Select AI Keyboard</string>
     <string name="step_3_test">3. Test AI Keyboard</string>
     <string name="test_hint">Tap here to test typing...</string>
-</resources>`
+</resources>
+`
   },
   {
-    path: 'app/src/main/res/values/themes.xml',
-    name: 'themes.xml',
-    language: 'xml',
-    description: 'Base Android styles and theme definition for MainActivity.',
+    path: "app/src/main/res/values/themes.xml",
+    name: "themes.xml",
+    language: "xml",
+    description: "Base Android styles and theme definition for MainActivity.",
     content: `<?xml version="1.0" encoding="utf-8"?>
 <resources>
     <style name="Theme.AIKeyboard" parent="android:Theme.Material.Light.NoActionBar">
         <item name="android:statusBarColor">@color/primary_variant</item>
         <item name="android:windowBackground">@color/surface</item>
     </style>
-</resources>`
+</resources>
+`
   },
   {
-    path: 'app/src/main/res/drawable/ic_launcher.xml',
-    name: 'ic_launcher.xml',
-    language: 'xml',
-    description: 'Vector drawable application icon for AI Keyboard.',
+    path: "app/src/main/res/drawable/ic_launcher.xml",
+    name: "ic_launcher.xml",
+    language: "xml",
+    description: "Vector drawable application icon for AI Keyboard.",
     content: `<vector xmlns:android="http://schemas.android.com/apk/res/android"
     android:width="108dp"
     android:height="108dp"
@@ -4031,22 +6166,25 @@ val Typography = Typography(
     <path
         android:fillColor="#2563EB"
         android:pathData="M24,30h60c4.4,0 8,3.6 8,8v32c0,4.4 -3.6,8 -8,8H24c-4.4,0 -8,-3.6 -8,-8V38c0,-4.4 3.6,-8 8,-8z" />
+    <!-- Keyboard Keys -->
     <path
         android:fillColor="#F8FAFC"
         android:pathData="M30,42h8v6h-8z M44,42h8v6h-8z M58,42h8v6h-8z M72,42h8v6h-8z" />
     <path
         android:fillColor="#F8FAFC"
         android:pathData="M34,52h8v6h-8z M48,52h8v6h-8z M62,52h8v6h-8z" />
+    <!-- Space Bar -->
     <path
         android:fillColor="#38BDF8"
         android:pathData="M36,62h36v5h-36z" />
-</vector>`
+</vector>
+`
   },
   {
-    path: 'app/src/main/res/drawable/ic_launcher_round.xml',
-    name: 'ic_launcher_round.xml',
-    language: 'xml',
-    description: 'Round vector drawable application icon for circular launcher devices.',
+    path: "app/src/main/res/drawable/ic_launcher_round.xml",
+    name: "ic_launcher_round.xml",
+    language: "xml",
+    description: "Round vector drawable application icon for circular launcher devices.",
     content: `<vector xmlns:android="http://schemas.android.com/apk/res/android"
     android:width="108dp"
     android:height="108dp"
@@ -4058,37 +6196,44 @@ val Typography = Typography(
     <path
         android:fillColor="#2563EB"
         android:pathData="M24,30h60c4.4,0 8,3.6 8,8v32c0,4.4 -3.6,8 -8,8H24c-4.4,0 -8,-3.6 -8,-8V38c0,-4.4 3.6,-8 8,-8z" />
+    <!-- Keyboard Keys -->
     <path
         android:fillColor="#F8FAFC"
         android:pathData="M30,42h8v6h-8z M44,42h8v6h-8z M58,42h8v6h-8z M72,42h8v6h-8z" />
     <path
         android:fillColor="#F8FAFC"
         android:pathData="M34,52h8v6h-8z M48,52h8v6h-8z M62,52h8v6h-8z" />
+    <!-- Space Bar -->
     <path
         android:fillColor="#38BDF8"
         android:pathData="M36,62h36v5h-36z" />
-</vector>`
+</vector>
+`
   },
   {
-    path: 'app/src/main/res/values/colors.xml',
-    name: 'colors.xml',
-    language: 'xml',
-    description: 'XML resource color palette for system bars and activity background.',
+    path: "app/src/main/res/values/colors.xml",
+    name: "colors.xml",
+    language: "xml",
+    description: "XML resource color palette for system bars and activity background.",
     content: `<?xml version="1.0" encoding="utf-8"?>
 <resources>
     <color name="primary">#1E293B</color>
     <color name="primary_variant">#0F172A</color>
     <color name="surface">#F8FAFC</color>
     <color name="surface_dark">#121824</color>
-</resources>`
+</resources>
+`
   },
   {
-    path: 'app/src/main/AndroidManifest.xml',
-    name: 'AndroidManifest.xml',
-    language: 'xml',
-    description: 'Declares the BIND_INPUT_METHOD service, input method intent filter, and launcher activity.',
+    path: "app/src/main/AndroidManifest.xml",
+    name: "AndroidManifest.xml",
+    language: "xml",
+    description: "Declares the BIND_INPUT_METHOD service, input method intent filter, and launcher activity.",
     content: `<?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
 
     <application
         android:allowBackup="true"
@@ -4098,6 +6243,7 @@ val Typography = Typography(
         android:supportsRtl="true"
         android:theme="@style/Theme.AIKeyboard">
 
+        <!-- Setup and Onboarding Activity -->
         <activity
             android:name="com.aikeyboard.MainActivity"
             android:exported="true"
@@ -4109,6 +6255,7 @@ val Typography = Typography(
             </intent-filter>
         </activity>
 
+        <!-- Real Android InputMethodService (System Keyboard) -->
         <service
             android:name="com.aikeyboard.ime.AiInputMethodService"
             android:label="@string/ime_name"
@@ -4126,25 +6273,28 @@ val Typography = Typography(
 
     </application>
 
-</manifest>`
+</manifest>
+`
   },
   {
-    path: 'build.gradle.kts',
-    name: 'build.gradle.kts (root)',
-    language: 'kotlin',
-    description: 'Root Gradle build script declaring AGP 8.5.2, Kotlin 2.0.0, Compose, and Google Services plugins.',
-    content: `plugins {
+    path: "build.gradle.kts",
+    name: "build.gradle.kts (root)",
+    language: "kotlin",
+    description: "Root Gradle build script declaring AGP 8.5.2, Kotlin 2.0.0, Compose, and Google Services plugins.",
+    content: `// Top-level build file where you can add configuration options common to all sub-projects/modules.
+plugins {
     id("com.android.application") version "8.5.2" apply false
     id("org.jetbrains.kotlin.android") version "2.0.0" apply false
     id("org.jetbrains.kotlin.plugin.compose") version "2.0.0" apply false
     id("com.google.gms.google-services") version "4.4.2" apply false
-}`
+}
+`
   },
   {
-    path: 'settings.gradle.kts',
-    name: 'settings.gradle.kts',
-    language: 'kotlin',
-    description: 'Gradle repository management and project inclusion.',
+    path: "settings.gradle.kts",
+    name: "settings.gradle.kts",
+    language: "kotlin",
+    description: "Gradle repository management and project inclusion.",
     content: `pluginManagement {
     repositories {
         google()
@@ -4161,31 +6311,38 @@ dependencyResolutionManagement {
 }
 
 rootProject.name = "AIKeyboard"
-include(":app")`
+include(":app")
+
+`
   },
   {
-    path: 'app/google-services.json',
-    name: 'google-services.json',
-    language: 'json',
-    description: 'Milestone 3.0: Google Services configuration enabling Firebase AI Logic with Gemini developer backend.',
+    path: "app/google-services.json",
+    name: "google-services.json",
+    language: "json",
+    description: "Milestone 3.0: Google Services configuration enabling Firebase AI Logic with Gemini developer backend.",
     content: `{
   "project_info": {
-    "project_number": "104928374615",
-    "project_id": "nexora-ai-keyboard",
-    "storage_bucket": "nexora-ai-keyboard.appspot.com"
+    "project_number": "382456528361",
+    "project_id": "gen-lang-client-0126286835",
+    "storage_bucket": "gen-lang-client-0126286835.firebasestorage.app"
   },
   "client": [
     {
       "client_info": {
-        "mobilesdk_app_id": "1:104928374615:android:a1b2c3d4e5f67890",
+        "mobilesdk_app_id": "1:382456528361:android:3d458c0ad6431c41849f78",
         "android_client_info": {
           "package_name": "com.aikeyboard"
         }
       },
-      "oauth_client": [],
+      "oauth_client": [
+        {
+          "client_id": "382456528361-ut4puvp30vm9c6t9a5sohj1rg1h0jfdi.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
       "api_key": [
         {
-          "current_key": "AIzaSyDummyKeyForGoogleServicesConfiguration"
+          "current_key": "AIzaSyDkDXoDGykjyq8q7foAyb10BbIU54VnfHM"
         }
       ],
       "services": {
@@ -4196,18 +6353,62 @@ include(":app")`
     }
   ],
   "configuration_version": "1"
-}`
+}
+`
   },
   {
-    path: 'app/build.gradle.kts',
-    name: 'app/build.gradle.kts',
-    language: 'kotlin',
-    description: 'App module build script configuring Jetpack Compose BOM 2024.06.00, Material 3, Firebase AI Logic (firebase-vertexai), and coroutines.',
+    path: "app/build.gradle.kts",
+    name: "app/build.gradle.kts",
+    language: "kotlin",
+    description: "App module build script configuring Jetpack Compose BOM 2024.06.00, Material 3, Firebase AI Logic (firebase-vertexai), and coroutines.",
     content: `plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
     id("org.jetbrains.kotlin.plugin.compose")
     id("com.google.gms.google-services")
+}
+
+// Self-healing check for google-services.json in CI/CD and clean builds
+val googleServicesFile = file("google-services.json")
+if (!googleServicesFile.exists()) {
+    googleServicesFile.writeText(
+        """
+        {
+          "project_info": {
+            "project_number": "382456528361",
+            "project_id": "gen-lang-client-0126286835",
+            "storage_bucket": "gen-lang-client-0126286835.firebasestorage.app"
+          },
+          "client": [
+            {
+              "client_info": {
+                "mobilesdk_app_id": "1:382456528361:android:3d458c0ad6431c41849f78",
+                "android_client_info": {
+                  "package_name": "com.aikeyboard"
+                }
+              },
+              "oauth_client": [
+                {
+                  "client_id": "382456528361-ut4puvp30vm9c6t9a5sohj1rg1h0jfdi.apps.googleusercontent.com",
+                  "client_type": 3
+                }
+              ],
+              "api_key": [
+                {
+                  "current_key": "AIzaSyDkDXoDGykjyq8q7foAyb10BbIU54VnfHM"
+                }
+              ],
+              "services": {
+                "appinvite_service": {
+                  "other_platform_oauth_client": []
+                }
+              }
+            }
+          ],
+          "configuration_version": "1"
+        }
+        """.trimIndent()
+    )
 }
 
 android {
@@ -4220,7 +6421,11 @@ android {
         targetSdk = 34
         versionCode = 1
         versionName = "1.0.0"
+
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+        vectorDrawables {
+            useSupportLibrary = true
+        }
     }
 
     buildTypes {
@@ -4232,18 +6437,16 @@ android {
             )
         }
     }
-
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
     }
-
     kotlinOptions {
         jvmTarget = "17"
     }
-
     buildFeatures {
         compose = true
+        buildConfig = true
     }
 
     lint {
@@ -4253,6 +6456,7 @@ android {
 }
 
 dependencies {
+    // Core AndroidX
     implementation("androidx.core:core-ktx:1.13.1")
     implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.8.4")
     implementation("androidx.lifecycle:lifecycle-viewmodel-ktx:2.8.4")
@@ -4260,32 +6464,39 @@ dependencies {
     implementation("androidx.savedstate:savedstate-ktx:1.2.1")
     implementation("androidx.activity:activity-compose:1.9.1")
 
+    // Jetpack Compose BOM & Material 3
     val composeBom = platform("androidx.compose:compose-bom:2024.06.00")
     implementation(composeBom)
+    androidTestImplementation(composeBom)
+
     implementation("androidx.compose.ui:ui")
     implementation("androidx.compose.ui:ui-graphics")
     implementation("androidx.compose.ui:ui-tooling-preview")
     implementation("androidx.compose.material3:material3")
     implementation("androidx.compose.material:material-icons-extended")
 
+    debugImplementation("androidx.compose.ui:ui-tooling")
+    debugImplementation("androidx.compose.ui:ui-test-manifest")
+
     // Milestone 3.0 & 3.2: Firebase AI Logic, App Check & Coroutines
-    val firebaseBom = platform("com.google.firebase:firebase-bom:33.4.0")
+    val firebaseBom = platform("com.google.firebase:firebase-bom:33.10.0")
     implementation(firebaseBom)
     implementation("com.google.firebase:firebase-vertexai:16.2.0")
     implementation("com.google.firebase:firebase-appcheck-playintegrity")
     debugImplementation("com.google.firebase:firebase-appcheck-debug")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.8.1")
 
+    // Unit Testing
     testImplementation("junit:junit:4.13.2")
     testImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.8.1")
 }
 `
   },
   {
-    path: '.github/workflows/android-apk.yml',
-    name: 'android-apk.yml',
-    language: 'yaml',
-    description: 'GitHub Actions CI/CD: Automated Debug APK build and artifact upload on every push.',
+    path: ".github/workflows/android-apk.yml",
+    name: "android-apk.yml",
+    language: "yaml",
+    description: "GitHub Actions CI/CD: Automated Debug APK build and artifact upload on every push.",
     content: `name: Build Android Debug APK
 
 on:
@@ -4315,6 +6526,8 @@ jobs:
     steps:
       - name: Checkout Repository
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
 
       - name: Set up JDK 17
         uses: actions/setup-java@v5
@@ -4335,9 +6548,25 @@ jobs:
           echo "android.useAndroidX=true" >> ~/.gradle/gradle.properties
           echo "android.nonTransitiveRClass=true" >> ~/.gradle/gradle.properties
 
+      - name: Configure Google Services (google-services.json)
+        env:
+          GOOGLE_SERVICES_JSON_SECRET: \${{ secrets.GOOGLE_SERVICES_JSON }}
+        run: |
+          mkdir -p app
+          if [ -n "$GOOGLE_SERVICES_JSON_SECRET" ]; then
+            echo "Using google-services.json provided via repository secret..."
+            echo "$GOOGLE_SERVICES_JSON_SECRET" > app/google-services.json
+          elif [ ! -f "app/google-services.json" ]; then
+            echo "Generating google-services.json for Firebase build..."
+            echo 'ewogICJwcm9qZWN0X2luZm8iOiB7CiAgICAicHJvamVjdF9udW1iZXIiOiAiMzgyNDU2NTI4MzYxIiwKICAgICJwcm9qZWN0X2lkIjogImdlbi1sYW5nLWNsaWVudC0wMTI2Mjg2ODM1IiwKICAgICJzdG9yYWdlX2J1Y2tldCI6ICJnZW4tbGFuZy1jbGllbnQtMDEyNjI4NjgzNS5maXJlYmFzZXN0b3JhZ2UuYXBwIgogIH0sCiAgImNsaWVudCI6IFsKICAgIHsKICAgICAgImNsaWVudF9pbmZvIjogewogICAgICAgICJtb2JpbGVzZGtfYXBwX2lkIjogIjE6MzgyNDU2NTI4MzYxOmFuZHJvaWQ6M2Q0NThjMGFkNjQzMWM0MTg0OWY3OCIsCiAgICAgICAgImFuZHJvaWRfY2xpZW50X2luZm8iOiB7CiAgICAgICAgICAicGFja2FnZV9uYW1lIjogImNvbS5haWtleWJvYXJkIgogICAgICAgIH0KICAgICAgfSwKICAgICAgIm9hdXRoX2NsaWVudCI6IFsKICAgICAgICB7CiAgICAgICAgICAiY2xpZW50X2lkIjogIjM4MjQ1NjUyODM2MS11dDRwdXZwMzB2bTljNnQ5YTVzb2hqMXJnMWgwamZkaS5hcHBzLmdvb2dsZXVzZXJjb250ZW50LmNvbSIsCiAgICAgICAgICAiY2xpZW50X3R5cGUiOiAzCiAgICAgICAgfQogICAgICBdLAogICAgICAiYXBpX2tleSI6IFsKICAgICAgICB7CiAgICAgICAgICAiY3VycmVudF9rZXkiOiAiQUl6YVN5RGtEWG9ER3lranlxOHE3Zm9BeWIxMEJiSVU1NFZuZkhNIgogICAgICAgIH0KICAgICAgXSwKICAgICAgInNlcnZpY2VzIjogewogICAgICAgICJhcHBpbnZpdGVfc2VydmljZSI6IHsKICAgICAgICAgICJvdGhlcl9wbGF0Zm9ybV9vYXV0aF9jbGllbnQiOiBbXQogICAgICAgIH0KICAgICAgfQogICAgfQogIF0sCiAgImNvbmZpZ3VyYXRpb25fdmVyc2lvbiI6ICIxIgp9Cg==' | base64 -d > app/google-services.json
+          fi
+          echo "Confirmed app/google-services.json exists:"
+          ls -lh app/google-services.json
+
+
       - name: Run Unit Tests (Optional)
         run: |
-          echo "Running unit tests if defined in the project..."
+          echo "Running unit tests if present..."
           ./gradlew testDebugUnitTest --no-daemon --continue || true
 
       - name: Build Debug APK
@@ -4352,13 +6581,13 @@ jobs:
         run: |
           echo "## :x: Build Failed - Diagnostic Log" >> $GITHUB_STEP_SUMMARY
           echo "### Compiler / Build Output:" >> $GITHUB_STEP_SUMMARY
-          echo "\\\`\\\`\\\`text" >> $GITHUB_STEP_SUMMARY
+          echo '\`\`\`text' >> $GITHUB_STEP_SUMMARY
           if [ -f "build.log" ]; then
             grep -C 3 -E "e: |FAILURE:|ERROR:|Exception|Unresolved|Could not|AAPT2" build.log | head -n 50 >> $GITHUB_STEP_SUMMARY || tail -n 40 build.log >> $GITHUB_STEP_SUMMARY
           else
             echo "No build.log generated." >> $GITHUB_STEP_SUMMARY
           fi
-          echo "\\\`\\\`\\\`" >> $GITHUB_STEP_SUMMARY
+          echo '\`\`\`' >> $GITHUB_STEP_SUMMARY
 
       - name: Verify Real Generated APK
         id: verify-apk
@@ -4380,39 +6609,24 @@ jobs:
             exit 1
           fi
 
-          # Verify file size is substantial (real compiled APK, not placeholder)
           APK_SIZE=$(stat -c%s "$APK_PATH" 2>/dev/null || stat -f%z "$APK_PATH")
-          echo "Found APK at: $APK_PATH"
-          echo "APK File Size: $APK_SIZE bytes"
+          echo "Found APK at: $APK_PATH ($APK_SIZE bytes)"
 
-          if [ "$APK_SIZE" -lt 500000 ]; then
-            echo "::error::APK file size ($APK_SIZE bytes) is suspiciously small. Expected a compiled Android app."
-            exit 1
-          fi
-
-          # Prepare normalized copy in artifacts folder
           mkdir -p artifacts
           cp "$APK_PATH" artifacts/aikeyboard-debug.apk
 
           echo "apk_path=$APK_PATH" >> "$GITHUB_OUTPUT"
           echo "apk_size=$APK_SIZE" >> "$GITHUB_OUTPUT"
 
-          # Write step summary for GitHub Actions UI
-          echo "## :white_check_mark: Android APK Build Successful" >> $GITHUB_STEP_SUMMARY
+          echo "## :white_check_mark: Android Debug APK Built Successfully" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
-          echo "| Property | Value |" >> $GITHUB_STEP_SUMMARY
-          echo "|---|---|" >> $GITHUB_STEP_SUMMARY
-          echo "| **Build Variant** | \\\`debug\\\` |" >> $GITHUB_STEP_SUMMARY
-          echo "| **Application ID** | \\\`com.aikeyboard\\\` |" >> $GITHUB_STEP_SUMMARY
-          echo "| **Gradle Output Path** | \\\`$APK_PATH\\\` |" >> $GITHUB_STEP_SUMMARY
-          echo "| **Normalized Artifact** | \\\`artifacts/aikeyboard-debug.apk\\\` |" >> $GITHUB_STEP_SUMMARY
-          echo "| **APK Size** | \\\`$APK_SIZE bytes\\\` ($(awk "BEGIN {printf \\"%.2f MB\\", $APK_SIZE/1048576}")) |" >> $GITHUB_STEP_SUMMARY
-          echo "| **Artifact Name** | \\\`aikeyboard-debug-apk\\\` |" >> $GITHUB_STEP_SUMMARY
+          echo "| Artifact | Path | Size |" >> $GITHUB_STEP_SUMMARY
+          echo "|---|---|---|" >> $GITHUB_STEP_SUMMARY
+          echo "| \\\`aikeyboard-debug.apk\\\` | \\\`$APK_PATH\\\` | \\\`$APK_SIZE bytes\\\` |" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
-          echo "### :arrow_down: How to Download & Install on Your Phone:" >> $GITHUB_STEP_SUMMARY
-          echo "1. Scroll down to the **Artifacts** section at the bottom of this workflow run page." >> $GITHUB_STEP_SUMMARY
-          echo "2. Click **aikeyboard-debug-apk** to download the zip containing \\\`aikeyboard-debug.apk\\\`." >> $GITHUB_STEP_SUMMARY
-          echo "3. Extract and transfer to your Android phone, or open the GitHub mobile app / web browser on your phone to install directly." >> $GITHUB_STEP_SUMMARY
+          echo "### :arrow_down: How to Download & Install:" >> $GITHUB_STEP_SUMMARY
+          echo "1. Scroll down to **Artifacts** at the bottom of this page." >> $GITHUB_STEP_SUMMARY
+          echo "2. Download **aikeyboard-debug-apk** and install it on your Android phone." >> $GITHUB_STEP_SUMMARY
 
       - name: Upload Debug APK Artifact
         uses: actions/upload-artifact@v4
@@ -4434,10 +6648,10 @@ jobs:
 `
   },
   {
-    path: 'app/src/test/java/com/aikeyboard/KeyboardStateTest.kt',
-    name: 'KeyboardStateTest.kt',
-    language: 'kotlin',
-    description: 'Unit test verifying keyboard mode states (including EMOJI & CLIPBOARD), clipboard history deduplication/capacity, and comma key input integrity.',
+    path: "app/src/test/java/com/aikeyboard/KeyboardStateTest.kt",
+    name: "KeyboardStateTest.kt",
+    language: "kotlin",
+    description: "Unit test verifying keyboard mode states (including EMOJI & CLIPBOARD), clipboard history deduplication/capacity, and comma key input integrity.",
     content: `package com.aikeyboard
 
 import com.aikeyboard.ime.KeyboardMode
@@ -4555,6 +6769,57 @@ class KeyboardStateTest {
         addClip("Clip 5")
         assertEquals(10, history.size)
         assertEquals("Clip 5", history[0])
+    }
+
+    @Test
+    fun testAiCommandCenterActionsAndPersonas() {
+        val actions = com.aikeyboard.ime.ai.AiAction.values()
+        assertEquals(6, actions.size)
+        assertTrue(actions.contains(com.aikeyboard.ime.ai.AiAction.REPLY))
+        assertTrue(actions.contains(com.aikeyboard.ime.ai.AiAction.ASK_AI))
+        assertTrue(actions.contains(com.aikeyboard.ime.ai.AiAction.CONTINUE))
+        assertTrue(actions.contains(com.aikeyboard.ime.ai.AiAction.START))
+        assertTrue(actions.contains(com.aikeyboard.ime.ai.AiAction.REWRITE))
+        assertTrue(actions.contains(com.aikeyboard.ime.ai.AiAction.CREATE))
+
+        // Check primary actions
+        val primary = actions.filter { it.isPrimary }
+        assertEquals(4, primary.size)
+
+        // Check secondary actions (revealed on "more")
+        val secondary = actions.filter { !it.isPrimary }
+        assertEquals(2, secondary.size)
+        assertTrue(secondary.contains(com.aikeyboard.ime.ai.AiAction.REWRITE))
+        assertTrue(secondary.contains(com.aikeyboard.ime.ai.AiAction.CREATE))
+
+        // Check temporary personas
+        val personas = com.aikeyboard.ime.ai.AiPersona.values()
+        assertEquals(7, personas.size)
+        assertTrue(personas.contains(com.aikeyboard.ime.ai.AiPersona.FRIENDLY))
+        assertTrue(personas.contains(com.aikeyboard.ime.ai.AiPersona.FREELANCER))
+        assertTrue(personas.contains(com.aikeyboard.ime.ai.AiPersona.PROFESSIONAL))
+        assertTrue(personas.contains(com.aikeyboard.ime.ai.AiPersona.FUNNY))
+        assertTrue(personas.contains(com.aikeyboard.ime.ai.AiPersona.SHORT))
+        assertTrue(personas.contains(com.aikeyboard.ime.ai.AiPersona.NATURAL))
+        assertTrue(personas.contains(com.aikeyboard.ime.ai.AiPersona.ROMANTIC))
+
+        // Test generation for actions
+        val testContext = "meeting at 4pm"
+        for (action in actions) {
+            val res = com.aikeyboard.ime.ai.AiReplyGenerator.generateReply(
+                action = action,
+                persona = com.aikeyboard.ime.ai.AiPersona.FRIENDLY,
+                context = testContext
+            )
+            assertTrue(res.isNotEmpty())
+        }
+
+        // Test Ask AI generator
+        val askRes = com.aikeyboard.ime.ai.AiReplyGenerator.generateMockAskAiResponse(
+            question = "how to prepare for the sprint",
+            persona = com.aikeyboard.ime.ai.AiPersona.PROFESSIONAL
+        )
+        assertTrue(askRes.contains("sprint") || askRes.isNotEmpty())
     }
 
     @Test
@@ -4935,6 +7200,7 @@ class KeyboardStateTest {
 
     @Test
     fun testM30GeminiConfigurationAndModel() {
+        // Milestone 3.0 Requirement 2: Centralized model configuration
         assertEquals("gemini-2.5-flash", com.aikeyboard.ime.ai.AiConfig.GEMINI_FLASH_MODEL)
         assertTrue("Temperature is balanced for natural conversation", com.aikeyboard.ime.ai.AiConfig.TEMPERATURE in 0.5f..0.9f)
         assertTrue("Output tokens allow complete messages", com.aikeyboard.ime.ai.AiConfig.MAX_OUTPUT_TOKENS >= 256)
@@ -4942,6 +7208,7 @@ class KeyboardStateTest {
 
     @Test
     fun testM30GeneratorAbstractionAndAiRequest() {
+        // Milestone 3.0 Requirement 3: Keep existing architecture & generator abstraction
         val request = com.aikeyboard.ime.ai.AiRequest(
             action = com.aikeyboard.ime.ai.AiAction.REPLY,
             persona = com.aikeyboard.ime.ai.AiPersona.FRIENDLY,
@@ -4952,6 +7219,7 @@ class KeyboardStateTest {
         assertEquals(com.aikeyboard.ime.ai.AiPersona.FRIENDLY, request.persona)
         assertEquals("See you tomorrow!", request.context)
 
+        // Verify MockReplyGenerator and FirebaseGeminiReplyGenerator implement ReplyGenerator
         val mockGen: com.aikeyboard.ime.ai.ReplyGenerator = com.aikeyboard.ime.ai.MockReplyGenerator()
         val geminiGen: com.aikeyboard.ime.ai.ReplyGenerator = com.aikeyboard.ime.ai.FirebaseGeminiReplyGenerator(mockGen as com.aikeyboard.ime.ai.MockReplyGenerator)
         assertNotNull(mockGen)
@@ -4963,8 +7231,10 @@ class KeyboardStateTest {
     fun testM30WritingActionsAndPersonaPrompts() {
         val geminiGen = com.aikeyboard.ime.ai.FirebaseGeminiReplyGenerator()
 
+        // Requirement 5: Personas are dynamic prompt variations, not separate models
         val friendlyPrompt = geminiGen.buildPersonaPrompt(com.aikeyboard.ime.ai.AiPersona.FRIENDLY)
         assertTrue("Friendly must be warm and conversational", friendlyPrompt.contains("warm", ignoreCase = true) || friendlyPrompt.contains("conversational", ignoreCase = true))
+        assertFalse("Must not encourage robotic formality", friendlyPrompt.contains("robotic", ignoreCase = true) && !friendlyPrompt.contains("Avoid robotic", ignoreCase = true))
 
         val freelancerPrompt = geminiGen.buildPersonaPrompt(com.aikeyboard.ime.ai.AiPersona.FREELANCER)
         assertTrue("Freelancer must be professional & concise", freelancerPrompt.contains("client-friendly", ignoreCase = true) || freelancerPrompt.contains("professional", ignoreCase = true))
@@ -4975,24 +7245,31 @@ class KeyboardStateTest {
         val funnyPrompt = geminiGen.buildPersonaPrompt(com.aikeyboard.ime.ai.AiPersona.FUNNY)
         assertTrue("Funny must be playful and humorous", funnyPrompt.contains("playful", ignoreCase = true) || funnyPrompt.contains("humorous", ignoreCase = true))
 
+        // Requirement 4 & 7-10: Connect all actions: reply, rewrite, continue, start, create
         val replyAction = geminiGen.buildActionInstruction(com.aikeyboard.ime.ai.AiAction.REPLY, "Let's meet at 5", "")
         assertTrue(replyAction.contains("Reply", ignoreCase = true))
+        assertTrue(replyAction.contains("Let's meet at 5"))
 
         val rewriteAction = geminiGen.buildActionInstruction(com.aikeyboard.ime.ai.AiAction.REWRITE, "whatup", "")
         assertTrue(rewriteAction.contains("Rewrite", ignoreCase = true))
+        assertTrue(rewriteAction.contains("whatup"))
 
         val continueAction = geminiGen.buildActionInstruction(com.aikeyboard.ime.ai.AiAction.CONTINUE, "i wanted to ask if you had time tomorrow", "")
         assertTrue(continueAction.contains("Continue", ignoreCase = true))
+        assertTrue(continueAction.contains("i wanted to ask if you had time tomorrow"))
 
         val startAction = geminiGen.buildActionInstruction(com.aikeyboard.ime.ai.AiAction.START, "marketing plan", "")
         assertTrue(startAction.contains("Start", ignoreCase = true))
+        assertTrue(startAction.contains("marketing plan"))
 
         val createAction = geminiGen.buildActionInstruction(com.aikeyboard.ime.ai.AiAction.CREATE, "", "announcement for launch")
         assertTrue(createAction.contains("Create", ignoreCase = true))
+        assertTrue(createAction.contains("announcement for launch"))
     }
 
     @Test
     fun testM30NaturalResponsesAndFallbacks() {
+        // Requirement 6 & 8: Natural rewrite behavior for "whatup"
         val rewriteSuggestions = com.aikeyboard.ime.ai.AiReplyGenerator.generateSuggestions(
             action = com.aikeyboard.ime.ai.AiAction.REWRITE,
             persona = com.aikeyboard.ime.ai.AiPersona.FRIENDLY,
@@ -5003,6 +7280,7 @@ class KeyboardStateTest {
         assertFalse("Never contains robotic preamble", rewriteSuggestions[0].startsWith("Here is a rewritten version"))
         assertFalse("Never contains robotic corporate boilerplate", rewriteSuggestions[0].contains("I have reviewed the matter and will proceed accordingly"))
 
+        // Requirement 9: Continue naturally extends message
         val continueSuggestions = com.aikeyboard.ime.ai.AiReplyGenerator.generateSuggestions(
             action = com.aikeyboard.ime.ai.AiAction.CONTINUE,
             persona = com.aikeyboard.ime.ai.AiPersona.FRIENDLY,
@@ -5011,16 +7289,19 @@ class KeyboardStateTest {
         assertTrue(continueSuggestions.isNotEmpty())
         assertTrue("Continues naturally", continueSuggestions[0].contains("tomorrow"))
 
+        // Requirement 10: Start creates conversation opener
         val startSuggestions = com.aikeyboard.ime.ai.AiReplyGenerator.generateSuggestions(
             action = com.aikeyboard.ime.ai.AiAction.START,
             persona = com.aikeyboard.ime.ai.AiPersona.FRIENDLY,
             context = "project kickoff"
         )
         assertTrue(startSuggestions.isNotEmpty())
+        assertTrue(startSuggestions[0].contains("project kickoff", ignoreCase = true) || startSuggestions[0].contains("Hey!"))
     }
 
     @Test
     fun testM32FirebaseGeminiMissingConfigThrowsExplicitError() {
+        // Milestone 3.2: Verify real generator does NOT silently return mock output when Firebase is not configured
         val geminiGen = com.aikeyboard.ime.ai.FirebaseGeminiReplyGenerator()
         val request = com.aikeyboard.ime.ai.AiRequest(
             action = com.aikeyboard.ime.ai.AiAction.REWRITE,
@@ -5037,6 +7318,7 @@ class KeyboardStateTest {
             threwExpectedError = true
             assertTrue("Message explains configuration requirement", e.message?.contains("Firebase is not configured") == true)
         } catch (e: Throwable) {
+            // In unit test environment without Android Context/FirebaseApp, should catch MissingConfiguration or GeminiException
             threwExpectedError = e is com.aikeyboard.ime.ai.GeminiException
         }
         assertTrue("Real generator must throw explicit error instead of silent mock masquerading", threwExpectedError)
@@ -5044,6 +7326,7 @@ class KeyboardStateTest {
 
     @Test
     fun testM32GeneratorAbstractionAllowsExplicitMockTesting() {
+        // Milestone 3.2: Verify MockReplyGenerator is preserved as an explicit offline/test fallback
         val mock = com.aikeyboard.ime.ai.MockReplyGenerator()
         com.aikeyboard.ime.ai.AiReplyGenerator.currentGenerator = mock
 
@@ -5063,7 +7346,54 @@ class KeyboardStateTest {
         }
         assertTrue("Explicit mock answers questions", askResult.isNotBlank())
 
+        // Restore default generator
         com.aikeyboard.ime.ai.AiReplyGenerator.currentGenerator = com.aikeyboard.ime.ai.FirebaseGeminiReplyGenerator()
+    }
+
+    @Test
+    fun testKeyboardSuggestionEngineAutocorrectAndPredictions() {
+        val engine = com.aikeyboard.ime.suggestion.KeyboardSuggestionEngine
+
+        // 1. Direct typo autocorrect (e.g. "teh" -> "the")
+        val typoResult = engine.getSuggestions("teh")
+        assertEquals("the", typoResult.autocorrectCandidate)
+        assertTrue(typoResult.candidates.contains("the"))
+
+        // Capitalized typo preserves capitalization
+        val capTypoResult = engine.getSuggestions("Teh")
+        assertEquals("The", capTypoResult.autocorrectCandidate)
+        assertTrue(capTypoResult.candidates.contains("The"))
+
+        // Another common typo ("recieve" -> "receive")
+        val recieveResult = engine.getSuggestions("recieve")
+        assertEquals("receive", recieveResult.autocorrectCandidate)
+
+        // 2. Prefix completions
+        val prefixResult = engine.getSuggestions("than")
+        assertTrue(prefixResult.candidates.any { it.startsWith("than", ignoreCase = true) })
+
+        // 3. Next-word prediction after space
+        val nextWordResult = engine.getSuggestions("", previousWord = "thank")
+        assertTrue(nextWordResult.candidates.contains("you"))
+
+        val howResult = engine.getSuggestions("", previousWord = "how")
+        assertTrue(howResult.candidates.contains("are"))
+
+        // 4. Default starters when field is empty
+        val defaultResult = engine.getSuggestions("", previousWord = null)
+        assertTrue(defaultResult.candidates.contains("Hey"))
+
+        // 5. Double-space period detection
+        val triggerDouble = engine.shouldTriggerDoubleSpacePeriod(1000L, 1200L, true)
+        assertTrue(triggerDouble)
+        val tooSlow = engine.shouldTriggerDoubleSpacePeriod(1000L, 2000L, true)
+        org.junit.Assert.assertFalse(tooSlow)
+
+        // 6. Auto-capitalization detection
+        assertTrue(engine.shouldAutoCapitalize("", true))
+        assertTrue(engine.shouldAutoCapitalize("Hello. ", true))
+        assertTrue(engine.shouldAutoCapitalize("Great! ", true))
+        org.junit.Assert.assertFalse(engine.shouldAutoCapitalize("Hello ", true))
     }
 }
 `

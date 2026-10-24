@@ -379,6 +379,15 @@ export class MockReplyGenerator implements ReplyGenerator {
  */
 export class GeminiReplyGenerator implements ReplyGenerator {
   public mockFallback = new MockReplyGenerator();
+  private offlineMode = false;
+
+  public setOfflineMode(enabled: boolean) {
+    this.offlineMode = enabled;
+  }
+
+  public isOfflineMode(): boolean {
+    return this.offlineMode;
+  }
 
   private async parseApiResponse(response: Response): Promise<any> {
     const rawText = await response.text().catch(() => '');
@@ -406,11 +415,17 @@ export class GeminiReplyGenerator implements ReplyGenerator {
   }
 
   async generate(request: AiGenerateRequest): Promise<string> {
+    if (this.offlineMode) {
+      return this.mockFallback.generate(request);
+    }
     const suggestions = await this.generateSuggestions(request);
     return suggestions[0];
   }
 
   async generateAskAi(question: string, persona: AiPersonaId): Promise<string> {
+    if (this.offlineMode) {
+      return this.mockFallback.generateAskAi(question, persona);
+    }
     const q = (question || '').trim();
     if (!q) {
       return 'Please enter a question or instruction to ask AI.';
@@ -435,6 +450,9 @@ export class GeminiReplyGenerator implements ReplyGenerator {
   }
 
   async generateSuggestions(request: AiGenerateRequest): Promise<string[]> {
+    if (this.offlineMode) {
+      return this.mockFallback.generateSuggestions(request);
+    }
     const response = await fetch('/api/gemini/generate', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -456,7 +474,7 @@ export class GeminiReplyGenerator implements ReplyGenerator {
 }
 
 export const mockReplyGenerator = new MockReplyGenerator();
-export const defaultAiGenerator: ReplyGenerator = new GeminiReplyGenerator();
+export const defaultAiGenerator = new GeminiReplyGenerator();
 
 /**
  * Backward compatibility facade

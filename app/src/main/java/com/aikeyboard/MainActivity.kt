@@ -197,7 +197,7 @@ fun MainSettingsAndOnboardingScreen() {
                         Column {
                             Text("Cloud AI Generation: Google Gemini", fontWeight = FontWeight.SemiBold)
                             Text(
-                                text = "Live Gemini 2.0 Flash generation via Firebase AI Logic",
+                                text = "Live Gemini 2.5 Flash generation via Firebase AI Logic",
                                 fontSize = 12.sp,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )

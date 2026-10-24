@@ -294,7 +294,7 @@ fun ComposeKeyboardView(
                                     localCustomPromptText = ""
                                     onSetAiPromptFocused?.invoke(false)
                                     onClearAiPrompt?.invoke()
-                                } catch (_: Throwable) {
+                                } catch (e: Throwable) {
                                     // If generation fails, keep panel open to present error state
                                 }
                             }
