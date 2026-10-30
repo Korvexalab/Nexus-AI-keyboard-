@@ -393,9 +393,13 @@ class FirebaseGeminiReplyGenerator(
         if (AiReplyGenerator.isOfflineMode) {
             return fallback.generate(request)
         }
-        val suggestions = generateSuggestions(request)
-        return suggestions.firstOrNull()
-            ?: throw GeminiException.EmptyResponse("Gemini returned no response.")
+        return try {
+            val suggestions = generateSuggestions(request)
+            suggestions.firstOrNull() ?: fallback.generate(request)
+        } catch (e: Throwable) {
+            AiReplyGenerator.isOfflineMode = true
+            fallback.generate(request)
+        }
     }
 
     override suspend fun generateSuggestions(request: AiRequest): List<String> {
@@ -404,9 +408,9 @@ class FirebaseGeminiReplyGenerator(
         }
 
         if (!isFirebaseConfigured()) {
-            throw GeminiException.MissingConfiguration(
-                "Firebase is not configured. Connect your active Firebase project to enable live Gemini generation."
-            )
+            // Auto-switch to fast, reliable on-device AI generator
+            AiReplyGenerator.isOfflineMode = true
+            return fallback.generateSuggestions(request)
         }
 
         val personaGuidance = buildPersonaPrompt(request.persona)
@@ -441,7 +445,7 @@ CRITICAL INSTRUCTIONS:
                     model.generateContent(prompt).text
                 } catch (primaryEx: Throwable) {
                     val pMsg = primaryEx.message ?: ""
-                    // If it's a configuration or disabled API issue, let it bubble up immediately
+                    // If it's a configuration or disabled API issue, let it bubble up to outer catch for auto-fallback
                     if (pMsg.contains("genai config not found", ignoreCase = true) ||
                         pMsg.contains("error-genai-config-not-found", ignoreCase = true) ||
                         pMsg.contains("firebasevertexai.googleapis.com", ignoreCase = true) ||
@@ -464,50 +468,20 @@ CRITICAL INSTRUCTIONS:
                 }
             }
 
-            if (result == null) {
-                throw GeminiException.Timeout("Gemini generation timed out. Please tap retry.")
-            }
-            if (result.isBlank()) {
-                throw GeminiException.EmptyResponse("Gemini returned an empty response. Please tap retry.")
+            if (result.isNullOrBlank()) {
+                AiReplyGenerator.isOfflineMode = true
+                return fallback.generateSuggestions(request)
             }
 
             val parsed = parseSuggestions(result)
             if (parsed.isEmpty()) {
-                throw GeminiException.EmptyResponse("Unable to parse suggestions from Gemini. Please tap retry.")
+                return fallback.generateSuggestions(request)
             }
             parsed
-        } catch (e: GeminiException) {
-            throw e
         } catch (e: Throwable) {
-            val msg = e.message ?: ""
-            when {
-                msg.contains("genai config not found", ignoreCase = true) ||
-                msg.contains("error-genai-config-not-found", ignoreCase = true) ->
-                    throw GeminiException.GenAiConfigNotFound(
-                        "Firebase AI Logic genai config not found in project (gen-lang-client-0126286835). Please initialize AI Logic in Firebase Console or switch to On-Device AI.",
-                        "https://firebase.google.com/docs/ai-logic/error-codes#error-genai-config-not-found"
-                    )
-                msg.contains("firebasevertexai.googleapis.com", ignoreCase = true) ||
-                msg.contains("has not been used in project", ignoreCase = true) ||
-                msg.contains("API has not been enabled", ignoreCase = true) ||
-                msg.contains("SERVICE_DISABLED", ignoreCase = true) ->
-                    throw GeminiException.ApiNotEnabled(
-                        "Vertex AI in Firebase API is not enabled in your Firebase project. Please enable firebasevertexai.googleapis.com in Google Cloud Console.",
-                        "https://console.developers.google.com/apis/api/firebasevertexai.googleapis.com/overview"
-                    )
-                msg.contains("retired", ignoreCase = true) || msg.contains("discontinued", ignoreCase = true) ->
-                    throw GeminiException.General("Gemini model retired or discontinued by Google. Using updated Gemini Flash models.", e)
-                msg.contains("429") || msg.contains("RESOURCE_EXHAUSTED") || msg.contains("quota", ignoreCase = true) ->
-                    throw GeminiException.RateLimit("Gemini rate limit reached. Please wait a moment and tap retry.")
-                msg.contains("503") || msg.contains("UNAVAILABLE", ignoreCase = true) || msg.contains("high demand", ignoreCase = true) ->
-                    throw GeminiException.ServiceUnavailable("Gemini is currently experiencing high demand. Please tap retry in a moment.")
-                msg.contains("timeout", ignoreCase = true) ->
-                    throw GeminiException.Timeout("Gemini request timed out. Please tap retry.")
-                msg.contains("network", ignoreCase = true) || msg.contains("UnknownHost", ignoreCase = true) ->
-                    throw GeminiException.NetworkError("No internet connection. Please check your network and tap retry.", e)
-                else ->
-                    throw GeminiException.General(e.message ?: "Unable to generate response with Gemini. Please tap retry.", e)
-            }
+            // Auto-fallback seamlessly to On-Device AI so the keyboard never blocks or shows an error screen
+            AiReplyGenerator.isOfflineMode = true
+            fallback.generateSuggestions(request)
         }
     }
 
@@ -520,9 +494,8 @@ CRITICAL INSTRUCTIONS:
         }
 
         if (!isFirebaseConfigured()) {
-            throw GeminiException.MissingConfiguration(
-                "Firebase is not configured. Connect your active Firebase project to enable live Gemini generation."
-            )
+            AiReplyGenerator.isOfflineMode = true
+            return fallback.generateAskAi(q, persona)
         }
 
         val personaGuidance = buildPersonaPrompt(persona)
@@ -554,7 +527,7 @@ Instructions:
                     model.generateContent(prompt).text
                 } catch (primaryEx: Throwable) {
                     val pMsg = primaryEx.message ?: ""
-                    // If it's a configuration or disabled API issue, let it bubble up immediately
+                    // If it's a configuration or disabled API issue, let it bubble up to outer catch for auto-fallback
                     if (pMsg.contains("genai config not found", ignoreCase = true) ||
                         pMsg.contains("error-genai-config-not-found", ignoreCase = true) ||
                         pMsg.contains("firebasevertexai.googleapis.com", ignoreCase = true) ||
@@ -576,46 +549,15 @@ Instructions:
                 }
             }
 
-            if (result == null) {
-                throw GeminiException.Timeout("Gemini generation timed out. Please tap retry.")
+            if (result.isNullOrBlank()) {
+                AiReplyGenerator.isOfflineMode = true
+                return fallback.generateAskAi(q, persona)
             }
-            val trimmed = result.trim()
-            if (trimmed.isEmpty()) {
-                throw GeminiException.EmptyResponse("Gemini returned an empty response. Please tap retry.")
-            }
-            trimmed
-        } catch (e: GeminiException) {
-            throw e
+            result.trim()
         } catch (e: Throwable) {
-            val msg = e.message ?: ""
-            when {
-                msg.contains("genai config not found", ignoreCase = true) ||
-                msg.contains("error-genai-config-not-found", ignoreCase = true) ->
-                    throw GeminiException.GenAiConfigNotFound(
-                        "Firebase AI Logic genai config not found in project (gen-lang-client-0126286835). Please initialize AI Logic in Firebase Console or switch to On-Device AI.",
-                        "https://firebase.google.com/docs/ai-logic/error-codes#error-genai-config-not-found"
-                    )
-                msg.contains("firebasevertexai.googleapis.com", ignoreCase = true) ||
-                msg.contains("has not been used in project", ignoreCase = true) ||
-                msg.contains("API has not been enabled", ignoreCase = true) ||
-                msg.contains("SERVICE_DISABLED", ignoreCase = true) ->
-                    throw GeminiException.ApiNotEnabled(
-                        "Vertex AI in Firebase API is not enabled in your Firebase project. Please enable firebasevertexai.googleapis.com or switch to On-Device AI.",
-                        "https://console.developers.google.com/apis/api/firebasevertexai.googleapis.com/overview"
-                    )
-                msg.contains("retired", ignoreCase = true) || msg.contains("discontinued", ignoreCase = true) ->
-                    throw GeminiException.General("Gemini model retired or discontinued by Google. Using updated Gemini Flash models.", e)
-                msg.contains("429") || msg.contains("RESOURCE_EXHAUSTED") || msg.contains("quota", ignoreCase = true) ->
-                    throw GeminiException.RateLimit("Gemini rate limit reached. Please wait a moment and tap retry.")
-                msg.contains("503") || msg.contains("UNAVAILABLE", ignoreCase = true) || msg.contains("high demand", ignoreCase = true) ->
-                    throw GeminiException.ServiceUnavailable("Gemini is currently experiencing high demand. Please tap retry in a moment.")
-                msg.contains("timeout", ignoreCase = true) ->
-                    throw GeminiException.Timeout("Gemini request timed out. Please tap retry.")
-                msg.contains("network", ignoreCase = true) || msg.contains("UnknownHost", ignoreCase = true) ->
-                    throw GeminiException.NetworkError("No internet connection. Please check your network and tap retry.", e)
-                else ->
-                    throw GeminiException.General(e.message ?: "Unable to answer with Gemini. Please tap retry.", e)
-            }
+            // Auto-fallback seamlessly to On-Device AI
+            AiReplyGenerator.isOfflineMode = true
+            fallback.generateAskAi(q, persona)
         }
     }
 

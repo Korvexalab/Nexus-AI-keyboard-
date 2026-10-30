@@ -164,47 +164,32 @@ fun AiReplyPanelView(
                 val results = withContext(Dispatchers.IO) {
                     AiReplyGenerator.currentGenerator.generateSuggestions(request)
                 }
+                isOfflineMode = AiReplyGenerator.isOfflineMode
                 actionGenerationState = if (results.isNotEmpty()) {
-                    AiGenerationState.Success(results, isOfflineFallback = isOfflineMode)
+                    AiGenerationState.Success(results, isOfflineFallback = AiReplyGenerator.isOfflineMode)
                 } else {
-                    AiGenerationState.Error("No suggestions generated. Tap retry to reload.")
+                    val fallbackResults = withContext(Dispatchers.IO) {
+                        AiReplyGenerator.mockGenerator.generateSuggestionsSync(
+                            action = selectedAction,
+                            persona = selectedPersona,
+                            context = hostText
+                        )
+                    }
+                    isOfflineMode = true
+                    AiReplyGenerator.isOfflineMode = true
+                    AiGenerationState.Success(fallbackResults, isOfflineFallback = true)
                 }
-            } catch (e: GeminiException.MissingConfiguration) {
-                actionGenerationState = AiGenerationState.Error(
-                    message = e.message ?: "Firebase is not configured. Connect your active Firebase project to enable live Gemini generation.",
-                    isConfigError = true
-                )
-            } catch (e: GeminiException.GenAiConfigNotFound) {
-                actionGenerationState = AiGenerationState.Error(
-                    message = "Firebase AI Logic genai config not found in project (gen-lang-client-0126286835).",
-                    isConfigError = false,
-                    isApiDisabled = false,
-                    isGenAiConfigNotFound = true
-                )
-            } catch (e: GeminiException.ApiNotEnabled) {
-                actionGenerationState = AiGenerationState.Error(
-                    message = "Vertex AI API is not enabled yet in your Firebase project (gen-lang-client-0126286835).",
-                    isConfigError = false,
-                    isApiDisabled = true
-                )
             } catch (e: Throwable) {
-                val msg = e.message ?: ""
-                val isGenAiNotFound = msg.contains("genai config not found", ignoreCase = true) ||
-                                      msg.contains("error-genai-config-not-found", ignoreCase = true)
-                val isApi = !isGenAiNotFound && (
-                            msg.contains("firebasevertexai.googleapis.com", ignoreCase = true) ||
-                            msg.contains("has not been used in project", ignoreCase = true) ||
-                            msg.contains("API has not been enabled", ignoreCase = true))
-                actionGenerationState = AiGenerationState.Error(
-                    message = when {
-                        isGenAiNotFound -> "Firebase AI Logic genai config not found in project gen-lang-client-0126286835."
-                        isApi -> "Vertex AI API is not enabled yet in your Firebase project (gen-lang-client-0126286835)."
-                        else -> msg.ifBlank { "Unable to connect to Gemini. Tap retry to reload." }
-                    },
-                    isConfigError = false,
-                    isApiDisabled = isApi,
-                    isGenAiConfigNotFound = isGenAiNotFound
-                )
+                val fallbackResults = withContext(Dispatchers.IO) {
+                    AiReplyGenerator.mockGenerator.generateSuggestionsSync(
+                        action = selectedAction,
+                        persona = selectedPersona,
+                        context = hostText
+                    )
+                }
+                isOfflineMode = true
+                AiReplyGenerator.isOfflineMode = true
+                actionGenerationState = AiGenerationState.Success(fallbackResults, isOfflineFallback = true)
             }
         }
     }
@@ -425,43 +410,15 @@ fun AiReplyPanelView(
                                 val answer = withContext(Dispatchers.IO) {
                                     AiReplyGenerator.currentGenerator.generateAskAi(q, selectedPersona)
                                 }
-                                askAiState = AskAiState.Success(answer, isOfflineFallback = isOfflineMode)
-                            } catch (e: GeminiException.MissingConfiguration) {
-                                askAiState = AskAiState.Error(
-                                    message = e.message ?: "Firebase is not configured. Connect your active Firebase project to enable live Gemini.",
-                                    isConfigError = true
-                                )
-                            } catch (e: GeminiException.GenAiConfigNotFound) {
-                                askAiState = AskAiState.Error(
-                                    message = "Firebase AI Logic genai config not found in project (gen-lang-client-0126286835).",
-                                    isConfigError = false,
-                                    isApiDisabled = false,
-                                    isGenAiConfigNotFound = true
-                                )
-                            } catch (e: GeminiException.ApiNotEnabled) {
-                                askAiState = AskAiState.Error(
-                                    message = "Vertex AI API is not enabled yet in your Firebase project (gen-lang-client-0126286835).",
-                                    isConfigError = false,
-                                    isApiDisabled = true
-                                )
+                                isOfflineMode = AiReplyGenerator.isOfflineMode
+                                askAiState = AskAiState.Success(answer, isOfflineFallback = AiReplyGenerator.isOfflineMode)
                             } catch (e: Throwable) {
-                                val msg = e.message ?: ""
-                                val isGenAiNotFound = msg.contains("genai config not found", ignoreCase = true) ||
-                                                      msg.contains("error-genai-config-not-found", ignoreCase = true)
-                                val isApi = !isGenAiNotFound && (
-                                            msg.contains("firebasevertexai.googleapis.com", ignoreCase = true) ||
-                                            msg.contains("has not been used in project", ignoreCase = true) ||
-                                            msg.contains("API has not been enabled", ignoreCase = true))
-                                askAiState = AskAiState.Error(
-                                    message = when {
-                                        isGenAiNotFound -> "Firebase AI Logic genai config not found in project gen-lang-client-0126286835."
-                                        isApi -> "Vertex AI API is not enabled yet in your Firebase project (gen-lang-client-0126286835)."
-                                        else -> msg.ifBlank { "Unable to get an answer right now. Please tap retry." }
-                                    },
-                                    isConfigError = false,
-                                    isApiDisabled = isApi,
-                                    isGenAiConfigNotFound = isGenAiNotFound
-                                )
+                                val fallbackAnswer = withContext(Dispatchers.IO) {
+                                    AiReplyGenerator.mockGenerator.generateAskAiSync(q, selectedPersona)
+                                }
+                                isOfflineMode = true
+                                AiReplyGenerator.isOfflineMode = true
+                                askAiState = AskAiState.Success(fallbackAnswer, isOfflineFallback = true)
                             }
                         }
                     }
@@ -997,7 +954,7 @@ fun AiReplyPanelView(
                     Text(
                         text = when (val state = actionGenerationState) {
                             is AiGenerationState.Loading -> "generating..."
-                            is AiGenerationState.Success -> "${state.suggestions.size} suggestions"
+                            is AiGenerationState.Success -> if (state.isOfflineFallback) "${state.suggestions.size} suggestions (on-device)" else "${state.suggestions.size} suggestions"
                             is AiGenerationState.Error -> "error"
                             is AiGenerationState.Idle -> ""
                         },

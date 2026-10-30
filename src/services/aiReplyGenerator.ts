@@ -431,45 +431,57 @@ export class GeminiReplyGenerator implements ReplyGenerator {
       return 'Please enter a question or instruction to ask AI.';
     }
 
-    const response = await fetch('/api/gemini/generate', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        action: 'ask_ai',
-        persona,
-        instruction: q,
-        mode: 'ask_ai'
-      })
-    });
+    try {
+      const response = await fetch('/api/gemini/generate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: 'ask_ai',
+          persona,
+          instruction: q,
+          mode: 'ask_ai'
+        })
+      });
 
-    const data = await this.parseApiResponse(response);
-    if (data.success && data.answer) {
-      return data.answer;
+      const data = await this.parseApiResponse(response);
+      if (data.success && data.answer) {
+        return data.answer;
+      }
+      this.offlineMode = true;
+      return this.mockFallback.generateAskAi(question, persona);
+    } catch {
+      this.offlineMode = true;
+      return this.mockFallback.generateAskAi(question, persona);
     }
-    throw new Error(data.error || 'Gemini returned an invalid response.');
   }
 
   async generateSuggestions(request: AiGenerateRequest): Promise<string[]> {
     if (this.offlineMode) {
       return this.mockFallback.generateSuggestions(request);
     }
-    const response = await fetch('/api/gemini/generate', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        action: request.action,
-        persona: request.persona,
-        context: request.context,
-        instruction: request.instruction,
-        mode: 'action'
-      })
-    });
+    try {
+      const response = await fetch('/api/gemini/generate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: request.action,
+          persona: request.persona,
+          context: request.context,
+          instruction: request.instruction,
+          mode: 'action'
+        })
+      });
 
-    const data = await this.parseApiResponse(response);
-    if (data.success && Array.isArray(data.suggestions) && data.suggestions.length > 0) {
-      return data.suggestions;
+      const data = await this.parseApiResponse(response);
+      if (data.success && Array.isArray(data.suggestions) && data.suggestions.length > 0) {
+        return data.suggestions;
+      }
+      this.offlineMode = true;
+      return this.mockFallback.generateSuggestions(request);
+    } catch {
+      this.offlineMode = true;
+      return this.mockFallback.generateSuggestions(request);
     }
-    throw new Error(data.error || 'Gemini was unable to generate suggestions.');
   }
 }
 
