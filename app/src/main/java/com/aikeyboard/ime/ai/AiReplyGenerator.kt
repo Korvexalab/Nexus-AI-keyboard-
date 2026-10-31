@@ -430,12 +430,21 @@ CRITICAL INSTRUCTIONS:
                 return proxySuggestions.take(3)
             }
         } catch (e: GeminiException) {
-            if (e is GeminiException.BadRequest || e is GeminiException.RateLimit || e is GeminiException.AuthFailure) {
+            val customKey = apiKeyProvider?.invoke()?.trim() ?: ""
+            // When no custom developer key is configured, immediately surface the backend proxy error
+            // (EndpointNotFound 404, RateLimit 429, BadRequest 400, AuthFailure 401/403, ServiceUnavailable 503)
+            // without failing through to unconfigured Firebase Vertex AI.
+            if (customKey.isEmpty() || e is GeminiException.BadRequest || e is GeminiException.RateLimit || e is GeminiException.AuthFailure || e is GeminiException.EndpointNotFound) {
                 throw e
             }
             proxyException = e
         } catch (e: Throwable) {
-            proxyException = GeminiException.NetworkError("Unable to connect to Nexora AI backend. Please tap retry.", e)
+            val customKey = apiKeyProvider?.invoke()?.trim() ?: ""
+            val netErr = GeminiException.NetworkError("Unable to connect to Nexora AI backend. Please tap retry.", e)
+            if (customKey.isEmpty()) {
+                throw netErr
+            }
+            proxyException = netErr
         }
 
         // 2. Optional Secondary: Direct Gemini REST with developer API key (if configured in preferences)
@@ -526,12 +535,18 @@ Instructions:
                 return answer.trim()
             }
         } catch (e: GeminiException) {
-            if (e is GeminiException.BadRequest || e is GeminiException.RateLimit || e is GeminiException.AuthFailure) {
+            val customKey = apiKeyProvider?.invoke()?.trim() ?: ""
+            if (customKey.isEmpty() || e is GeminiException.BadRequest || e is GeminiException.RateLimit || e is GeminiException.AuthFailure || e is GeminiException.EndpointNotFound) {
                 throw e
             }
             proxyException = e
         } catch (e: Throwable) {
-            proxyException = GeminiException.NetworkError("Unable to connect to Nexora AI backend. Please tap retry.", e)
+            val customKey = apiKeyProvider?.invoke()?.trim() ?: ""
+            val netErr = GeminiException.NetworkError("Unable to connect to Nexora AI backend. Please tap retry.", e)
+            if (customKey.isEmpty()) {
+                throw netErr
+            }
+            proxyException = netErr
         }
 
         // 2. Optional Secondary: Direct Gemini REST with developer API key (if configured in preferences)

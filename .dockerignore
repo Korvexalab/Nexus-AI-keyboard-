@@ -1,0 +1,16 @@
+node_modules
+dist
+.env
+.env.local
+.git
+.github
+app
+gradle
+.gradle
+gradlew
+gradlew.bat
+build.log
+artifacts
+*.apk
+*.log
+.DS_Store

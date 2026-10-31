@@ -193,6 +193,9 @@ data class AiRequest(
  * and eliminates silent mock substitution when real Gemini calls fail.
  */
 sealed class GeminiException(message: String, cause: Throwable? = null) : Exception(message, cause) {
+    class BadRequest(message: String) : GeminiException(message)
+    class AuthFailure(message: String) : GeminiException(message)
+    class EndpointNotFound(message: String) : GeminiException(message)
     class MissingConfiguration(message: String) : GeminiException(message)
     class ApiNotEnabled(message: String, val enableUrl: String = "") : GeminiException(message)
     class GenAiConfigNotFound(message: String, val setupUrl: String = "") : GeminiException(message)
@@ -512,7 +515,38 @@ CRITICAL INSTRUCTIONS:
 5. Preserve the user's meaning and tone.
 """.trimIndent()
 
-        // 1. Direct Gemini REST with configured user API key (Google AI Studio)
+        // 1. Primary Production Path: Secure Cloud Backend Proxy (/api/gemini/generate)
+        var proxyException: GeminiException? = null
+        try {
+            val (_, proxySuggestions) = callProxyGenerate(
+                action = request.action.id,
+                persona = request.persona.id,
+                context = request.context,
+                instruction = request.instruction,
+                mode = "action"
+            )
+            if (!proxySuggestions.isNullOrEmpty()) {
+                return proxySuggestions.take(3)
+            }
+        } catch (e: GeminiException) {
+            val customKey = apiKeyProvider?.invoke()?.trim() ?: ""
+            // When no custom developer key is configured, immediately surface the backend proxy error
+            // (EndpointNotFound 404, RateLimit 429, BadRequest 400, AuthFailure 401/403, ServiceUnavailable 503)
+            // without failing through to unconfigured Firebase Vertex AI.
+            if (customKey.isEmpty() || e is GeminiException.BadRequest || e is GeminiException.RateLimit || e is GeminiException.AuthFailure || e is GeminiException.EndpointNotFound) {
+                throw e
+            }
+            proxyException = e
+        } catch (e: Throwable) {
+            val customKey = apiKeyProvider?.invoke()?.trim() ?: ""
+            val netErr = GeminiException.NetworkError("Unable to connect to Nexora AI backend. Please tap retry.", e)
+            if (customKey.isEmpty()) {
+                throw netErr
+            }
+            proxyException = netErr
+        }
+
+        // 2. Optional Secondary: Direct Gemini REST with developer API key (if configured in preferences)
         val customKey = apiKeyProvider?.invoke()?.trim() ?: ""
         if (customKey.isNotEmpty()) {
             try {
@@ -524,27 +558,11 @@ CRITICAL INSTRUCTIONS:
                     }
                 }
             } catch (_: Throwable) {
-                // Continue to cloud backend proxy
+                // Continue to secondary check
             }
         }
 
-        // 2. Cloud Backend Proxy (/api/gemini/generate)
-        try {
-            val (answer, proxySuggestions) = callProxyGenerate(
-                action = request.action.id,
-                persona = request.persona.id,
-                context = request.context,
-                instruction = request.instruction,
-                mode = "action"
-            )
-            if (!proxySuggestions.isNullOrEmpty()) {
-                return proxySuggestions.take(3)
-            }
-        } catch (e: Throwable) {
-            // Proceed to alternative direct Gemini endpoints
-        }
-
-        // 3. Direct Firebase Vertex AI with active Gemini Flash models
+        // 3. Fallback: Firebase Vertex AI (if provisioned in project)
         if (isFirebaseConfigured()) {
             try {
                 val rawText = withTimeoutOrNull(AiConfig.REQUEST_TIMEOUT_MS) {
@@ -578,17 +596,10 @@ CRITICAL INSTRUCTIONS:
                         return parsed
                     }
                 }
-            } catch (e: Throwable) {
-                // Check if it's a specific network error
-                val msg = e.message ?: ""
-                if (msg.contains("network", ignoreCase = true) || msg.contains("UnknownHost", ignoreCase = true)) {
-                    throw GeminiException.NetworkError("No internet connection. Gemini AI requires network access to generate responses.", e)
-                }
-            }
+            } catch (_: Throwable) {}
         }
 
-        // If all Gemini endpoints fail, surface clear actionable Gemini error
-        throw GeminiException.General("Unable to connect to Gemini AI. Please check your internet connection and tap retry.")
+        throw proxyException ?: GeminiException.General("Unable to connect to Gemini AI. Please check your network and tap retry.")
     }
 
     override suspend fun generateAskAi(question: String, persona: AiPersona): String {
@@ -609,20 +620,8 @@ Instructions:
 - Directly answer the question.
 """.trimIndent()
 
-        // 1. Direct Gemini REST with configured user API key
-        val customKey = apiKeyProvider?.invoke()?.trim() ?: ""
-        if (customKey.isNotEmpty()) {
-            try {
-                val directAnswer = callDirectGeminiRest(prompt, customKey)
-                if (!directAnswer.isNullOrBlank()) {
-                    return directAnswer.trim()
-                }
-            } catch (_: Throwable) {
-                // Continue to cloud backend proxy
-            }
-        }
-
-        // 2. Cloud Backend Proxy
+        // 1. Primary Production Path: Secure Cloud Backend Proxy (/api/gemini/generate)
+        var proxyException: GeminiException? = null
         try {
             val (answer, _) = callProxyGenerate(
                 action = "ask_ai",
@@ -634,11 +633,35 @@ Instructions:
             if (!answer.isNullOrBlank()) {
                 return answer.trim()
             }
+        } catch (e: GeminiException) {
+            val customKey = apiKeyProvider?.invoke()?.trim() ?: ""
+            if (customKey.isEmpty() || e is GeminiException.BadRequest || e is GeminiException.RateLimit || e is GeminiException.AuthFailure || e is GeminiException.EndpointNotFound) {
+                throw e
+            }
+            proxyException = e
         } catch (e: Throwable) {
-            // Proceed to alternative
+            val customKey = apiKeyProvider?.invoke()?.trim() ?: ""
+            val netErr = GeminiException.NetworkError("Unable to connect to Nexora AI backend. Please tap retry.", e)
+            if (customKey.isEmpty()) {
+                throw netErr
+            }
+            proxyException = netErr
         }
 
-        // 3. Firebase Vertex AI
+        // 2. Optional Secondary: Direct Gemini REST with developer API key (if configured in preferences)
+        val customKey = apiKeyProvider?.invoke()?.trim() ?: ""
+        if (customKey.isNotEmpty()) {
+            try {
+                val directAnswer = callDirectGeminiRest(prompt, customKey)
+                if (!directAnswer.isNullOrBlank()) {
+                    return directAnswer.trim()
+                }
+            } catch (_: Throwable) {
+                // Continue to secondary check
+            }
+        }
+
+        // 3. Fallback: Firebase Vertex AI (if provisioned in project)
         if (isFirebaseConfigured()) {
             try {
                 val rawText = withTimeoutOrNull(AiConfig.REQUEST_TIMEOUT_MS) {
@@ -669,19 +692,14 @@ Instructions:
                 if (!rawText.isNullOrBlank()) {
                     return rawText.trim()
                 }
-            } catch (e: Throwable) {
-                val msg = e.message ?: ""
-                if (msg.contains("network", ignoreCase = true) || msg.contains("UnknownHost", ignoreCase = true)) {
-                    throw GeminiException.NetworkError("No internet connection. Gemini AI requires network access to generate responses.", e)
-                }
-            }
+            } catch (_: Throwable) {}
         }
 
-        throw GeminiException.General("Unable to reach Gemini AI right now. Please tap retry in a moment.")
+        throw proxyException ?: GeminiException.General("Unable to reach Gemini AI right now. Please tap retry in a moment.")
     }
 
     /**
-     * HTTP helper to invoke Gemini AI backend proxy with low latency
+     * HTTP helper to invoke Gemini AI backend proxy with low latency and explicit error mapping
      */
     private fun callProxyGenerate(
         action: String,
@@ -714,7 +732,15 @@ Instructions:
             os.write(bytes, 0, bytes.size)
         }
 
-        val code = conn.responseCode
+        val code: Int
+        try {
+            code = conn.responseCode
+        } catch (e: java.net.SocketTimeoutException) {
+            throw GeminiException.Timeout("Request timed out connecting to Nexora backend. Please check your network and tap retry.")
+        } catch (e: java.io.IOException) {
+            throw GeminiException.NetworkError("Unable to connect to Nexora backend. Please check your network connection.", e)
+        }
+
         if (code in 200..299) {
             val responseText = conn.inputStream.bufferedReader().use { it.readText() }
             val json = org.json.JSONObject(responseText)
@@ -729,7 +755,19 @@ Instructions:
             return Pair(answer, suggestionsList)
         } else {
             val errText = conn.errorStream?.bufferedReader()?.use { it.readText() } ?: "HTTP $code"
-            throw Exception(errText)
+            val serverMessage = try {
+                org.json.JSONObject(errText).optString("error")
+            } catch (_: Throwable) {
+                null
+            }
+            when (code) {
+                400 -> throw GeminiException.BadRequest(serverMessage ?: "Invalid request. Please check your message.")
+                401, 403 -> throw GeminiException.AuthFailure(serverMessage ?: "Authentication failure. Please verify backend credentials.")
+                404 -> throw GeminiException.EndpointNotFound("Nexora backend endpoint is unavailable (HTTP 404). Please verify server URL.")
+                429 -> throw GeminiException.RateLimit(serverMessage ?: "Rate limit reached. Please wait a moment before sending another request.")
+                500, 502, 503 -> throw GeminiException.ServiceUnavailable(serverMessage ?: "Gemini service is currently unavailable. Please tap retry.")
+                else -> throw GeminiException.General(serverMessage ?: "Server error (HTTP $code). Please tap retry.")
+            }
         }
     }
 
@@ -2602,6 +2640,9 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.material.icons.filled.Cloud
+import androidx.compose.material.icons.filled.Dns
+import androidx.compose.material.icons.filled.Key
 import androidx.compose.material.icons.filled.Keyboard
 import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.Palette
@@ -2623,6 +2664,7 @@ import androidx.compose.ui.unit.sp
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import com.aikeyboard.ime.KeyboardPreferences
+import com.aikeyboard.ime.ai.AiConfig
 import com.aikeyboard.ime.ai.AppCheckConfig
 import com.aikeyboard.ime.ui.theme.AIKeyboardTheme
 import com.aikeyboard.ime.ui.theme.KeyboardHeightOption
@@ -2662,6 +2704,9 @@ fun MainSettingsAndOnboardingScreen() {
     var isNextWordPredictionEnabled by remember { mutableStateOf(prefs.nextWordPredictionEnabled) }
     var isAutoCapitalizationEnabled by remember { mutableStateOf(prefs.autoCapitalizationEnabled) }
     var isDoubleSpacePeriodEnabled by remember { mutableStateOf(prefs.doubleSpacePeriodEnabled) }
+    var serverUrlText by remember { mutableStateOf(prefs.cloudServerUrl) }
+    var geminiApiKeyText by remember { mutableStateOf(prefs.geminiApiKey) }
+    var serverUrlError by remember { mutableStateOf<String?>(null) }
 
     fun checkKeyboardStatus() {
         val packageName = context.packageName
@@ -3087,7 +3132,147 @@ fun MainSettingsAndOnboardingScreen() {
                 }
             }
 
-            // --- SECTION 3: INTERACTIVE TEST FIELD ---
+            HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
+
+            // --- SECTION 3: DEVELOPER & BACKEND CONFIGURATION ---
+            Text(
+                text = "DEVELOPER & BACKEND CONFIGURATION",
+                fontSize = 12.sp,
+                fontWeight = FontWeight.Bold,
+                color = MaterialTheme.colorScheme.primary,
+                letterSpacing = 1.sp
+            )
+
+            Card(
+                modifier = Modifier.fillMaxWidth(),
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
+            ) {
+                Column(
+                    modifier = Modifier.padding(16.dp),
+                    verticalArrangement = Arrangement.spacedBy(14.dp)
+                ) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Icon(Icons.Default.Dns, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
+                        Column {
+                            Text("Cloud Backend Server URL", fontWeight = FontWeight.SemiBold, fontSize = 15.sp)
+                            Text(
+                                "Production Gemini proxy endpoint for keyboard AI generation",
+                                fontSize = 12.sp,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                    }
+
+                    OutlinedTextField(
+                        value = serverUrlText,
+                        onValueChange = { input ->
+                            serverUrlText = input
+                            val trimmed = input.trim()
+                            if (trimmed.isNotEmpty() && !trimmed.startsWith("http://") && !trimmed.startsWith("https://")) {
+                                serverUrlError = "URL must start with https:// (or http:// for local testing)"
+                            } else {
+                                serverUrlError = null
+                                prefs.cloudServerUrl = trimmed
+                            }
+                        },
+                        label = { Text("Server Base URL or Endpoint") },
+                        placeholder = { Text(AiConfig.DEFAULT_SERVER_URL) },
+                        isError = serverUrlError != null,
+                        supportingText = {
+                            if (serverUrlError != null) {
+                                Text(serverUrlError!!, color = MaterialTheme.colorScheme.error)
+                            } else {
+                                val effective = if (serverUrlText.isBlank()) AiConfig.DEFAULT_SERVER_URL else serverUrlText
+                                Text("Active: $effective", fontSize = 11.sp)
+                            }
+                        },
+                        modifier = Modifier.fillMaxWidth(),
+                        singleLine = true
+                    )
+
+                    // Quick-action preset buttons
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        OutlinedButton(
+                            onClick = {
+                                serverUrlText = ""
+                                serverUrlError = null
+                                prefs.cloudServerUrl = ""
+                            },
+                            modifier = Modifier.weight(1f),
+                            contentPadding = PaddingValues(horizontal = 4.dp, vertical = 6.dp)
+                        ) {
+                            Text("Reset Default", fontSize = 11.sp)
+                        }
+
+                        OutlinedButton(
+                            onClick = {
+                                val emuUrl = AiConfig.EMULATOR_SERVER_URL
+                                serverUrlText = emuUrl
+                                serverUrlError = null
+                                prefs.cloudServerUrl = emuUrl
+                            },
+                            modifier = Modifier.weight(1f),
+                            contentPadding = PaddingValues(horizontal = 4.dp, vertical = 6.dp)
+                        ) {
+                            Text("Emulator (10.0.2.2)", fontSize = 11.sp)
+                        }
+                    }
+
+                    // Security & Warning Callout
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(8.dp))
+                            .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f))
+                            .padding(10.dp)
+                    ) {
+                        Text(
+                            text = "Note: HTTP connections are strictly permitted for local developer testing only (e.g. 10.0.2.2 or localhost). Production connections require HTTPS.",
+                            fontSize = 11.sp,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            lineHeight = 15.sp
+                        )
+                    }
+
+                    HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.3f))
+
+                    // Optional direct developer API key for fallback testing
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Icon(Icons.Default.Key, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
+                        Column {
+                            Text("Developer Gemini API Key (Optional)", fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
+                            Text(
+                                "Optional client-side fallback if backend proxy is unavailable",
+                                fontSize = 12.sp,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                    }
+
+                    OutlinedTextField(
+                        value = geminiApiKeyText,
+                        onValueChange = { input ->
+                            geminiApiKeyText = input
+                            prefs.geminiApiKey = input.trim()
+                        },
+                        label = { Text("Developer Gemini API Key (AI Studio)") },
+                        placeholder = { Text("Leave blank for zero-key backend operation") },
+                        modifier = Modifier.fillMaxWidth(),
+                        singleLine = true
+                    )
+                }
+            }
+
+            // --- SECTION 4: INTERACTIVE TEST FIELD ---
             Card(
                 modifier = Modifier.fillMaxWidth(),
                 colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
@@ -3116,7 +3301,7 @@ fun MainSettingsAndOnboardingScreen() {
                 }
             }
 
-            // --- SECTION 4: PRIVACY COMMITMENT ---
+            // --- SECTION 5: PRIVACY COMMITMENT ---
             Card(
                 modifier = Modifier.fillMaxWidth(),
                 colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f))

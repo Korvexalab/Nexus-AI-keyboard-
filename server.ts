@@ -11,8 +11,8 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 const app = express();
-// Runtime Environment requires dev server to run on port 3000
-const PORT = 3000;
+// Runtime Environment: support Cloud Run PORT or fallback to port 3000 for local dev
+const PORT = Number(process.env.PORT) || 3000;
 const isProduction = process.env.NODE_ENV === 'production';
 
 // Enforce payload size limit of 100kb
@@ -307,22 +307,10 @@ app.post('/api/gemini/generate', rateLimiter, async (req, res) => {
 
   try {
     if (!apiKey) {
-      // Intentional offline fallback when no API key is present
-      if (mode === 'ask_ai' || normalizedAction === 'ask_ai') {
-        const question = (instruction || context || '').trim();
-        return res.json({
-          success: true,
-          isFallback: true,
-          answer: `[Offline Fallback] Here is a helpful suggestion for "${question}": keep it clear, break down your goals, and proceed step by step! 😊`,
-          suggestions: [`Suggestion for "${question}"`],
-        });
-      }
-      const suggestions = generateFallbackSuggestions(action, persona, context);
-      return res.json({
-        success: true,
-        isFallback: true,
-        text: suggestions[0],
-        suggestions,
+      console.error('[Nexora Backend] Configuration Error: GEMINI_API_KEY environment variable is not configured.');
+      return res.status(503).json({
+        success: false,
+        error: 'Gemini AI service is not configured on this server. Please ensure the GEMINI_API_KEY environment variable is set in the hosting environment.',
       });
     }
 
@@ -445,7 +433,10 @@ async function startServer() {
     app.use(vite.middlewares);
   } else {
     app.use(express.static(path.join(__dirname, 'dist')));
-    app.get('*', (_req, res) => {
+    app.get('*', (req, res) => {
+      if (req.path.startsWith('/api/')) {
+        return res.status(404).json({ success: false, error: 'API route not found' });
+      }
       res.sendFile(path.join(__dirname, 'dist', 'index.html'));
     });
   }
