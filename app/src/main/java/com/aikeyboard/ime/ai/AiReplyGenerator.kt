@@ -94,6 +94,9 @@ data class AiRequest(
  * and eliminates silent mock substitution when real Gemini calls fail.
  */
 sealed class GeminiException(message: String, cause: Throwable? = null) : Exception(message, cause) {
+    class BadRequest(message: String) : GeminiException(message)
+    class AuthFailure(message: String) : GeminiException(message)
+    class EndpointNotFound(message: String) : GeminiException(message)
     class MissingConfiguration(message: String) : GeminiException(message)
     class ApiNotEnabled(message: String, val enableUrl: String = "") : GeminiException(message)
     class GenAiConfigNotFound(message: String, val setupUrl: String = "") : GeminiException(message)
@@ -413,7 +416,29 @@ CRITICAL INSTRUCTIONS:
 5. Preserve the user's meaning and tone.
 """.trimIndent()
 
-        // 1. Direct Gemini REST with configured user API key (Google AI Studio)
+        // 1. Primary Production Path: Secure Cloud Backend Proxy (/api/gemini/generate)
+        var proxyException: GeminiException? = null
+        try {
+            val (_, proxySuggestions) = callProxyGenerate(
+                action = request.action.id,
+                persona = request.persona.id,
+                context = request.context,
+                instruction = request.instruction,
+                mode = "action"
+            )
+            if (!proxySuggestions.isNullOrEmpty()) {
+                return proxySuggestions.take(3)
+            }
+        } catch (e: GeminiException) {
+            if (e is GeminiException.BadRequest || e is GeminiException.RateLimit || e is GeminiException.AuthFailure) {
+                throw e
+            }
+            proxyException = e
+        } catch (e: Throwable) {
+            proxyException = GeminiException.NetworkError("Unable to connect to Nexora AI backend. Please tap retry.", e)
+        }
+
+        // 2. Optional Secondary: Direct Gemini REST with developer API key (if configured in preferences)
         val customKey = apiKeyProvider?.invoke()?.trim() ?: ""
         if (customKey.isNotEmpty()) {
             try {
@@ -425,27 +450,11 @@ CRITICAL INSTRUCTIONS:
                     }
                 }
             } catch (_: Throwable) {
-                // Continue to cloud backend proxy
+                // Continue to secondary check
             }
         }
 
-        // 2. Cloud Backend Proxy (/api/gemini/generate)
-        try {
-            val (answer, proxySuggestions) = callProxyGenerate(
-                action = request.action.id,
-                persona = request.persona.id,
-                context = request.context,
-                instruction = request.instruction,
-                mode = "action"
-            )
-            if (!proxySuggestions.isNullOrEmpty()) {
-                return proxySuggestions.take(3)
-            }
-        } catch (e: Throwable) {
-            // Proceed to alternative direct Gemini endpoints
-        }
-
-        // 3. Direct Firebase Vertex AI with active Gemini Flash models
+        // 3. Fallback: Firebase Vertex AI (if provisioned in project)
         if (isFirebaseConfigured()) {
             try {
                 val rawText = withTimeoutOrNull(AiConfig.REQUEST_TIMEOUT_MS) {
@@ -479,17 +488,10 @@ CRITICAL INSTRUCTIONS:
                         return parsed
                     }
                 }
-            } catch (e: Throwable) {
-                // Check if it's a specific network error
-                val msg = e.message ?: ""
-                if (msg.contains("network", ignoreCase = true) || msg.contains("UnknownHost", ignoreCase = true)) {
-                    throw GeminiException.NetworkError("No internet connection. Gemini AI requires network access to generate responses.", e)
-                }
-            }
+            } catch (_: Throwable) {}
         }
 
-        // If all Gemini endpoints fail, surface clear actionable Gemini error
-        throw GeminiException.General("Unable to connect to Gemini AI. Please check your internet connection and tap retry.")
+        throw proxyException ?: GeminiException.General("Unable to connect to Gemini AI. Please check your network and tap retry.")
     }
 
     override suspend fun generateAskAi(question: String, persona: AiPersona): String {
@@ -510,20 +512,8 @@ Instructions:
 - Directly answer the question.
 """.trimIndent()
 
-        // 1. Direct Gemini REST with configured user API key
-        val customKey = apiKeyProvider?.invoke()?.trim() ?: ""
-        if (customKey.isNotEmpty()) {
-            try {
-                val directAnswer = callDirectGeminiRest(prompt, customKey)
-                if (!directAnswer.isNullOrBlank()) {
-                    return directAnswer.trim()
-                }
-            } catch (_: Throwable) {
-                // Continue to cloud backend proxy
-            }
-        }
-
-        // 2. Cloud Backend Proxy
+        // 1. Primary Production Path: Secure Cloud Backend Proxy (/api/gemini/generate)
+        var proxyException: GeminiException? = null
         try {
             val (answer, _) = callProxyGenerate(
                 action = "ask_ai",
@@ -535,11 +525,29 @@ Instructions:
             if (!answer.isNullOrBlank()) {
                 return answer.trim()
             }
+        } catch (e: GeminiException) {
+            if (e is GeminiException.BadRequest || e is GeminiException.RateLimit || e is GeminiException.AuthFailure) {
+                throw e
+            }
+            proxyException = e
         } catch (e: Throwable) {
-            // Proceed to alternative
+            proxyException = GeminiException.NetworkError("Unable to connect to Nexora AI backend. Please tap retry.", e)
         }
 
-        // 3. Firebase Vertex AI
+        // 2. Optional Secondary: Direct Gemini REST with developer API key (if configured in preferences)
+        val customKey = apiKeyProvider?.invoke()?.trim() ?: ""
+        if (customKey.isNotEmpty()) {
+            try {
+                val directAnswer = callDirectGeminiRest(prompt, customKey)
+                if (!directAnswer.isNullOrBlank()) {
+                    return directAnswer.trim()
+                }
+            } catch (_: Throwable) {
+                // Continue to secondary check
+            }
+        }
+
+        // 3. Fallback: Firebase Vertex AI (if provisioned in project)
         if (isFirebaseConfigured()) {
             try {
                 val rawText = withTimeoutOrNull(AiConfig.REQUEST_TIMEOUT_MS) {
@@ -570,19 +578,14 @@ Instructions:
                 if (!rawText.isNullOrBlank()) {
                     return rawText.trim()
                 }
-            } catch (e: Throwable) {
-                val msg = e.message ?: ""
-                if (msg.contains("network", ignoreCase = true) || msg.contains("UnknownHost", ignoreCase = true)) {
-                    throw GeminiException.NetworkError("No internet connection. Gemini AI requires network access to generate responses.", e)
-                }
-            }
+            } catch (_: Throwable) {}
         }
 
-        throw GeminiException.General("Unable to reach Gemini AI right now. Please tap retry in a moment.")
+        throw proxyException ?: GeminiException.General("Unable to reach Gemini AI right now. Please tap retry in a moment.")
     }
 
     /**
-     * HTTP helper to invoke Gemini AI backend proxy with low latency
+     * HTTP helper to invoke Gemini AI backend proxy with low latency and explicit error mapping
      */
     private fun callProxyGenerate(
         action: String,
@@ -615,7 +618,15 @@ Instructions:
             os.write(bytes, 0, bytes.size)
         }
 
-        val code = conn.responseCode
+        val code: Int
+        try {
+            code = conn.responseCode
+        } catch (e: java.net.SocketTimeoutException) {
+            throw GeminiException.Timeout("Request timed out connecting to Nexora backend. Please check your network and tap retry.")
+        } catch (e: java.io.IOException) {
+            throw GeminiException.NetworkError("Unable to connect to Nexora backend. Please check your network connection.", e)
+        }
+
         if (code in 200..299) {
             val responseText = conn.inputStream.bufferedReader().use { it.readText() }
             val json = org.json.JSONObject(responseText)
@@ -630,7 +641,19 @@ Instructions:
             return Pair(answer, suggestionsList)
         } else {
             val errText = conn.errorStream?.bufferedReader()?.use { it.readText() } ?: "HTTP $code"
-            throw Exception(errText)
+            val serverMessage = try {
+                org.json.JSONObject(errText).optString("error")
+            } catch (_: Throwable) {
+                null
+            }
+            when (code) {
+                400 -> throw GeminiException.BadRequest(serverMessage ?: "Invalid request. Please check your message.")
+                401, 403 -> throw GeminiException.AuthFailure(serverMessage ?: "Authentication failure. Please verify backend credentials.")
+                404 -> throw GeminiException.EndpointNotFound("Nexora backend endpoint is unavailable (HTTP 404). Please verify server URL.")
+                429 -> throw GeminiException.RateLimit(serverMessage ?: "Rate limit reached. Please wait a moment before sending another request.")
+                500, 502, 503 -> throw GeminiException.ServiceUnavailable(serverMessage ?: "Gemini service is currently unavailable. Please tap retry.")
+                else -> throw GeminiException.General(serverMessage ?: "Server error (HTTP $code). Please tap retry.")
+            }
         }
     }
 

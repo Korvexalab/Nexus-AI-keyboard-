@@ -16,6 +16,9 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.material.icons.filled.Cloud
+import androidx.compose.material.icons.filled.Dns
+import androidx.compose.material.icons.filled.Key
 import androidx.compose.material.icons.filled.Keyboard
 import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.Palette
@@ -37,6 +40,7 @@ import androidx.compose.ui.unit.sp
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import com.aikeyboard.ime.KeyboardPreferences
+import com.aikeyboard.ime.ai.AiConfig
 import com.aikeyboard.ime.ai.AppCheckConfig
 import com.aikeyboard.ime.ui.theme.AIKeyboardTheme
 import com.aikeyboard.ime.ui.theme.KeyboardHeightOption
@@ -76,6 +80,9 @@ fun MainSettingsAndOnboardingScreen() {
     var isNextWordPredictionEnabled by remember { mutableStateOf(prefs.nextWordPredictionEnabled) }
     var isAutoCapitalizationEnabled by remember { mutableStateOf(prefs.autoCapitalizationEnabled) }
     var isDoubleSpacePeriodEnabled by remember { mutableStateOf(prefs.doubleSpacePeriodEnabled) }
+    var serverUrlText by remember { mutableStateOf(prefs.cloudServerUrl) }
+    var geminiApiKeyText by remember { mutableStateOf(prefs.geminiApiKey) }
+    var serverUrlError by remember { mutableStateOf<String?>(null) }
 
     fun checkKeyboardStatus() {
         val packageName = context.packageName
@@ -501,7 +508,147 @@ fun MainSettingsAndOnboardingScreen() {
                 }
             }
 
-            // --- SECTION 3: INTERACTIVE TEST FIELD ---
+            HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
+
+            // --- SECTION 3: DEVELOPER & BACKEND CONFIGURATION ---
+            Text(
+                text = "DEVELOPER & BACKEND CONFIGURATION",
+                fontSize = 12.sp,
+                fontWeight = FontWeight.Bold,
+                color = MaterialTheme.colorScheme.primary,
+                letterSpacing = 1.sp
+            )
+
+            Card(
+                modifier = Modifier.fillMaxWidth(),
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
+            ) {
+                Column(
+                    modifier = Modifier.padding(16.dp),
+                    verticalArrangement = Arrangement.spacedBy(14.dp)
+                ) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Icon(Icons.Default.Dns, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
+                        Column {
+                            Text("Cloud Backend Server URL", fontWeight = FontWeight.SemiBold, fontSize = 15.sp)
+                            Text(
+                                "Production Gemini proxy endpoint for keyboard AI generation",
+                                fontSize = 12.sp,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                    }
+
+                    OutlinedTextField(
+                        value = serverUrlText,
+                        onValueChange = { input ->
+                            serverUrlText = input
+                            val trimmed = input.trim()
+                            if (trimmed.isNotEmpty() && !trimmed.startsWith("http://") && !trimmed.startsWith("https://")) {
+                                serverUrlError = "URL must start with https:// (or http:// for local testing)"
+                            } else {
+                                serverUrlError = null
+                                prefs.cloudServerUrl = trimmed
+                            }
+                        },
+                        label = { Text("Server Base URL or Endpoint") },
+                        placeholder = { Text(AiConfig.DEFAULT_SERVER_URL) },
+                        isError = serverUrlError != null,
+                        supportingText = {
+                            if (serverUrlError != null) {
+                                Text(serverUrlError!!, color = MaterialTheme.colorScheme.error)
+                            } else {
+                                val effective = if (serverUrlText.isBlank()) AiConfig.DEFAULT_SERVER_URL else serverUrlText
+                                Text("Active: $effective", fontSize = 11.sp)
+                            }
+                        },
+                        modifier = Modifier.fillMaxWidth(),
+                        singleLine = true
+                    )
+
+                    // Quick-action preset buttons
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        OutlinedButton(
+                            onClick = {
+                                serverUrlText = ""
+                                serverUrlError = null
+                                prefs.cloudServerUrl = ""
+                            },
+                            modifier = Modifier.weight(1f),
+                            contentPadding = PaddingValues(horizontal = 4.dp, vertical = 6.dp)
+                        ) {
+                            Text("Reset Default", fontSize = 11.sp)
+                        }
+
+                        OutlinedButton(
+                            onClick = {
+                                val emuUrl = AiConfig.EMULATOR_SERVER_URL
+                                serverUrlText = emuUrl
+                                serverUrlError = null
+                                prefs.cloudServerUrl = emuUrl
+                            },
+                            modifier = Modifier.weight(1f),
+                            contentPadding = PaddingValues(horizontal = 4.dp, vertical = 6.dp)
+                        ) {
+                            Text("Emulator (10.0.2.2)", fontSize = 11.sp)
+                        }
+                    }
+
+                    // Security & Warning Callout
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(8.dp))
+                            .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f))
+                            .padding(10.dp)
+                    ) {
+                        Text(
+                            text = "Note: HTTP connections are strictly permitted for local developer testing only (e.g. 10.0.2.2 or localhost). Production connections require HTTPS.",
+                            fontSize = 11.sp,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            lineHeight = 15.sp
+                        )
+                    }
+
+                    HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.3f))
+
+                    // Optional direct developer API key for fallback testing
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Icon(Icons.Default.Key, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
+                        Column {
+                            Text("Developer Gemini API Key (Optional)", fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
+                            Text(
+                                "Optional client-side fallback if backend proxy is unavailable",
+                                fontSize = 12.sp,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                    }
+
+                    OutlinedTextField(
+                        value = geminiApiKeyText,
+                        onValueChange = { input ->
+                            geminiApiKeyText = input
+                            prefs.geminiApiKey = input.trim()
+                        },
+                        label = { Text("Developer Gemini API Key (AI Studio)") },
+                        placeholder = { Text("Leave blank for zero-key backend operation") },
+                        modifier = Modifier.fillMaxWidth(),
+                        singleLine = true
+                    )
+                }
+            }
+
+            // --- SECTION 4: INTERACTIVE TEST FIELD ---
             Card(
                 modifier = Modifier.fillMaxWidth(),
                 colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
@@ -530,7 +677,7 @@ fun MainSettingsAndOnboardingScreen() {
                 }
             }
 
-            // --- SECTION 4: PRIVACY COMMITMENT ---
+            // --- SECTION 5: PRIVACY COMMITMENT ---
             Card(
                 modifier = Modifier.fillMaxWidth(),
                 colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f))

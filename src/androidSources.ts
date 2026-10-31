@@ -25,6 +25,7 @@ object AiConfig {
     const val GEMINI_FLASH_LITE_MODEL = "gemini-3-flash-preview"
     const val GEMINI_FALLBACK_MODEL = "gemini-3.8-flash"
     const val DEFAULT_SERVER_URL = "https://ais-pre-5tq4muuztlo6ty57b7nkgr-551673139805.europe-west3.run.app"
+    const val EMULATOR_SERVER_URL = "http://10.0.2.2:3000"
 
     /**
      * Generation configuration parameters

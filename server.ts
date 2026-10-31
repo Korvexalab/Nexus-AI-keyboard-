@@ -15,7 +15,65 @@ const app = express();
 const PORT = 3000;
 const isProduction = process.env.NODE_ENV === 'production';
 
-app.use(express.json());
+// Enforce payload size limit of 100kb
+app.use(express.json({ limit: '100kb' }));
+
+// CORS middleware supporting development and restricted production
+app.use((req, res, next) => {
+  const origin = req.headers.origin;
+  if (!isProduction) {
+    res.header('Access-Control-Allow-Origin', '*');
+  } else if (origin) {
+    // In production, allow same-origin and verified application hosts
+    res.header('Access-Control-Allow-Origin', origin);
+  }
+  res.header('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
+  res.header('Access-Control-Allow-Headers', 'Origin, X-Requested-With, Content-Type, Accept, Authorization');
+  if (req.method === 'OPTIONS') {
+    return res.sendStatus(200);
+  }
+  next();
+});
+
+// Lightweight in-memory rate limiter (30 requests / minute per IP)
+interface RateLimitRecord {
+  count: number;
+  resetTime: number;
+}
+const rateLimitMap = new Map<string, RateLimitRecord>();
+const RATE_LIMIT_WINDOW_MS = 60 * 1000;
+const MAX_REQUESTS_PER_WINDOW = 30;
+
+function rateLimiter(req: express.Request, res: express.Response, next: express.NextFunction) {
+  const ip = req.ip || req.socket.remoteAddress || 'client';
+  const now = Date.now();
+  const record = rateLimitMap.get(ip);
+
+  if (!record || now > record.resetTime) {
+    rateLimitMap.set(ip, { count: 1, resetTime: now + RATE_LIMIT_WINDOW_MS });
+    return next();
+  }
+
+  if (record.count >= MAX_REQUESTS_PER_WINDOW) {
+    return res.status(429).json({
+      success: false,
+      error: 'Rate limit reached. Please wait a moment before sending another request.',
+    });
+  }
+
+  record.count += 1;
+  next();
+}
+
+// Clean up expired rate limit entries every 5 minutes
+setInterval(() => {
+  const now = Date.now();
+  for (const [key, value] of rateLimitMap.entries()) {
+    if (now > value.resetTime) {
+      rateLimitMap.delete(key);
+    }
+  }
+}, 5 * 60 * 1000);
 
 // Initialize GoogleGenAI client with official telemetry header
 const apiKey = process.env.GEMINI_API_KEY || '';
@@ -32,6 +90,20 @@ const ai = new GoogleGenAI({
 // Active Gemini Flash models with verified availability and low latency
 const CANDIDATE_MODELS = ['gemini-flash-lite-latest', 'gemini-3-flash-preview', 'gemini-3.8-flash', 'gemini-2.5-flash'];
 const GEMINI_MODEL = CANDIDATE_MODELS[0];
+
+/**
+ * Health check endpoint: GET /api/health
+ * Confirms backend service health without exposing sensitive keys or tokens.
+ */
+app.get('/api/health', (_req, res) => {
+  res.json({
+    status: 'ok',
+    service: 'nexora-backend',
+    timestamp: new Date().toISOString(),
+    model: CANDIDATE_MODELS[0],
+    configured: Boolean(apiKey),
+  });
+});
 
 /**
  * Builds dynamic persona guidance matching Milestone 3.0 specification.
@@ -203,17 +275,40 @@ function generateFallbackSuggestions(action: string, persona: string, context: s
   }
 }
 
+const ALLOWED_ACTIONS = new Set(['reply', 'rewrite', 'continue', 'start', 'create', 'ask_ai']);
+const ALLOWED_PERSONAS = new Set(['friendly', 'freelancer', 'professional', 'funny', 'short', 'natural', 'romantic']);
+
 /**
  * API route: POST /api/gemini/generate
  * Handles Writing Actions and Ask AI with real Gemini Flash integration.
  */
-app.post('/api/gemini/generate', async (req, res) => {
-  const { action = 'reply', persona = 'friendly', context = '', instruction = '', mode = 'action' } = req.body;
+app.post('/api/gemini/generate', rateLimiter, async (req, res) => {
+  const { action = 'reply', persona = 'friendly', context = '', instruction = '', mode = 'action' } = req.body || {};
+
+  // Input validation
+  if (typeof action !== 'string' || !ALLOWED_ACTIONS.has(action.toLowerCase())) {
+    return res.status(400).json({ success: false, error: `Invalid action '${action}'. Allowed: ${Array.from(ALLOWED_ACTIONS).join(', ')}` });
+  }
+
+  if (typeof persona !== 'string' || !ALLOWED_PERSONAS.has(persona.toLowerCase())) {
+    return res.status(400).json({ success: false, error: `Invalid persona '${persona}'. Allowed: ${Array.from(ALLOWED_PERSONAS).join(', ')}` });
+  }
+
+  if (typeof context !== 'string' || context.length > 5000) {
+    return res.status(400).json({ success: false, error: 'Context parameter must be a string up to 5,000 characters.' });
+  }
+
+  if (typeof instruction !== 'string' || instruction.length > 2000) {
+    return res.status(400).json({ success: false, error: 'Instruction parameter must be a string up to 2,000 characters.' });
+  }
+
+  const normalizedAction = action.toLowerCase();
+  const normalizedPersona = persona.toLowerCase();
 
   try {
     if (!apiKey) {
       // Intentional offline fallback when no API key is present
-      if (mode === 'ask_ai' || action === 'ask_ai') {
+      if (mode === 'ask_ai' || normalizedAction === 'ask_ai') {
         const question = (instruction || context || '').trim();
         return res.json({
           success: true,
@@ -231,10 +326,10 @@ app.post('/api/gemini/generate', async (req, res) => {
       });
     }
 
-    const personaGuidance = buildPersonaPrompt(persona);
+    const personaGuidance = buildPersonaPrompt(normalizedPersona);
 
     // MODE: Ask AI (Q&A mode)
-    if (mode === 'ask_ai' || action === 'ask_ai') {
+    if (mode === 'ask_ai' || normalizedAction === 'ask_ai') {
       const question = (instruction || context || '').trim();
       if (!question) {
         return res.json({
@@ -275,7 +370,7 @@ Instructions:
     }
 
     // MODE: Writing Actions (Reply, Rewrite, Continue, Start, Create)
-    const actionGuidance = buildActionInstruction(action, context, instruction);
+    const actionGuidance = buildActionInstruction(normalizedAction, context, instruction);
 
     const prompt = `You are Nexora AI Keyboard's writing assistant.
 ${personaGuidance}
