@@ -84,13 +84,6 @@ export const AiReplyPanel: React.FC<AiReplyPanelProps> = ({
   const [suggestions, setSuggestions] = useState<string[]>([]);
   const [isLoading, setIsLoading] = useState<boolean>(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
-  const [isOfflineMode, setIsOfflineMode] = useState<boolean>(defaultAiGenerator.isOfflineMode());
-
-  const toggleOfflineMode = () => {
-    const next = !isOfflineMode;
-    defaultAiGenerator.setOfflineMode(next);
-    setIsOfflineMode(next);
-  };
 
   // Generation requestId to handle debouncing and in-flight cancellation
   const currentRequestIdRef = useRef<number>(0);
@@ -127,7 +120,7 @@ export const AiReplyPanel: React.FC<AiReplyPanelProps> = ({
   const hostTextRef = useRef(hostText);
   hostTextRef.current = hostText;
 
-  // Fetch real Gemini suggestions on explicit user actions (action change, persona change, panel open, retry, offline toggle)
+  // Fetch real Gemini suggestions on explicit user actions (action change, persona change, panel open, retry)
   const fetchSuggestions = useCallback(async () => {
     if (panelMode !== 'action_board') return;
 
@@ -154,7 +147,7 @@ export const AiReplyPanel: React.FC<AiReplyPanelProps> = ({
         setIsLoading(false);
       }
     }
-  }, [panelMode, selectedAction, selectedPersona, isOfflineMode]);
+  }, [panelMode, selectedAction, selectedPersona]);
 
   useEffect(() => {
     fetchSuggestions();
@@ -235,23 +228,13 @@ export const AiReplyPanel: React.FC<AiReplyPanelProps> = ({
           </button>
 
           <div className="flex items-center gap-2">
-            <button
-              onClick={(e) => {
-                e.stopPropagation();
-                toggleOfflineMode();
-              }}
-              className={`text-[10px] px-2 py-0.5 rounded-full font-semibold border flex items-center gap-1 transition-all ${
-                isOfflineMode
-                  ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/30 hover:bg-emerald-500/20'
-                  : 'bg-indigo-500/10 text-indigo-400 border-indigo-500/30 hover:bg-indigo-500/20'
-              }`}
-              title="Click to switch between Cloud Gemini and local On-Device AI"
-            >
-              <span>{isOfflineMode ? '⚡ On-Device' : '✨ Cloud'}</span>
-            </button>
+            <div className="text-[10px] px-2 py-0.5 rounded-full font-semibold border flex items-center gap-1 bg-indigo-500/10 text-indigo-400 border-indigo-500/30">
+              <Sparkles className="w-3 h-3 text-amber-400" />
+              <span>Gemini Flash</span>
+            </div>
             <div className="flex items-center gap-1 text-xs font-bold text-indigo-400">
               <span>🧠</span>
-              <span className={isLight ? 'text-slate-900' : 'text-slate-100'}>Ask AI</span>
+              <span className={isLight ? 'text-slate-900' : 'text-slate-100'}>Ask Gemini</span>
             </div>
             <button
               id="btn-close-ai-panel"
@@ -350,20 +333,11 @@ export const AiReplyPanel: React.FC<AiReplyPanelProps> = ({
               </div>
               <div className="flex items-center gap-2 pt-0.5">
                 <button
-                  onClick={() => {
-                    defaultAiGenerator.setOfflineMode(true);
-                    setIsOfflineMode(true);
-                    setTimeout(() => handleAskAiSubmit(), 50);
-                  }}
-                  className="px-2.5 py-1 rounded-md bg-emerald-600 hover:bg-emerald-500 text-white text-[11px] font-semibold flex items-center gap-1 transition-colors"
-                >
-                  <span>⚡ Switch to On-Device AI</span>
-                </button>
-                <button
                   onClick={handleAskAiSubmit}
-                  className="px-2.5 py-1 rounded-md bg-slate-700 hover:bg-slate-600 text-white text-[11px] font-medium transition-colors"
+                  className="px-3 py-1.5 rounded-md bg-indigo-600 hover:bg-indigo-500 text-white text-[11px] font-semibold transition-colors flex items-center gap-1.5 shadow-sm"
                 >
-                  Retry Cloud 🔄
+                  <RotateCcw className="w-3.5 h-3.5" />
+                  <span>Retry Gemini</span>
                 </button>
               </div>
             </div>
@@ -437,20 +411,10 @@ export const AiReplyPanel: React.FC<AiReplyPanelProps> = ({
             <Sparkles className="w-4 h-4 text-amber-400" />
             <span className={isLight ? 'text-slate-900' : 'text-slate-100'}>AI</span>
           </div>
-          <button
-            onClick={(e) => {
-              e.stopPropagation();
-              toggleOfflineMode();
-            }}
-            className={`text-[10px] px-2 py-0.5 rounded-full font-semibold border flex items-center gap-1 transition-all ${
-              isOfflineMode
-                ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/30 hover:bg-emerald-500/20'
-                : 'bg-indigo-500/10 text-indigo-400 border-indigo-500/30 hover:bg-indigo-500/20'
-            }`}
-            title="Click to switch between Cloud Gemini and local On-Device AI"
-          >
-            <span>{isOfflineMode ? '⚡ On-Device AI' : '✨ Cloud Gemini'}</span>
-          </button>
+          <div className="text-[10px] px-2 py-0.5 rounded-full font-semibold border flex items-center gap-1 bg-indigo-500/10 text-indigo-400 border-indigo-500/30">
+            <Sparkles className="w-3 h-3 text-amber-400" />
+            <span>Gemini Flash</span>
+          </div>
         </div>
 
         <button
@@ -675,7 +639,7 @@ export const AiReplyPanel: React.FC<AiReplyPanelProps> = ({
             AI Results {hostText.trim() ? `• Context: "${hostText.trim().slice(0, 22)}${hostText.trim().length > 22 ? '...' : ''}"` : ''}
           </span>
           <span className="text-indigo-400 text-[10px]">
-            {isLoading ? 'Generating...' : `${suggestions.length} ${suggestions.length === 1 ? 'suggestion' : 'suggestions'}`}
+            {isLoading ? 'Generating with Gemini...' : `${suggestions.length} ${suggestions.length === 1 ? 'suggestion' : 'suggestions'} (Gemini Flash)`}
           </span>
         </div>
 
@@ -697,22 +661,12 @@ export const AiReplyPanel: React.FC<AiReplyPanelProps> = ({
             </div>
             <div className="flex items-center gap-2">
               <button
-                id="btn-switch-offline-generation"
-                onClick={() => {
-                  defaultAiGenerator.setOfflineMode(true);
-                  setIsOfflineMode(true);
-                }}
-                className="px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-semibold flex items-center gap-1.5 shadow-sm transition-all"
-              >
-                <span>⚡ Switch to On-Device AI</span>
-              </button>
-              <button
                 id="btn-retry-generation"
                 onClick={() => fetchSuggestions()}
-                className="px-3 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-semibold flex items-center gap-1.5 shadow-sm transition-all"
+                className="px-3.5 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-semibold flex items-center gap-1.5 shadow-sm transition-all"
               >
                 <RotateCcw className="w-3.5 h-3.5" />
-                <span>Retry Cloud</span>
+                <span>Retry Gemini</span>
               </button>
             </div>
           </div>

@@ -78,13 +78,8 @@ enum class InputTarget {
 sealed interface AiGenerationState {
     object Idle : AiGenerationState
     object Loading : AiGenerationState
-    data class Success(val suggestions: List<String>, val isOfflineFallback: Boolean = false) : AiGenerationState
-    data class Error(
-        val message: String,
-        val isConfigError: Boolean = false,
-        val isApiDisabled: Boolean = false,
-        val isGenAiConfigNotFound: Boolean = false
-    ) : AiGenerationState
+    data class Success(val suggestions: List<String>) : AiGenerationState
+    data class Error(val message: String) : AiGenerationState
 }
 
 /**
@@ -93,19 +88,14 @@ sealed interface AiGenerationState {
 sealed interface AskAiState {
     object Idle : AskAiState
     object Loading : AskAiState
-    data class Success(val answer: String, val isOfflineFallback: Boolean = false) : AskAiState
-    data class Error(
-        val message: String,
-        val isConfigError: Boolean = false,
-        val isApiDisabled: Boolean = false,
-        val isGenAiConfigNotFound: Boolean = false
-    ) : AskAiState
+    data class Success(val answer: String) : AskAiState
+    data class Error(val message: String) : AskAiState
 }
 
 /**
  * Milestone 2 & 3.2: AI Command Center Panel
  *
- * Fully connected to real Gemini via the ReplyGenerator abstraction (AiReplyGenerator.currentGenerator).
+ * Exclusively connected to real Google Gemini AI via ReplyGenerator abstraction.
  * Uses Kotlin coroutines and explicit UI states (Idle, Loading, Success, Error).
  * Never blocks the main/rendering thread and avoids accidental duplicate requests.
  */
@@ -140,18 +130,17 @@ fun AiReplyPanelView(
     val panelBg = if (tokens.isDark) Color(0xFF0F172A) else Color(0xFFF8FAFC)
     val panelBorder = if (tokens.isDark) Color(0x33818CF8) else Color(0x40CBD5E1)
 
-    // State management for M3.2 real async generation & offline toggle
+    // State management for real async Gemini generation
     var actionGenerationState by remember { mutableStateOf<AiGenerationState>(AiGenerationState.Idle) }
     var askAiState by remember { mutableStateOf<AskAiState>(AskAiState.Idle) }
     var retryTrigger by remember { mutableStateOf(0) }
-    var isOfflineMode by remember { mutableStateOf(AiReplyGenerator.isOfflineMode) }
     var replacedIdx by remember { mutableStateOf<Int?>(null) }
 
     val isContextFocused = inputTarget == InputTarget.AI_CONTEXT
     val isActionLoading = actionGenerationState is AiGenerationState.Loading
 
-    // Trigger asynchronous generation via ReplyGenerator abstraction when action, persona, host context, offline toggle, or retry changes
-    LaunchedEffect(panelMode, selectedAction, selectedPersona, hostText, retryTrigger, isOfflineMode) {
+    // Trigger asynchronous generation via ReplyGenerator abstraction when action, persona, host context, or retry changes
+    LaunchedEffect(panelMode, selectedAction, selectedPersona, hostText, retryTrigger) {
         if (panelMode == AiPanelMode.ACTION_BOARD) {
             actionGenerationState = AiGenerationState.Loading
             replacedIdx = null
@@ -164,32 +153,15 @@ fun AiReplyPanelView(
                 val results = withContext(Dispatchers.IO) {
                     AiReplyGenerator.currentGenerator.generateSuggestions(request)
                 }
-                isOfflineMode = AiReplyGenerator.isOfflineMode
                 actionGenerationState = if (results.isNotEmpty()) {
-                    AiGenerationState.Success(results, isOfflineFallback = AiReplyGenerator.isOfflineMode)
+                    AiGenerationState.Success(results)
                 } else {
-                    val fallbackResults = withContext(Dispatchers.IO) {
-                        AiReplyGenerator.mockGenerator.generateSuggestionsSync(
-                            action = selectedAction,
-                            persona = selectedPersona,
-                            context = hostText
-                        )
-                    }
-                    isOfflineMode = true
-                    AiReplyGenerator.isOfflineMode = true
-                    AiGenerationState.Success(fallbackResults, isOfflineFallback = true)
+                    AiGenerationState.Error("Gemini was unable to generate suggestions. Please tap retry.")
                 }
             } catch (e: Throwable) {
-                val fallbackResults = withContext(Dispatchers.IO) {
-                    AiReplyGenerator.mockGenerator.generateSuggestionsSync(
-                        action = selectedAction,
-                        persona = selectedPersona,
-                        context = hostText
-                    )
-                }
-                isOfflineMode = true
-                AiReplyGenerator.isOfflineMode = true
-                actionGenerationState = AiGenerationState.Success(fallbackResults, isOfflineFallback = true)
+                actionGenerationState = AiGenerationState.Error(
+                    e.message ?: "Unable to connect to Gemini AI. Please check your network and tap retry."
+                )
             }
         }
     }
@@ -257,44 +229,24 @@ fun AiReplyPanelView(
                         )
                     }
 
-                    // Clickable mode badge for Ask AI mode
+                    // Static Gemini badge for Ask AI mode
                     Box(
                         modifier = Modifier
                             .clip(RoundedCornerShape(6.dp))
-                            .background(
-                                if (isOfflineMode) {
-                                    if (tokens.isDark) Color(0xFF064E3B) else Color(0xFFD1FAE5)
-                                } else {
-                                    if (tokens.isDark) Color(0xFF312E81) else Color(0xFFE0E7FF)
-                                }
-                            )
+                            .background(if (tokens.isDark) Color(0xFF312E81) else Color(0xFFE0E7FF))
                             .border(
                                 1.dp,
-                                if (isOfflineMode) {
-                                    Color(0xFF10B981)
-                                } else {
-                                    if (tokens.isDark) Color(0xFF818CF8) else Color(0xFF6366F1)
-                                },
+                                if (tokens.isDark) Color(0xFF818CF8) else Color(0xFF6366F1),
                                 RoundedCornerShape(6.dp)
                             )
-                            .clickable {
-                                if (hapticEnabled) haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                                val newMode = !isOfflineMode
-                                isOfflineMode = newMode
-                                AiReplyGenerator.isOfflineMode = newMode
-                            }
                             .padding(horizontal = 6.dp, vertical = 2.dp),
                         contentAlignment = Alignment.Center
                     ) {
                         Text(
-                            text = if (isOfflineMode) "⚡ On-Device" else "✨ Cloud",
+                            text = "✨ Gemini Flash",
                             fontSize = 10.sp,
                             fontWeight = FontWeight.Bold,
-                            color = if (isOfflineMode) {
-                                if (tokens.isDark) Color(0xFFA7F3D0) else Color(0xFF047857)
-                            } else {
-                                if (tokens.isDark) Color(0xFFC7D2FE) else Color(0xFF4338CA)
-                            }
+                            color = if (tokens.isDark) Color(0xFFC7D2FE) else Color(0xFF4338CA)
                         )
                     }
 
@@ -410,15 +362,11 @@ fun AiReplyPanelView(
                                 val answer = withContext(Dispatchers.IO) {
                                     AiReplyGenerator.currentGenerator.generateAskAi(q, selectedPersona)
                                 }
-                                isOfflineMode = AiReplyGenerator.isOfflineMode
-                                askAiState = AskAiState.Success(answer, isOfflineFallback = AiReplyGenerator.isOfflineMode)
+                                askAiState = AskAiState.Success(answer)
                             } catch (e: Throwable) {
-                                val fallbackAnswer = withContext(Dispatchers.IO) {
-                                    AiReplyGenerator.mockGenerator.generateAskAiSync(q, selectedPersona)
-                                }
-                                isOfflineMode = true
-                                AiReplyGenerator.isOfflineMode = true
-                                askAiState = AskAiState.Success(fallbackAnswer, isOfflineFallback = true)
+                                askAiState = AskAiState.Error(
+                                    e.message ?: "Unable to reach Gemini AI right now. Please tap retry."
+                                )
                             }
                         }
                     }
@@ -467,98 +415,37 @@ fun AiReplyPanelView(
                                 color = Color(0xFFEF4444),
                                 textAlign = TextAlign.Center
                             )
-                            if (state.isGenAiConfigNotFound) {
-                                Text(
-                                    text = "Firebase AI Logic is not initialized in project gen-lang-client-0126286835. Tap below to answer with On-Device AI.",
-                                    fontSize = 9.sp,
-                                    color = tokens.textSecondary,
-                                    textAlign = TextAlign.Center
-                                )
-                            } else if (state.isApiDisabled) {
-                                Text(
-                                    text = "Tip: Enable firebasevertexai.googleapis.com in Google Cloud Console or use On-Device AI.",
-                                    fontSize = 9.sp,
-                                    color = tokens.textSecondary,
-                                    textAlign = TextAlign.Center
-                                )
-                            }
-                            Row(
-                                horizontalArrangement = Arrangement.spacedBy(8.dp),
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                val q = contextText.trim()
-                                // 1-tap fallback to On-Device AI
-                                Box(
-                                    modifier = Modifier
-                                        .clip(RoundedCornerShape(6.dp))
-                                        .background(Color(0xFF059669))
-                                        .clickable {
-                                            if (hapticEnabled) haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                                            isOfflineMode = true
-                                            AiReplyGenerator.isOfflineMode = true
-                                            if (q.isNotEmpty()) {
-                                                askAiState = AskAiState.Loading
-                                                coroutineScope.launch {
+                            val q = contextText.trim()
+                            Box(
+                                modifier = Modifier
+                                    .clip(RoundedCornerShape(6.dp))
+                                    .background(Color(0xFFDC2626))
+                                    .clickable {
+                                        if (hapticEnabled) haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                        if (q.isNotEmpty()) {
+                                            askAiState = AskAiState.Loading
+                                            coroutineScope.launch {
+                                                try {
                                                     val answer = withContext(Dispatchers.IO) {
                                                         AiReplyGenerator.currentGenerator.generateAskAi(q, selectedPersona)
                                                     }
-                                                    askAiState = AskAiState.Success(answer, isOfflineFallback = true)
+                                                    askAiState = AskAiState.Success(answer)
+                                                } catch (e: Throwable) {
+                                                    askAiState = AskAiState.Error(
+                                                        e.message ?: "Unable to reach Gemini AI right now. Please tap retry."
+                                                    )
                                                 }
                                             }
                                         }
-                                        .padding(horizontal = 10.dp, vertical = 6.dp)
-                                ) {
-                                    Text(
-                                        text = "⚡ Switch to On-Device AI",
-                                        fontSize = 10.sp,
-                                        fontWeight = FontWeight.Bold,
-                                        color = Color.White
-                                    )
-                                }
-
-                                if (!state.isConfigError) {
-                                    Box(
-                                        modifier = Modifier
-                                            .clip(RoundedCornerShape(6.dp))
-                                            .background(Color(0xFFDC2626))
-                                            .clickable {
-                                                if (hapticEnabled) haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                                                isOfflineMode = false
-                                                AiReplyGenerator.isOfflineMode = false
-                                                if (q.isNotEmpty()) {
-                                                    askAiState = AskAiState.Loading
-                                                    coroutineScope.launch {
-                                                        try {
-                                                            val answer = withContext(Dispatchers.IO) {
-                                                                AiReplyGenerator.currentGenerator.generateAskAi(q, selectedPersona)
-                                                            }
-                                                            askAiState = AskAiState.Success(answer)
-                                                        } catch (e: Throwable) {
-                                                            val msg = e.message ?: ""
-                                                            val isNotFound = msg.contains("genai config not found", ignoreCase = true) ||
-                                                                              msg.contains("error-genai-config-not-found", ignoreCase = true)
-                                                            val isApi = !isNotFound && (msg.contains("firebasevertexai.googleapis.com", ignoreCase = true) ||
-                                                                        msg.contains("has not been used in project", ignoreCase = true) ||
-                                                                        msg.contains("API has not been enabled", ignoreCase = true))
-                                                            askAiState = AskAiState.Error(
-                                                                message = msg.ifBlank { "Unable to get an answer right now. Please tap retry." },
-                                                                isApiDisabled = isApi,
-                                                                isGenAiConfigNotFound = isNotFound
-                                                            )
-                                                        }
-                                                    }
-                                                }
-                                            }
-                                            .padding(horizontal = 10.dp, vertical = 6.dp)
-                                    ) {
-                                        Text(
-                                            text = "Retry Cloud 🔄",
-                                            fontSize = 10.sp,
-                                            fontWeight = FontWeight.Bold,
-                                            color = Color.White
-                                        )
                                     }
-                                }
+                                    .padding(horizontal = 12.dp, vertical = 6.dp)
+                            ) {
+                                Text(
+                                    text = "Retry Gemini 🔄",
+                                    fontSize = 10.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = Color.White
+                                )
                             }
                         }
                     }
@@ -664,41 +551,20 @@ fun AiReplyPanelView(
                     Box(
                         modifier = Modifier
                             .clip(RoundedCornerShape(6.dp))
-                            .background(
-                                if (isOfflineMode) {
-                                    if (tokens.isDark) Color(0xFF064E3B) else Color(0xFFD1FAE5)
-                                } else {
-                                    if (tokens.isDark) Color(0xFF312E81) else Color(0xFFE0E7FF)
-                                }
-                            )
+                            .background(if (tokens.isDark) Color(0xFF312E81) else Color(0xFFE0E7FF))
                             .border(
                                 1.dp,
-                                if (isOfflineMode) {
-                                    Color(0xFF10B981)
-                                } else {
-                                    if (tokens.isDark) Color(0xFF818CF8) else Color(0xFF6366F1)
-                                },
+                                if (tokens.isDark) Color(0xFF818CF8) else Color(0xFF6366F1),
                                 RoundedCornerShape(6.dp)
                             )
-                            .clickable {
-                                if (hapticEnabled) haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                                val newMode = !isOfflineMode
-                                isOfflineMode = newMode
-                                AiReplyGenerator.isOfflineMode = newMode
-                                retryTrigger++
-                            }
                             .padding(horizontal = 7.dp, vertical = 2.dp),
                         contentAlignment = Alignment.Center
                     ) {
                         Text(
-                            text = if (isOfflineMode) "⚡ On-Device AI" else "✨ Cloud Gemini",
+                            text = "✨ Gemini Flash",
                             fontSize = 10.sp,
                             fontWeight = FontWeight.Bold,
-                            color = if (isOfflineMode) {
-                                if (tokens.isDark) Color(0xFFA7F3D0) else Color(0xFF047857)
-                            } else {
-                                if (tokens.isDark) Color(0xFFC7D2FE) else Color(0xFF4338CA)
-                            }
+                            color = if (tokens.isDark) Color(0xFFC7D2FE) else Color(0xFF4338CA)
                         )
                     }
 
@@ -954,7 +820,7 @@ fun AiReplyPanelView(
                     Text(
                         text = when (val state = actionGenerationState) {
                             is AiGenerationState.Loading -> "generating..."
-                            is AiGenerationState.Success -> if (state.isOfflineFallback) "${state.suggestions.size} suggestions (on-device)" else "${state.suggestions.size} suggestions"
+                            is AiGenerationState.Success -> "${state.suggestions.size} suggestions (Gemini Flash)"
                             is AiGenerationState.Error -> "error"
                             is AiGenerationState.Idle -> ""
                         },
@@ -1012,67 +878,22 @@ fun AiReplyPanelView(
                                     color = Color(0xFFEF4444),
                                     textAlign = TextAlign.Center
                                 )
-                                if (state.isGenAiConfigNotFound) {
-                                    Text(
-                                        text = "Firebase AI Logic is not initialized in project gen-lang-client-0126286835. Tap below to switch to Instant On-Device AI.",
-                                        fontSize = 9.sp,
-                                        color = tokens.textSecondary,
-                                        textAlign = TextAlign.Center
-                                    )
-                                } else if (state.isApiDisabled) {
-                                    Text(
-                                        text = "Cloud AI requires the Vertex AI in Firebase API (firebasevertexai.googleapis.com) to be enabled in your Google Cloud Console.",
-                                        fontSize = 9.sp,
-                                        color = tokens.textSecondary,
-                                        textAlign = TextAlign.Center
-                                    )
-                                }
-                                Row(
-                                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                                    verticalAlignment = Alignment.CenterVertically
-                                ) {
-                                    // 1-tap fallback to On-Device AI
-                                    Box(
-                                        modifier = Modifier
-                                            .clip(RoundedCornerShape(6.dp))
-                                            .background(Color(0xFF059669))
-                                            .clickable {
-                                                if (hapticEnabled) haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                                                isOfflineMode = true
-                                                AiReplyGenerator.isOfflineMode = true
-                                                retryTrigger++
-                                            }
-                                            .padding(horizontal = 10.dp, vertical = 6.dp)
-                                    ) {
-                                        Text(
-                                            text = "⚡ Switch to On-Device AI",
-                                            fontSize = 10.sp,
-                                            fontWeight = FontWeight.Bold,
-                                            color = Color.White
-                                        )
-                                    }
-
-                                    if (!state.isConfigError) {
-                                        Box(
-                                            modifier = Modifier
-                                                .clip(RoundedCornerShape(6.dp))
-                                                .background(Color(0xFFDC2626))
-                                                .clickable {
-                                                    if (hapticEnabled) haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                                                    isOfflineMode = false
-                                                    AiReplyGenerator.isOfflineMode = false
-                                                    retryTrigger++
-                                                }
-                                                .padding(horizontal = 10.dp, vertical = 6.dp)
-                                        ) {
-                                            Text(
-                                                text = "Retry Cloud 🔄",
-                                                fontSize = 10.sp,
-                                                fontWeight = FontWeight.Bold,
-                                                color = Color.White
-                                            )
+                                Box(
+                                    modifier = Modifier
+                                        .clip(RoundedCornerShape(6.dp))
+                                        .background(Color(0xFFDC2626))
+                                        .clickable {
+                                            if (hapticEnabled) haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                            retryTrigger++
                                         }
-                                    }
+                                        .padding(horizontal = 14.dp, vertical = 6.dp)
+                                ) {
+                                    Text(
+                                        text = "Retry Gemini 🔄",
+                                        fontSize = 10.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        color = Color.White
+                                    )
                                 }
                             }
                         }

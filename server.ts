@@ -29,8 +29,8 @@ const ai = new GoogleGenAI({
 });
 
 // Centralized model configuration (M3.0 Requirement 2)
-// Primary fast flash model with active quota, plus automatic fallback models
-const CANDIDATE_MODELS = ['gemini-3.1-flash-lite', 'gemini-3.8-flash', 'gemini-2.5-flash'];
+// Active Gemini Flash models with verified availability and low latency
+const CANDIDATE_MODELS = ['gemini-flash-lite-latest', 'gemini-3-flash-preview', 'gemini-3.8-flash', 'gemini-2.5-flash'];
 const GEMINI_MODEL = CANDIDATE_MODELS[0];
 
 /**

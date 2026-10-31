@@ -72,6 +72,10 @@ class AiInputMethodService : ComposeLifecycleInputMethodService(), KeyboardActio
         preferences = KeyboardPreferences(this)
         loadPreferences()
         AppCheckConfig.initialize(applicationContext)
+        AiReplyGenerator.initProviders(
+            apiKeyProvider = { preferences.geminiApiKey },
+            serverUrlProvider = { preferences.cloudServerUrl }
+        )
     }
 
     private fun loadPreferences() {

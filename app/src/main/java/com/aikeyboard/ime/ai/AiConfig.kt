@@ -8,12 +8,15 @@ package com.aikeyboard.ime.ai
  */
 object AiConfig {
     /**
-     * Official Vertex AI in Firebase models:
-     * GEMINI_FLASH_MODEL: gemini-2.5-flash (fast, low-latency text generation)
-     * GEMINI_FLASH_LITE_MODEL: gemini-3.8-flash (active high-speed fallback model)
+     * Active Gemini Flash models:
+     * GEMINI_FLASH_MODEL: gemini-flash-lite-latest (fastest, low-latency text generation)
+     * GEMINI_FLASH_LITE_MODEL: gemini-3-flash-preview (active high-speed model)
+     * GEMINI_FALLBACK_MODEL: gemini-3.8-flash (official fallback model)
      */
-    const val GEMINI_FLASH_MODEL = "gemini-2.5-flash"
-    const val GEMINI_FLASH_LITE_MODEL = "gemini-3.8-flash"
+    const val GEMINI_FLASH_MODEL = "gemini-flash-lite-latest"
+    const val GEMINI_FLASH_LITE_MODEL = "gemini-3-flash-preview"
+    const val GEMINI_FALLBACK_MODEL = "gemini-3.8-flash"
+    const val DEFAULT_SERVER_URL = "https://ais-pre-5tq4muuztlo6ty57b7nkgr-551673139805.europe-west3.run.app"
 
     /**
      * Generation configuration parameters

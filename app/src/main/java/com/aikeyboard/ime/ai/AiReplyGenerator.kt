@@ -298,7 +298,8 @@ class FirebaseGeminiReplyGenerator(
     val fallback: MockReplyGenerator = MockReplyGenerator()
 ) : ReplyGenerator {
 
-    var isOfflineMode: Boolean = false
+    var apiKeyProvider: (() -> String)? = null
+    var serverUrlProvider: (() -> String)? = null
 
     /**
      * Checks if Firebase is initialized with authentic (non-placeholder) project credentials.
@@ -390,34 +391,16 @@ class FirebaseGeminiReplyGenerator(
     }
 
     override suspend fun generate(request: AiRequest): String {
-        if (AiReplyGenerator.isOfflineMode) {
-            return fallback.generate(request)
-        }
-        return try {
-            val suggestions = generateSuggestions(request)
-            suggestions.firstOrNull() ?: fallback.generate(request)
-        } catch (e: Throwable) {
-            AiReplyGenerator.isOfflineMode = true
-            fallback.generate(request)
-        }
+        val suggestions = generateSuggestions(request)
+        return suggestions.firstOrNull() ?: throw GeminiException.EmptyResponse("Gemini returned an empty response. Please tap retry.")
     }
 
     override suspend fun generateSuggestions(request: AiRequest): List<String> {
-        if (AiReplyGenerator.isOfflineMode) {
-            return fallback.generateSuggestions(request)
-        }
-
-        if (!isFirebaseConfigured()) {
-            // Auto-switch to fast, reliable on-device AI generator
-            AiReplyGenerator.isOfflineMode = true
-            return fallback.generateSuggestions(request)
-        }
-
         val personaGuidance = buildPersonaPrompt(request.persona)
         val actionGuidance = buildActionInstruction(request.action, request.context, request.instruction)
 
         val prompt = """
-You are Nexora AI Keyboard's communication assistant.
+You are Nexora AI Keyboard's communication assistant powered by Google Gemini.
 $personaGuidance
 $actionGuidance
 
@@ -425,82 +408,97 @@ CRITICAL INSTRUCTIONS:
 1. Provide 3 distinct natural response variations formatted as a JSON array of strings:
    ["Variation 1", "Variation 2", "Variation 3"]
 2. Output ONLY the raw JSON array. Do not include markdown codeblocks, no explanations, no commentary.
-3. Natural human responses only. NEVER produce generic robotic phrases like "I have reviewed the matter and will proceed accordingly".
-4. For writing actions, do NOT return "Here is a rewritten version:". Return only the ready-to-insert message.
+3. Natural human responses only. NEVER produce generic robotic phrases.
+4. For writing actions, return only the ready-to-insert message.
 5. Preserve the user's meaning and tone.
 """.trimIndent()
 
-        return try {
-            val result = withTimeoutOrNull(AiConfig.REQUEST_TIMEOUT_MS) {
-                try {
-                    val model = Firebase.vertexAI.generativeModel(
-                        modelName = AiConfig.GEMINI_FLASH_MODEL,
-                        generationConfig = generationConfig {
-                            temperature = AiConfig.TEMPERATURE
-                            topK = AiConfig.TOP_K
-                            topP = AiConfig.TOP_P
-                            maxOutputTokens = AiConfig.MAX_OUTPUT_TOKENS
-                        }
-                    )
-                    model.generateContent(prompt).text
-                } catch (primaryEx: Throwable) {
-                    val pMsg = primaryEx.message ?: ""
-                    // If it's a configuration or disabled API issue, let it bubble up to outer catch for auto-fallback
-                    if (pMsg.contains("genai config not found", ignoreCase = true) ||
-                        pMsg.contains("error-genai-config-not-found", ignoreCase = true) ||
-                        pMsg.contains("firebasevertexai.googleapis.com", ignoreCase = true) ||
-                        pMsg.contains("has not been used in project", ignoreCase = true) ||
-                        pMsg.contains("API has not been enabled", ignoreCase = true) ||
-                        pMsg.contains("SERVICE_DISABLED", ignoreCase = true)) {
-                        throw primaryEx
+        // 1. Direct Gemini REST with configured user API key (Google AI Studio)
+        val customKey = apiKeyProvider?.invoke()?.trim() ?: ""
+        if (customKey.isNotEmpty()) {
+            try {
+                val directText = callDirectGeminiRest(prompt, customKey)
+                if (!directText.isNullOrBlank()) {
+                    val parsed = parseSuggestions(directText)
+                    if (parsed.isNotEmpty()) {
+                        return parsed
                     }
-                    // Fallback to GEMINI_FLASH_LITE_MODEL (gemini-3.8-flash)
-                    val fallbackModel = Firebase.vertexAI.generativeModel(
-                        modelName = AiConfig.GEMINI_FLASH_LITE_MODEL,
-                        generationConfig = generationConfig {
-                            temperature = AiConfig.TEMPERATURE
-                            topK = AiConfig.TOP_K
-                            topP = AiConfig.TOP_P
-                            maxOutputTokens = AiConfig.MAX_OUTPUT_TOKENS
-                        }
-                    )
-                    fallbackModel.generateContent(prompt).text
+                }
+            } catch (_: Throwable) {
+                // Continue to cloud backend proxy
+            }
+        }
+
+        // 2. Cloud Backend Proxy (/api/gemini/generate)
+        try {
+            val (answer, proxySuggestions) = callProxyGenerate(
+                action = request.action.id,
+                persona = request.persona.id,
+                context = request.context,
+                instruction = request.instruction,
+                mode = "action"
+            )
+            if (!proxySuggestions.isNullOrEmpty()) {
+                return proxySuggestions.take(3)
+            }
+        } catch (e: Throwable) {
+            // Proceed to alternative direct Gemini endpoints
+        }
+
+        // 3. Direct Firebase Vertex AI with active Gemini Flash models
+        if (isFirebaseConfigured()) {
+            try {
+                val rawText = withTimeoutOrNull(AiConfig.REQUEST_TIMEOUT_MS) {
+                    try {
+                        val model = Firebase.vertexAI.generativeModel(
+                            modelName = AiConfig.GEMINI_FLASH_MODEL,
+                            generationConfig = generationConfig {
+                                temperature = AiConfig.TEMPERATURE
+                                topK = AiConfig.TOP_K
+                                topP = AiConfig.TOP_P
+                                maxOutputTokens = AiConfig.MAX_OUTPUT_TOKENS
+                            }
+                        )
+                        model.generateContent(prompt).text
+                    } catch (primaryEx: Throwable) {
+                        val fallbackModel = Firebase.vertexAI.generativeModel(
+                            modelName = AiConfig.GEMINI_FLASH_LITE_MODEL,
+                            generationConfig = generationConfig {
+                                temperature = AiConfig.TEMPERATURE
+                                topK = AiConfig.TOP_K
+                                topP = AiConfig.TOP_P
+                                maxOutputTokens = AiConfig.MAX_OUTPUT_TOKENS
+                            }
+                        )
+                        fallbackModel.generateContent(prompt).text
+                    }
+                }
+                if (!rawText.isNullOrBlank()) {
+                    val parsed = parseSuggestions(rawText)
+                    if (parsed.isNotEmpty()) {
+                        return parsed
+                    }
+                }
+            } catch (e: Throwable) {
+                // Check if it's a specific network error
+                val msg = e.message ?: ""
+                if (msg.contains("network", ignoreCase = true) || msg.contains("UnknownHost", ignoreCase = true)) {
+                    throw GeminiException.NetworkError("No internet connection. Gemini AI requires network access to generate responses.", e)
                 }
             }
-
-            if (result.isNullOrBlank()) {
-                AiReplyGenerator.isOfflineMode = true
-                return fallback.generateSuggestions(request)
-            }
-
-            val parsed = parseSuggestions(result)
-            if (parsed.isEmpty()) {
-                return fallback.generateSuggestions(request)
-            }
-            parsed
-        } catch (e: Throwable) {
-            // Auto-fallback seamlessly to On-Device AI so the keyboard never blocks or shows an error screen
-            AiReplyGenerator.isOfflineMode = true
-            fallback.generateSuggestions(request)
         }
+
+        // If all Gemini endpoints fail, surface clear actionable Gemini error
+        throw GeminiException.General("Unable to connect to Gemini AI. Please check your internet connection and tap retry.")
     }
 
     override suspend fun generateAskAi(question: String, persona: AiPersona): String {
         val q = question.trim()
         if (q.isEmpty()) return "Please enter a question or instruction to ask AI."
 
-        if (AiReplyGenerator.isOfflineMode) {
-            return fallback.generateAskAi(q, persona)
-        }
-
-        if (!isFirebaseConfigured()) {
-            AiReplyGenerator.isOfflineMode = true
-            return fallback.generateAskAi(q, persona)
-        }
-
         val personaGuidance = buildPersonaPrompt(persona)
         val prompt = """
-You are an AI assistant integrated directly into Nexora mobile keyboard.
+You are an AI assistant integrated directly into Nexora mobile keyboard, powered by Google Gemini.
 $personaGuidance
 
 The user asks: "$q"
@@ -512,53 +510,179 @@ Instructions:
 - Directly answer the question.
 """.trimIndent()
 
-        return try {
-            val result = withTimeoutOrNull(AiConfig.REQUEST_TIMEOUT_MS) {
-                try {
-                    val model = Firebase.vertexAI.generativeModel(
-                        modelName = AiConfig.GEMINI_FLASH_MODEL,
-                        generationConfig = generationConfig {
-                            temperature = AiConfig.TEMPERATURE
-                            topK = AiConfig.TOP_K
-                            topP = AiConfig.TOP_P
-                            maxOutputTokens = AiConfig.MAX_OUTPUT_TOKENS
-                        }
-                    )
-                    model.generateContent(prompt).text
-                } catch (primaryEx: Throwable) {
-                    val pMsg = primaryEx.message ?: ""
-                    // If it's a configuration or disabled API issue, let it bubble up to outer catch for auto-fallback
-                    if (pMsg.contains("genai config not found", ignoreCase = true) ||
-                        pMsg.contains("error-genai-config-not-found", ignoreCase = true) ||
-                        pMsg.contains("firebasevertexai.googleapis.com", ignoreCase = true) ||
-                        pMsg.contains("has not been used in project", ignoreCase = true) ||
-                        pMsg.contains("API has not been enabled", ignoreCase = true) ||
-                        pMsg.contains("SERVICE_DISABLED", ignoreCase = true)) {
-                        throw primaryEx
+        // 1. Direct Gemini REST with configured user API key
+        val customKey = apiKeyProvider?.invoke()?.trim() ?: ""
+        if (customKey.isNotEmpty()) {
+            try {
+                val directAnswer = callDirectGeminiRest(prompt, customKey)
+                if (!directAnswer.isNullOrBlank()) {
+                    return directAnswer.trim()
+                }
+            } catch (_: Throwable) {
+                // Continue to cloud backend proxy
+            }
+        }
+
+        // 2. Cloud Backend Proxy
+        try {
+            val (answer, _) = callProxyGenerate(
+                action = "ask_ai",
+                persona = persona.id,
+                context = "",
+                instruction = q,
+                mode = "ask_ai"
+            )
+            if (!answer.isNullOrBlank()) {
+                return answer.trim()
+            }
+        } catch (e: Throwable) {
+            // Proceed to alternative
+        }
+
+        // 3. Firebase Vertex AI
+        if (isFirebaseConfigured()) {
+            try {
+                val rawText = withTimeoutOrNull(AiConfig.REQUEST_TIMEOUT_MS) {
+                    try {
+                        val model = Firebase.vertexAI.generativeModel(
+                            modelName = AiConfig.GEMINI_FLASH_MODEL,
+                            generationConfig = generationConfig {
+                                temperature = AiConfig.TEMPERATURE
+                                topK = AiConfig.TOP_K
+                                topP = AiConfig.TOP_P
+                                maxOutputTokens = AiConfig.MAX_OUTPUT_TOKENS
+                            }
+                        )
+                        model.generateContent(prompt).text
+                    } catch (primaryEx: Throwable) {
+                        val fallbackModel = Firebase.vertexAI.generativeModel(
+                            modelName = AiConfig.GEMINI_FLASH_LITE_MODEL,
+                            generationConfig = generationConfig {
+                                temperature = AiConfig.TEMPERATURE
+                                topK = AiConfig.TOP_K
+                                topP = AiConfig.TOP_P
+                                maxOutputTokens = AiConfig.MAX_OUTPUT_TOKENS
+                            }
+                        )
+                        fallbackModel.generateContent(prompt).text
                     }
-                    val fallbackModel = Firebase.vertexAI.generativeModel(
-                        modelName = AiConfig.GEMINI_FLASH_LITE_MODEL,
-                        generationConfig = generationConfig {
-                            temperature = AiConfig.TEMPERATURE
-                            topK = AiConfig.TOP_K
-                            topP = AiConfig.TOP_P
-                            maxOutputTokens = AiConfig.MAX_OUTPUT_TOKENS
-                        }
-                    )
-                    fallbackModel.generateContent(prompt).text
+                }
+                if (!rawText.isNullOrBlank()) {
+                    return rawText.trim()
+                }
+            } catch (e: Throwable) {
+                val msg = e.message ?: ""
+                if (msg.contains("network", ignoreCase = true) || msg.contains("UnknownHost", ignoreCase = true)) {
+                    throw GeminiException.NetworkError("No internet connection. Gemini AI requires network access to generate responses.", e)
                 }
             }
-
-            if (result.isNullOrBlank()) {
-                AiReplyGenerator.isOfflineMode = true
-                return fallback.generateAskAi(q, persona)
-            }
-            result.trim()
-        } catch (e: Throwable) {
-            // Auto-fallback seamlessly to On-Device AI
-            AiReplyGenerator.isOfflineMode = true
-            fallback.generateAskAi(q, persona)
         }
+
+        throw GeminiException.General("Unable to reach Gemini AI right now. Please tap retry in a moment.")
+    }
+
+    /**
+     * HTTP helper to invoke Gemini AI backend proxy with low latency
+     */
+    private fun callProxyGenerate(
+        action: String,
+        persona: String,
+        context: String,
+        instruction: String,
+        mode: String,
+        serverUrl: String = AiConfig.DEFAULT_SERVER_URL
+    ): Pair<String?, List<String>?> {
+        val configuredUrl = serverUrlProvider?.invoke()?.takeIf { it.isNotBlank() } ?: serverUrl
+        val endpoint = "${configuredUrl.trimEnd('/')}/api/gemini/generate"
+        val url = java.net.URL(endpoint)
+        val conn = url.openConnection() as java.net.HttpURLConnection
+        conn.requestMethod = "POST"
+        conn.setRequestProperty("Content-Type", "application/json; charset=utf-8")
+        conn.doOutput = true
+        conn.connectTimeout = 10000
+        conn.readTimeout = 15000
+
+        val payload = org.json.JSONObject().apply {
+            put("action", action)
+            put("persona", persona)
+            put("context", context)
+            put("instruction", instruction)
+            put("mode", mode)
+        }
+
+        conn.outputStream.use { os ->
+            val bytes = payload.toString().toByteArray(Charsets.UTF_8)
+            os.write(bytes, 0, bytes.size)
+        }
+
+        val code = conn.responseCode
+        if (code in 200..299) {
+            val responseText = conn.inputStream.bufferedReader().use { it.readText() }
+            val json = org.json.JSONObject(responseText)
+            val answer = if (json.has("answer") && !json.isNull("answer")) json.optString("answer") else null
+            val suggestionsJson = json.optJSONArray("suggestions")
+            val suggestionsList = mutableListOf<String>()
+            if (suggestionsJson != null) {
+                for (i in 0 until suggestionsJson.length()) {
+                    suggestionsList.add(suggestionsJson.getString(i))
+                }
+            }
+            return Pair(answer, suggestionsList)
+        } else {
+            val errText = conn.errorStream?.bufferedReader()?.use { it.readText() } ?: "HTTP $code"
+            throw Exception(errText)
+        }
+    }
+
+    /**
+     * Direct Gemini REST API call with an active Google Gemini API key
+     */
+    private fun callDirectGeminiRest(prompt: String, apiKey: String): String? {
+        if (apiKey.isBlank()) return null
+        val endpoint = "https://generativelanguage.googleapis.com/v1beta/models/${AiConfig.GEMINI_FLASH_MODEL}:generateContent?key=$apiKey"
+        val url = java.net.URL(endpoint)
+        val conn = url.openConnection() as java.net.HttpURLConnection
+        conn.requestMethod = "POST"
+        conn.setRequestProperty("Content-Type", "application/json; charset=utf-8")
+        conn.doOutput = true
+        conn.connectTimeout = 10000
+        conn.readTimeout = 15000
+
+        val payload = org.json.JSONObject().apply {
+            val parts = org.json.JSONArray().apply {
+                put(org.json.JSONObject().put("text", prompt))
+            }
+            val contents = org.json.JSONArray().apply {
+                put(org.json.JSONObject().put("parts", parts))
+            }
+            put("contents", contents)
+            val genConfig = org.json.JSONObject().apply {
+                put("temperature", AiConfig.TEMPERATURE)
+                put("maxOutputTokens", AiConfig.MAX_OUTPUT_TOKENS)
+            }
+            put("generationConfig", genConfig)
+        }
+
+        conn.outputStream.use { os ->
+            val bytes = payload.toString().toByteArray(Charsets.UTF_8)
+            os.write(bytes, 0, bytes.size)
+        }
+
+        val code = conn.responseCode
+        if (code in 200..299) {
+            val responseText = conn.inputStream.bufferedReader().use { it.readText() }
+            val json = org.json.JSONObject(responseText)
+            val candidates = json.optJSONArray("candidates")
+            if (candidates != null && candidates.length() > 0) {
+                val firstCandidate = candidates.getJSONObject(0)
+                val content = firstCandidate.optJSONObject("content")
+                val parts = content?.optJSONArray("parts")
+                if (parts != null && parts.length() > 0) {
+                    return parts.getJSONObject(0).optString("text")
+                }
+            }
+        }
+        return null
     }
 
     /**
@@ -599,8 +723,7 @@ Instructions:
 /**
  * Milestone 2 & 3 — AI Reply Generator Facade.
  *
- * Keeps all existing signatures intact for UI, tests, and backward compatibility,
- * while delegating to the current real Gemini / Firebase AI Logic implementation.
+ * Exclusively delegates to real Gemini AI generation.
  */
 object AiReplyGenerator {
 
@@ -608,14 +731,13 @@ object AiReplyGenerator {
     val firebaseGenerator = FirebaseGeminiReplyGenerator(mockGenerator)
     var currentGenerator: ReplyGenerator = firebaseGenerator
 
-    var isOfflineMode: Boolean
-        get() = currentGenerator === mockGenerator
-        set(value) {
-            currentGenerator = if (value) mockGenerator else firebaseGenerator
-        }
+    fun initProviders(apiKeyProvider: () -> String, serverUrlProvider: () -> String) {
+        firebaseGenerator.apiKeyProvider = apiKeyProvider
+        firebaseGenerator.serverUrlProvider = serverUrlProvider
+    }
 
     /**
-     * Synchronous generator method (used by unit tests and offline testing).
+     * Synchronous generator method (used by unit tests).
      */
     fun generateSuggestions(
         action: AiAction,
@@ -653,7 +775,7 @@ object AiReplyGenerator {
     }
 
     /**
-     * Coroutine-based asynchronous generator calling currentGenerator (Firebase Gemini).
+     * Coroutine-based asynchronous generator calling real Gemini AI.
      */
     suspend fun generateSuggestionsAsync(request: AiRequest): List<String> {
         return currentGenerator.generateSuggestions(request)

@@ -379,15 +379,6 @@ export class MockReplyGenerator implements ReplyGenerator {
  */
 export class GeminiReplyGenerator implements ReplyGenerator {
   public mockFallback = new MockReplyGenerator();
-  private offlineMode = false;
-
-  public setOfflineMode(enabled: boolean) {
-    this.offlineMode = enabled;
-  }
-
-  public isOfflineMode(): boolean {
-    return this.offlineMode;
-  }
 
   private async parseApiResponse(response: Response): Promise<any> {
     const rawText = await response.text().catch(() => '');
@@ -415,73 +406,52 @@ export class GeminiReplyGenerator implements ReplyGenerator {
   }
 
   async generate(request: AiGenerateRequest): Promise<string> {
-    if (this.offlineMode) {
-      return this.mockFallback.generate(request);
-    }
     const suggestions = await this.generateSuggestions(request);
     return suggestions[0];
   }
 
   async generateAskAi(question: string, persona: AiPersonaId): Promise<string> {
-    if (this.offlineMode) {
-      return this.mockFallback.generateAskAi(question, persona);
-    }
     const q = (question || '').trim();
     if (!q) {
       return 'Please enter a question or instruction to ask AI.';
     }
 
-    try {
-      const response = await fetch('/api/gemini/generate', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          action: 'ask_ai',
-          persona,
-          instruction: q,
-          mode: 'ask_ai'
-        })
-      });
+    const response = await fetch('/api/gemini/generate', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        action: 'ask_ai',
+        persona,
+        instruction: q,
+        mode: 'ask_ai'
+      })
+    });
 
-      const data = await this.parseApiResponse(response);
-      if (data.success && data.answer) {
-        return data.answer;
-      }
-      this.offlineMode = true;
-      return this.mockFallback.generateAskAi(question, persona);
-    } catch {
-      this.offlineMode = true;
-      return this.mockFallback.generateAskAi(question, persona);
+    const data = await this.parseApiResponse(response);
+    if (data.success && data.answer) {
+      return data.answer;
     }
+    throw new Error(data.error || 'Gemini was unable to generate an answer. Please tap retry.');
   }
 
   async generateSuggestions(request: AiGenerateRequest): Promise<string[]> {
-    if (this.offlineMode) {
-      return this.mockFallback.generateSuggestions(request);
-    }
-    try {
-      const response = await fetch('/api/gemini/generate', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          action: request.action,
-          persona: request.persona,
-          context: request.context,
-          instruction: request.instruction,
-          mode: 'action'
-        })
-      });
+    const response = await fetch('/api/gemini/generate', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        action: request.action,
+        persona: request.persona,
+        context: request.context,
+        instruction: request.instruction,
+        mode: 'action'
+      })
+    });
 
-      const data = await this.parseApiResponse(response);
-      if (data.success && Array.isArray(data.suggestions) && data.suggestions.length > 0) {
-        return data.suggestions;
-      }
-      this.offlineMode = true;
-      return this.mockFallback.generateSuggestions(request);
-    } catch {
-      this.offlineMode = true;
-      return this.mockFallback.generateSuggestions(request);
+    const data = await this.parseApiResponse(response);
+    if (data.success && Array.isArray(data.suggestions) && data.suggestions.length > 0) {
+      return data.suggestions;
     }
+    throw new Error(data.error || 'Gemini was unable to generate suggestions. Please tap retry.');
   }
 }
 

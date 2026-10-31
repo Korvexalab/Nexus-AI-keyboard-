@@ -92,6 +92,14 @@ class KeyboardPreferences(context: Context) {
         prefs.edit().remove(KEY_CLIPBOARD_HISTORY).apply()
     }
 
+    var geminiApiKey: String
+        get() = prefs.getString(KEY_GEMINI_API_KEY, "") ?: ""
+        set(value) = prefs.edit().putString(KEY_GEMINI_API_KEY, value.trim()).apply()
+
+    var cloudServerUrl: String
+        get() = prefs.getString(KEY_CLOUD_SERVER_URL, "") ?: ""
+        set(value) = prefs.edit().putString(KEY_CLOUD_SERVER_URL, value.trim()).apply()
+
     companion object {
         private const val KEY_THEME = "pref_theme"
         private const val KEY_HAPTIC = "pref_haptic"
@@ -103,5 +111,7 @@ class KeyboardPreferences(context: Context) {
         private const val KEY_NEXT_WORD_PREDICTION = "pref_next_word_prediction"
         private const val KEY_DOUBLE_SPACE_PERIOD = "pref_double_space_period"
         private const val KEY_AUTO_CAPITALIZATION = "pref_auto_capitalization"
+        private const val KEY_GEMINI_API_KEY = "pref_gemini_api_key"
+        private const val KEY_CLOUD_SERVER_URL = "pref_gemini_server_url"
     }
 }
